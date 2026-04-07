@@ -1,11 +1,11 @@
 "use client";
 
-import { http } from "wagmi";
+import { http, createConfig } from "wagmi";
 import { defineChain } from "viem";
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { injected, coinbaseWallet, safe } from "wagmi/connectors";
 
 export const galileo = defineChain({
-  id: 80087,
+  id: 16602,
   name: "0G Galileo Testnet",
   nativeCurrency: { name: "OG", symbol: "OG", decimals: 18 },
   rpcUrls: {
@@ -17,10 +17,13 @@ export const galileo = defineChain({
   testnet: true,
 });
 
-export const config = getDefaultConfig({
-  appName: "Sentri",
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "sentri-demo",
+export const config = createConfig({
   chains: [galileo],
+  connectors: [
+    injected(),
+    coinbaseWallet({ appName: "Sentri" }),
+    safe(),
+  ],
   transports: {
     [galileo.id]: http("https://evmrpc-testnet.0g.ai"),
   },

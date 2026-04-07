@@ -9,7 +9,19 @@ const vaultContract = {
   abi: TREASURY_VAULT_ABI,
 } as const;
 
-// ── Read Hooks ────────────────────────────────────────────────────────────
+// ── Parsed Vault Data ────────────────────────────────────────────────────
+
+export interface VaultData {
+  balance: bigint;
+  highWaterMark: bigint;
+  logCount: bigint;
+  policy: { maxAllocationBps: number; maxDrawdownBps: number; rebalanceThresholdBps: number; cooldownPeriod: number } | null;
+  agent: string;
+  isKilled: boolean;
+  isPaused: boolean;
+  owner: string;
+  lastExecutionTime: bigint;
+}
 
 export function useVaultData() {
   return useReadContracts({
@@ -27,6 +39,35 @@ export function useVaultData() {
     query: { refetchInterval: 10_000 },
   });
 }
+
+export function useParsedVaultData() {
+  const { data, isLoading, isError } = useVaultData();
+
+  const parsed: VaultData | null = data
+    ? {
+        balance: (data[0]?.result as bigint) ?? 0n,
+        highWaterMark: (data[1]?.result as bigint) ?? 0n,
+        logCount: (data[2]?.result as bigint) ?? 0n,
+        policy: data[3]?.result
+          ? {
+              maxAllocationBps: (data[3].result as [number, number, number, number])[0],
+              maxDrawdownBps: (data[3].result as [number, number, number, number])[1],
+              rebalanceThresholdBps: (data[3].result as [number, number, number, number])[2],
+              cooldownPeriod: (data[3].result as [number, number, number, number])[3],
+            }
+          : null,
+        agent: (data[4]?.result as string) ?? "",
+        isKilled: (data[5]?.result as boolean) ?? false,
+        isPaused: (data[6]?.result as boolean) ?? false,
+        owner: (data[7]?.result as string) ?? "",
+        lastExecutionTime: (data[8]?.result as bigint) ?? 0n,
+      }
+    : null;
+
+  return { data: parsed, isLoading, isError };
+}
+
+// ── Read Hooks ────────────────────────────────────────────────────────────
 
 export function useExecutionLog(index: bigint) {
   return useReadContract({
@@ -59,7 +100,7 @@ export function useUsdcAllowance(owner: `0x${string}` | undefined) {
 // ── Write Hooks ───────────────────────────────────────────────────────────
 
 export function useApproveUsdc() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function approve(amount: string) {
@@ -71,11 +112,11 @@ export function useApproveUsdc() {
     });
   }
 
-  return { approve, isPending, isConfirming, isSuccess, hash };
+  return { approve, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useDeposit() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function deposit(amount: string) {
@@ -86,11 +127,11 @@ export function useDeposit() {
     });
   }
 
-  return { deposit, isPending, isConfirming, isSuccess, hash };
+  return { deposit, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useWithdraw() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function withdraw(to: `0x${string}`, amount: string) {
@@ -101,44 +142,44 @@ export function useWithdraw() {
     });
   }
 
-  return { withdraw, isPending, isConfirming, isSuccess, hash };
+  return { withdraw, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useEmergencyWithdraw() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function emergencyWithdraw() {
     writeContract({ ...vaultContract, functionName: "emergencyWithdraw" });
   }
 
-  return { emergencyWithdraw, isPending, isConfirming, isSuccess, hash };
+  return { emergencyWithdraw, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function usePause() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function pause() {
     writeContract({ ...vaultContract, functionName: "pause" });
   }
 
-  return { pause, isPending, isConfirming, isSuccess, hash };
+  return { pause, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useUnpause() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function unpause() {
     writeContract({ ...vaultContract, functionName: "unpause" });
   }
 
-  return { unpause, isPending, isConfirming, isSuccess, hash };
+  return { unpause, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useSetPolicy() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function setPolicy(policy: {
@@ -154,11 +195,11 @@ export function useSetPolicy() {
     });
   }
 
-  return { setPolicy, isPending, isConfirming, isSuccess, hash };
+  return { setPolicy, isPending, isConfirming, isSuccess, error, hash };
 }
 
 export function useMintUsdc() {
-  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
   function mint(to: `0x${string}`, amount: string) {
@@ -170,5 +211,5 @@ export function useMintUsdc() {
     });
   }
 
-  return { mint, isPending, isConfirming, isSuccess, hash };
+  return { mint, isPending, isConfirming, isSuccess, error, hash };
 }

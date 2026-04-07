@@ -8,7 +8,7 @@ Autonomous stablecoin treasury agent. Plans privately in TEE (Sealed Inference),
 **Pitch**: "Your AI treasurer — private strategy, verifiable results."
 
 ## Chain
-- 0G Galileo testnet — EVM, chain ID 80087
+- 0G Galileo testnet — EVM, chain ID 16602
 - RPC: https://evmrpc-testnet.0g.ai
 - Explorer: https://chainscan-galileo.0g.ai
 - Faucet: 0.1 OG/jour/wallet
@@ -68,7 +68,7 @@ deposit → private analysis (TEE) → policy-compliant decision → execution �
 
 ## Env vars
 ```
-NEXT_PUBLIC_CHAIN_ID=80087
+NEXT_PUBLIC_CHAIN_ID=16602
 NEXT_PUBLIC_RPC_URL=https://evmrpc-testnet.0g.ai
 NEXT_PUBLIC_EXPLORER_URL=https://chainscan-galileo.0g.ai
 PRIVATE_KEY=         # deployer (NEVER commit)

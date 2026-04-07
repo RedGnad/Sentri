@@ -1,7 +1,7 @@
 // 0G Galileo Testnet Configuration
 
 export const CHAIN = {
-  id: 80087,
+  id: 16602,
   name: "0G Galileo Testnet",
   rpcUrl: "https://evmrpc-testnet.0g.ai",
   explorerUrl: "https://chainscan-galileo.0g.ai",

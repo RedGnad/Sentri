@@ -2,38 +2,47 @@
 
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
+import { toast } from "sonner";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useVaultData, useSetPolicy } from "@/hooks/use-vault";
+import { useParsedVaultData, useSetPolicy } from "@/hooks/use-vault";
 import { bpsToPercent } from "@/lib/utils";
 import { Settings, Info } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function PolicyPage() {
   const { address } = useAccount();
-  const { data: vaultData, isLoading } = useVaultData();
-  const { setPolicy, isPending, isConfirming, isSuccess } = useSetPolicy();
+  const { data: vault, isLoading } = useParsedVaultData();
+  const { setPolicy, isPending, isConfirming, isSuccess, error } = useSetPolicy();
 
   const [maxAllocation, setMaxAllocation] = useState("");
   const [maxDrawdown, setMaxDrawdown] = useState("");
   const [rebalanceThreshold, setRebalanceThreshold] = useState("");
   const [cooldownPeriod, setCooldownPeriod] = useState("");
 
-  const policyData = vaultData?.[3]?.result as [number, number, number, number] | undefined;
-  const ownerAddr = (vaultData?.[7]?.result as string) ?? "";
-  const isOwner = address?.toLowerCase() === ownerAddr.toLowerCase();
+  const isOwner = address?.toLowerCase() === (vault?.owner ?? "").toLowerCase();
 
   useEffect(() => {
-    if (policyData) {
-      setMaxAllocation(bpsToPercent(policyData[0]));
-      setMaxDrawdown(bpsToPercent(policyData[1]));
-      setRebalanceThreshold(bpsToPercent(policyData[2]));
-      setCooldownPeriod(policyData[3].toString());
+    if (vault?.policy) {
+      setMaxAllocation(bpsToPercent(vault.policy.maxAllocationBps));
+      setMaxDrawdown(bpsToPercent(vault.policy.maxDrawdownBps));
+      setRebalanceThreshold(bpsToPercent(vault.policy.rebalanceThresholdBps));
+      setCooldownPeriod(vault.policy.cooldownPeriod.toString());
     }
-  }, [policyData]);
+  }, [vault?.policy]);
+
+  // Toast feedback
+  useEffect(() => { if (isSuccess) toast.success("Risk policy updated on-chain"); }, [isSuccess]);
+  useEffect(() => { if (error) toast.error(`Policy update failed: ${error.message}`); }, [error]);
 
   if (isLoading) {
-    return <div className="text-center py-20 text-white/50">Loading...</div>;
+    return (
+      <div className="space-y-6 max-w-2xl">
+        <div><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64 mt-2" /></div>
+        <Card><CardContent className="pt-6"><div className="grid grid-cols-2 gap-4">{[...Array(4)].map((_, i) => (<div key={i}><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-6 w-16" /></div>))}</div></CardContent></Card>
+      </div>
+    );
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -56,7 +65,7 @@ export default function PolicyPage() {
       </div>
 
       {/* Current Policy */}
-      {policyData && (
+      {vault?.policy && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -68,19 +77,19 @@ export default function PolicyPage() {
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-white/50">Max Allocation per Action</p>
-                <p className="text-lg font-semibold">{bpsToPercent(policyData[0])}%</p>
+                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.maxAllocationBps)}%</p>
               </div>
               <div>
                 <p className="text-white/50">Max Drawdown from HWM</p>
-                <p className="text-lg font-semibold">{bpsToPercent(policyData[1])}%</p>
+                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.maxDrawdownBps)}%</p>
               </div>
               <div>
                 <p className="text-white/50">Rebalance Threshold</p>
-                <p className="text-lg font-semibold">{bpsToPercent(policyData[2])}%</p>
+                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.rebalanceThresholdBps)}%</p>
               </div>
               <div>
                 <p className="text-white/50">Cooldown Period</p>
-                <p className="text-lg font-semibold">{policyData[3]}s</p>
+                <p className="text-lg font-semibold">{vault.policy.cooldownPeriod}s</p>
               </div>
             </div>
           </CardContent>
@@ -162,8 +171,6 @@ export default function PolicyPage() {
                 ? "Confirming..."
                 : isConfirming
                 ? "Waiting for TX..."
-                : isSuccess
-                ? "Policy Updated!"
                 : "Update Policy"}
             </Button>
           </form>

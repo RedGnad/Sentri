@@ -1,32 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
+import { toast } from "sonner";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatUSDC } from "@/lib/utils";
-import { useVaultData, useEmergencyWithdraw, usePause, useUnpause } from "@/hooks/use-vault";
+import { useParsedVaultData, useEmergencyWithdraw, usePause, useUnpause } from "@/hooks/use-vault";
 import { AlertTriangle, Pause, Play, Skull } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function EmergencyPage() {
   const { address } = useAccount();
-  const { data: vaultData, isLoading } = useVaultData();
-  const { emergencyWithdraw, isPending: isKilling } = useEmergencyWithdraw();
-  const { pause, isPending: isPausing } = usePause();
-  const { unpause, isPending: isUnpausing } = useUnpause();
+  const { data: vault, isLoading } = useParsedVaultData();
+  const { emergencyWithdraw, isPending: isKilling, isSuccess: killSuccess, error: killError } = useEmergencyWithdraw();
+  const { pause, isPending: isPausing, isSuccess: pauseSuccess, error: pauseError } = usePause();
+  const { unpause, isPending: isUnpausing, isSuccess: unpauseSuccess, error: unpauseError } = useUnpause();
 
   const [confirmKill, setConfirmKill] = useState(false);
 
-  if (isLoading || !vaultData) {
-    return <div className="text-center py-20 text-white/50">Loading...</div>;
+  // Toast feedback
+  useEffect(() => { if (pauseSuccess) toast.success("Vault paused — all operations blocked"); }, [pauseSuccess]);
+  useEffect(() => { if (pauseError) toast.error(`Pause failed: ${pauseError.message}`); }, [pauseError]);
+  useEffect(() => { if (unpauseSuccess) toast.success("Vault unpaused — operations resumed"); }, [unpauseSuccess]);
+  useEffect(() => { if (unpauseError) toast.error(`Unpause failed: ${unpauseError.message}`); }, [unpauseError]);
+  useEffect(() => {
+    if (killSuccess) {
+      toast.error("Vault permanently killed. All funds withdrawn to owner.");
+      setConfirmKill(false);
+    }
+  }, [killSuccess]);
+  useEffect(() => { if (killError) toast.error(`Kill-switch failed: ${killError.message}`); }, [killError]);
+
+  if (isLoading || !vault) {
+    return (
+      <div className="space-y-6 max-w-2xl">
+        <div><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64 mt-2" /></div>
+        <Card><CardContent className="pt-6"><Skeleton className="h-6 w-full" /><Skeleton className="h-6 w-40 mt-3" /></CardContent></Card>
+      </div>
+    );
   }
 
-  const balance = (vaultData[0]?.result as bigint) ?? 0n;
-  const isKilled = (vaultData[5]?.result as boolean) ?? false;
-  const isPaused = (vaultData[6]?.result as boolean) ?? false;
-  const ownerAddr = (vaultData[7]?.result as string) ?? "";
-  const isOwner = address?.toLowerCase() === ownerAddr.toLowerCase();
+  const isOwner = address?.toLowerCase() === vault.owner.toLowerCase();
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -42,9 +58,9 @@ export default function EmergencyPage() {
         <CardContent className="pt-6">
           <div className="flex items-center justify-between">
             <span className="text-white/50">Vault Status</span>
-            {isKilled ? (
+            {vault.isKilled ? (
               <Badge variant="destructive">PERMANENTLY KILLED</Badge>
-            ) : isPaused ? (
+            ) : vault.isPaused ? (
               <Badge variant="warning">PAUSED</Badge>
             ) : (
               <Badge variant="success">ACTIVE</Badge>
@@ -52,7 +68,7 @@ export default function EmergencyPage() {
           </div>
           <div className="flex items-center justify-between mt-3">
             <span className="text-white/50">Vault Balance</span>
-            <span className="font-semibold">${formatUSDC(balance)}</span>
+            <span className="font-semibold">${formatUSDC(vault.balance)}</span>
           </div>
         </CardContent>
       </Card>
@@ -61,7 +77,7 @@ export default function EmergencyPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            {isPaused ? (
+            {vault.isPaused ? (
               <Play className="h-5 w-5 text-emerald-400" />
             ) : (
               <Pause className="h-5 w-5 text-amber-400" />
@@ -69,17 +85,17 @@ export default function EmergencyPage() {
             Circuit Breaker
           </CardTitle>
           <CardDescription>
-            {isPaused
+            {vault.isPaused
               ? "Vault is paused. Deposits, withdrawals, and agent executions are blocked."
               : "Pause the vault to temporarily block all operations."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isPaused ? (
+          {vault.isPaused ? (
             <Button
               className="w-full"
               onClick={() => unpause()}
-              disabled={!isOwner || isUnpausing || isKilled}
+              disabled={!isOwner || isUnpausing || vault.isKilled}
             >
               {isUnpausing ? "Unpausing..." : "Unpause Vault"}
             </Button>
@@ -88,7 +104,7 @@ export default function EmergencyPage() {
               className="w-full"
               variant="outline"
               onClick={() => pause()}
-              disabled={!isOwner || isPausing || isKilled}
+              disabled={!isOwner || isPausing || vault.isKilled}
             >
               {isPausing ? "Pausing..." : "Pause Vault"}
             </Button>
@@ -109,7 +125,7 @@ export default function EmergencyPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {isKilled ? (
+          {vault.isKilled ? (
             <div className="text-center py-4">
               <Badge variant="destructive">Vault has been permanently killed</Badge>
             </div>
@@ -128,7 +144,7 @@ export default function EmergencyPage() {
               ) : (
                 <div className="space-y-3">
                   <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">
-                    This will withdraw ${formatUSDC(balance)} USDC to the owner
+                    This will withdraw ${formatUSDC(vault.balance)} USDC to the owner
                     and permanently kill the vault. Are you sure?
                   </div>
                   <div className="flex gap-3">

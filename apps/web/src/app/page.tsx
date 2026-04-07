@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { ConnectButton } from "@/components/connect-button";
 import { Shield, Lock, Eye, Zap, AlertTriangle, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
