@@ -1,0 +1,17 @@
+{
+  "name": "sentri",
+  "private": true,
+  "description": "Autonomous Treasury Execution on 0G",
+  "scripts": {
+    "build:contracts": "cd contracts && forge build",
+    "test:contracts": "cd contracts && forge test -v",
+    "deploy:galileo": "cd contracts && forge script script/Deploy.s.sol --rpc-url galileo --broadcast",
+    "dev": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "build:sdk": "cd packages/sdk && tsc",
+    "agent": "cd packages/sdk && tsx src/agent.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
