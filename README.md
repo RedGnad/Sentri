@@ -163,15 +163,17 @@ The agent will fetch market data, run TEE inference, execute on-chain, and strea
 
 ## Deployed addresses
 
-| Contract | Address | Explorer |
-|---|---|---|
-| `TreasuryVault` | `TBD` | https://chainscan-galileo.0g.ai |
-| `AgentINFT` | `TBD` | https://chainscan-galileo.0g.ai |
-| `SentriSwapRouter` | `TBD` | https://chainscan-galileo.0g.ai |
-| `SentriPair` | `TBD` | https://chainscan-galileo.0g.ai |
-| `SentriPriceFeed` | `TBD` | https://chainscan-galileo.0g.ai |
-| `MockUSDC` | `TBD` | https://chainscan-galileo.0g.ai |
-| `MockWETH` | `TBD` | https://chainscan-galileo.0g.ai |
+All contracts live on **0G Galileo Testnet** (chain ID `16602`). Deployer: [`0x7531…dbd8`](https://chainscan-galileo.0g.ai/address/0x7531d467f19d1055accf6b0d22286184f87adbd8).
+
+| Contract | Address |
+|---|---|
+| `TreasuryVault` | [`0x286dc3f6b3223053e49665333e11f21cfffb4a5e`](https://chainscan-galileo.0g.ai/address/0x286dc3f6b3223053e49665333e11f21cfffb4a5e) |
+| `AgentINFT` | [`0x0e7e5f1d1b76727428352669c469d6e55d47fc81`](https://chainscan-galileo.0g.ai/address/0x0e7e5f1d1b76727428352669c469d6e55d47fc81) |
+| `SentriSwapRouter` | [`0x93fd20a13dfcfc129f49d9d04ff8d4fb0a808c17`](https://chainscan-galileo.0g.ai/address/0x93fd20a13dfcfc129f49d9d04ff8d4fb0a808c17) |
+| `SentriPair` | [`0x325afae53695798f6110305e998742687e636e9a`](https://chainscan-galileo.0g.ai/address/0x325afae53695798f6110305e998742687e636e9a) |
+| `SentriPriceFeed` | [`0xc9d99f3c3de46d3fd816f0b08dd48b4fba41a711`](https://chainscan-galileo.0g.ai/address/0xc9d99f3c3de46d3fd816f0b08dd48b4fba41a711) |
+| `MockUSDC` | [`0xd23cd7730595486d234e50bb7c97e351860a9add`](https://chainscan-galileo.0g.ai/address/0xd23cd7730595486d234e50bb7c97e351860a9add) |
+| `MockWETH` | [`0xad67a837b2662118f077ff404827cc82f61d5ccb`](https://chainscan-galileo.0g.ai/address/0xad67a837b2662118f077ff404827cc82f61d5ccb) |
 
 ---
 
