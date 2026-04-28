@@ -33,9 +33,17 @@ const ACTION_MAP: Record<string, number> = {
   EmergencyDeleverage: 2,
 };
 
+export interface AgentContext {
+  vault: ethers.Contract;
+  usdc: ethers.Contract;
+  priceFeed: ethers.Contract;
+  walletAddress: string;
+  providerInfo: { address: string; model: string; endpoint: string };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function log(msg: string): void {
+export function log(msg: string): void {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
@@ -45,9 +53,9 @@ function getEnvOrThrow(key: string): string {
   return val;
 }
 
-// ── Agent Loop ────────────────────────────────────────────────────────────
+// ── Setup (run once) ──────────────────────────────────────────────────────
 
-async function runAgentLoop(): Promise<void> {
+export async function setupAgent(): Promise<AgentContext> {
   const privateKey = getEnvOrThrow("PRIVATE_KEY");
   const vaultAddress = CONTRACTS.treasuryVault || getEnvOrThrow("NEXT_PUBLIC_TREASURY_VAULT_ADDRESS");
   const usdcAddress = CONTRACTS.mockUSDC || getEnvOrThrow("NEXT_PUBLIC_MOCK_USDC_ADDRESS");
@@ -72,29 +80,20 @@ async function runAgentLoop(): Promise<void> {
   log("Initializing 0G Storage...");
   initStorage(privateKey);
 
-  log("Agent initialized. Starting loop.\n");
+  log(`Agent ready. Wallet: ${wallet.address}`);
 
-  while (true) {
-    try {
-      await executeOneIteration(vault, usdc, priceFeed);
-    } catch (err) {
-      log(`ERROR in agent iteration: ${err instanceof Error ? err.message : err}`);
-    }
-
-    log(`Sleeping ${AGENT.loopIntervalMs / 1000}s until next iteration...\n`);
-    await new Promise((r) => setTimeout(r, AGENT.loopIntervalMs));
-  }
+  return { vault, usdc, priceFeed, walletAddress: wallet.address, providerInfo };
 }
 
-async function executeOneIteration(
-  vault: ethers.Contract,
-  _usdc: ethers.Contract,
-  priceFeed: ethers.Contract,
-): Promise<void> {
+// ── One iteration of the agent loop ───────────────────────────────────────
+
+export async function executeOneIteration(ctx: AgentContext): Promise<void> {
+  const { vault, priceFeed } = ctx;
+
   const isKilled = await vault.killed();
   if (isKilled) {
-    log("Vault is KILLED. Agent shutting down.");
-    process.exit(0);
+    log("Vault is KILLED. Agent cannot operate.");
+    throw new Error("VAULT_KILLED");
   }
 
   const isPaused = await vault.paused();
@@ -108,7 +107,6 @@ async function executeOneIteration(
   log(`Market: ETH=$${market.ethUsd.toFixed(2)} (${market.change24h.toFixed(2)}% 24h, ${market.source})`);
 
   // 2. Push price on-chain so the vault's slippage check uses fresh data.
-  //    Feed decimals = 8 by deployment convention.
   const feedDecimals: bigint = await priceFeed.decimals();
   const answer = BigInt(Math.floor(market.ethUsd * 10 ** Number(feedDecimals)));
   const priceAttestation = ethers.keccak256(
@@ -150,7 +148,7 @@ async function executeOneIteration(
     return;
   }
 
-  // 4. Build prompt with real market data
+  // 4. Build prompt
   const prompt = buildMarketPrompt({
     baseBalance: baseStr,
     riskBalance: riskStr,
@@ -188,8 +186,6 @@ async function executeOneIteration(
   }
 
   // 6. Size the order
-  // - Rebalance/YieldFarm: amount_bps of BASE balance (USDC in)
-  // - EmergencyDeleverage: amount_bps of RISK balance (WETH in)
   let amountIn: bigint;
   if (decision.action === "EmergencyDeleverage") {
     amountIn = (BigInt(riskBalance) * BigInt(decision.amount_bps)) / 10000n;
@@ -204,7 +200,6 @@ async function executeOneIteration(
       log("No base balance to allocate. Skipping.");
       return;
     }
-    // Cap locally to maxAllocationBps of TVL, respecting contract check
     const maxAlloc = (BigInt(tvl) * BigInt(policy[0])) / 10000n;
     if (amountIn > maxAlloc) {
       log(`Capping amount from ${ethers.formatUnits(amountIn, 6)} to ${ethers.formatUnits(maxAlloc, 6)} USDC (max allocation)`);
@@ -286,6 +281,24 @@ async function executeOneIteration(
   }
 }
 
+// ── Standalone loop (for `pnpm agent` CLI) ────────────────────────────────
+
+export async function runStandaloneLoop(): Promise<void> {
+  const ctx = await setupAgent();
+  log("Starting loop.\n");
+
+  while (true) {
+    try {
+      await executeOneIteration(ctx);
+    } catch (err) {
+      log(`ERROR in agent iteration: ${err instanceof Error ? err.message : err}`);
+    }
+
+    log(`Sleeping ${AGENT.loopIntervalMs / 1000}s until next iteration...\n`);
+    await new Promise((r) => setTimeout(r, AGENT.loopIntervalMs));
+  }
+}
+
 function buildMarketPrompt(input: {
   baseBalance: string;
   riskBalance: string;
@@ -323,8 +336,3 @@ Live Market (${input.market.source}):
 
 Decide the next treasury action. Respond in JSON only.`;
 }
-
-runAgentLoop().catch((err) => {
-  console.error("Fatal agent error:", err);
-  process.exit(1);
-});

@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "agent": "tsx src/agent.ts",
+    "agent": "tsx src/cli.ts",
+    "server": "tsx src/server.ts",
     "setup-broker": "tsx src/setup-broker.ts"
   },
   "dependencies": {
@@ -16,11 +17,13 @@
     "@0gfoundation/0g-ts-sdk": "^1.2.1",
     "ethers": "^6.13.0",
     "viem": "^2.21.0",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "express": "^4.21.0"
   },
   "devDependencies": {
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/express": "^4.17.21"
   }
 }

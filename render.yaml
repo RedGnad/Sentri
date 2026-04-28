@@ -1,0 +1,38 @@
+# Render Blueprint for the Sentri agent runtime.
+# Connect this repo in Render → Blueprints → "New Blueprint Instance".
+# Render auto-creates the service with the config below.
+# Only PRIVATE_KEY is left blank — paste it manually in the Render UI
+# (Environment tab) so it never lives in git.
+
+services:
+  - type: web
+    name: sentri-agent
+    runtime: node
+    plan: free
+    region: frankfurt
+    autoDeploy: true
+    branch: main
+    buildCommand: corepack enable && pnpm install --frozen-lockfile
+    startCommand: pnpm --filter @steward/sdk run server
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: PRIVATE_KEY
+        sync: false
+      - key: NEXT_PUBLIC_TREASURY_VAULT_ADDRESS
+        value: "0x286dc3f6b3223053e49665333e11f21cfffb4a5e"
+      - key: NEXT_PUBLIC_AGENT_INFT_ADDRESS
+        value: "0x0e7e5f1d1b76727428352669c469d6e55d47fc81"
+      - key: NEXT_PUBLIC_SWAP_ROUTER_ADDRESS
+        value: "0x93fd20a13dfcfc129f49d9d04ff8d4fb0a808c17"
+      - key: NEXT_PUBLIC_PRICE_FEED_ADDRESS
+        value: "0xc9d99f3c3de46d3fd816f0b08dd48b4fba41a711"
+      - key: NEXT_PUBLIC_MOCK_USDC_ADDRESS
+        value: "0xd23cd7730595486d234e50bb7c97e351860a9add"
+      - key: NEXT_PUBLIC_MOCK_WETH_ADDRESS
+        value: "0xad67a837b2662118f077ff404827cc82f61d5ccb"
+      - key: AGENT_INTERVAL_MS
+        value: "300000"
+      - key: SENTRI_CACHE_DIR
+        value: "/tmp/sentri-cache"
