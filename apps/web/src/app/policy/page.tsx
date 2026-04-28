@@ -3,12 +3,10 @@
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useParsedVaultData, useSetPolicy } from "@/hooks/use-vault";
 import { bpsToPercent } from "@/lib/utils";
-import { Settings, Info } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function PolicyPage() {
@@ -36,15 +34,14 @@ export default function PolicyPage() {
     }
   }, [vault?.policy]);
 
-  // Toast feedback
   useEffect(() => { if (isSuccess) toast.success("Risk policy updated on-chain"); }, [isSuccess]);
   useEffect(() => { if (error) toast.error(`Policy update failed: ${error.message}`); }, [error]);
 
   if (isLoading) {
     return (
-      <div className="space-y-6 max-w-2xl">
-        <div><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64 mt-2" /></div>
-        <Card><CardContent className="pt-6"><div className="grid grid-cols-2 gap-4">{[...Array(4)].map((_, i) => (<div key={i}><Skeleton className="h-4 w-32 mb-2" /><Skeleton className="h-6 w-16" /></div>))}</div></CardContent></Card>
+      <div className="space-y-6 max-w-3xl">
+        <Skeleton className="h-12 w-64" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
@@ -62,168 +59,193 @@ export default function PolicyPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold">Risk Policy</h1>
-        <p className="text-white/50 text-sm">
-          On-chain risk parameters the agent must respect
-        </p>
-      </div>
+    <div className="space-y-10 max-w-3xl">
+      <PageHeader num="03" section="Risk Policy" title="Constraints" subtitle="On-chain bounds the agent cannot override" />
 
-      {/* Current Policy */}
+      {/* Manifesto */}
+      <p className="font-serif italic text-xl text-ink-dim leading-snug border-l-2 border-amber pl-5">
+        The agent proposes. The policy disposes. Every parameter below is enforced
+        by the vault contract — not by trust.
+      </p>
+
+      {/* Current policy table */}
       {vault?.policy && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5 text-emerald-400" />
-              Current Policy
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-white/50">Max Allocation per Action</p>
-                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.maxAllocationBps)}%</p>
-              </div>
-              <div>
-                <p className="text-white/50">Max Drawdown from HWM</p>
-                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.maxDrawdownBps)}%</p>
-              </div>
-              <div>
-                <p className="text-white/50">Rebalance Threshold</p>
-                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.rebalanceThresholdBps)}%</p>
-              </div>
-              <div>
-                <p className="text-white/50">Max Slippage</p>
-                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.maxSlippageBps)}%</p>
-              </div>
-              <div>
-                <p className="text-white/50">Cooldown Period</p>
-                <p className="text-lg font-semibold">{vault.policy.cooldownPeriod}s</p>
-              </div>
-              <div>
-                <p className="text-white/50">Max Price Staleness</p>
-                <p className="text-lg font-semibold">{vault.policy.maxPriceStaleness}s</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <section className="border border-hairline bg-bg-elev/30">
+          <header className="flex items-center justify-between px-5 h-9 border-b border-hairline">
+            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
+              Current policy
+            </span>
+            <span className="font-mono text-[9px] uppercase tracking-kicker text-phosphor flex items-center gap-1.5">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
+              Live
+            </span>
+          </header>
+          <ul className="divide-y divide-hairline">
+            <PolicyRow label="Max allocation per action" value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} hint="Of TVL per single trade" />
+            <PolicyRow label="Max drawdown from HWM" value={`${bpsToPercent(vault.policy.maxDrawdownBps)} %`} hint="Strategy frozen above this" />
+            <PolicyRow label="Rebalance threshold" value={`${bpsToPercent(vault.policy.rebalanceThresholdBps)} %`} hint="Min deviation to act" />
+            <PolicyRow label="Max slippage" value={`${bpsToPercent(vault.policy.maxSlippageBps)} %`} hint="Per swap, vs oracle" />
+            <PolicyRow label="Cooldown period" value={`${vault.policy.cooldownPeriod} s`} hint="Min seconds between executions" />
+            <PolicyRow label="Max price staleness" value={`${vault.policy.maxPriceStaleness} s`} hint="Oracle freshness window" />
+          </ul>
+        </section>
       )}
 
-      {/* Update Policy */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Update Policy</CardTitle>
-          <CardDescription>
-            {isOwner
-              ? "Modify risk parameters (owner only)"
-              : "Only the vault owner can modify policy"}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="text-sm text-white/50 block mb-1">
-                Max Allocation per Action (%)
-              </label>
-              <Input
-                type="number"
-                step="0.1"
-                min="0.1"
-                max="100"
-                value={maxAllocation}
-                onChange={(e) => setMaxAllocation(e.target.value)}
-                disabled={!isOwner}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-white/50 block mb-1">
-                Max Drawdown from HWM (%)
-              </label>
-              <Input
-                type="number"
-                step="0.1"
-                min="0.1"
-                max="100"
-                value={maxDrawdown}
-                onChange={(e) => setMaxDrawdown(e.target.value)}
-                disabled={!isOwner}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-white/50 block mb-1">
-                Rebalance Threshold (%)
-              </label>
-              <Input
-                type="number"
-                step="0.1"
-                min="0"
-                max="100"
-                value={rebalanceThreshold}
-                onChange={(e) => setRebalanceThreshold(e.target.value)}
-                disabled={!isOwner}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-white/50 block mb-1">
-                Max Slippage (%)
-              </label>
-              <Input
-                type="number"
-                step="0.1"
-                min="0"
-                max="100"
-                value={maxSlippage}
-                onChange={(e) => setMaxSlippage(e.target.value)}
-                disabled={!isOwner}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-white/50 block mb-1">
-                Cooldown Period (seconds)
-              </label>
-              <Input
-                type="number"
-                min="0"
-                value={cooldownPeriod}
-                onChange={(e) => setCooldownPeriod(e.target.value)}
-                disabled={!isOwner}
-              />
-            </div>
-            <div>
-              <label className="text-sm text-white/50 block mb-1">
-                Max Price Staleness (seconds)
-              </label>
-              <Input
-                type="number"
-                min="1"
-                value={maxPriceStaleness}
-                onChange={(e) => setMaxPriceStaleness(e.target.value)}
-                disabled={!isOwner}
-              />
-            </div>
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={!isOwner || isPending || isConfirming}
-            >
-              {isPending
-                ? "Confirming..."
-                : isConfirming
-                ? "Waiting for TX..."
-                : "Update Policy"}
-            </Button>
-          </form>
+      {/* Update form */}
+      <section className="border border-hairline">
+        <header className="flex items-center justify-between px-5 h-9 border-b border-hairline">
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+            Update policy
+          </span>
+          <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
+            {isOwner ? "Owner authorized" : "Owner only"}
+          </span>
+        </header>
+        <form onSubmit={handleSubmit} className="px-5 py-5 space-y-5">
+          <FormField
+            label="Max allocation per action"
+            unit="%"
+            value={maxAllocation}
+            onChange={setMaxAllocation}
+            disabled={!isOwner}
+            step="0.1"
+            min="0.1"
+            max="100"
+          />
+          <FormField
+            label="Max drawdown from HWM"
+            unit="%"
+            value={maxDrawdown}
+            onChange={setMaxDrawdown}
+            disabled={!isOwner}
+            step="0.1"
+            min="0.1"
+            max="100"
+          />
+          <FormField
+            label="Rebalance threshold"
+            unit="%"
+            value={rebalanceThreshold}
+            onChange={setRebalanceThreshold}
+            disabled={!isOwner}
+            step="0.1"
+            min="0"
+            max="100"
+          />
+          <FormField
+            label="Max slippage"
+            unit="%"
+            value={maxSlippage}
+            onChange={setMaxSlippage}
+            disabled={!isOwner}
+            step="0.1"
+            min="0"
+            max="100"
+          />
+          <FormField
+            label="Cooldown period"
+            unit="s"
+            value={cooldownPeriod}
+            onChange={setCooldownPeriod}
+            disabled={!isOwner}
+            min="0"
+          />
+          <FormField
+            label="Max price staleness"
+            unit="s"
+            value={maxPriceStaleness}
+            onChange={setMaxPriceStaleness}
+            disabled={!isOwner}
+            min="1"
+          />
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={!isOwner || isPending || isConfirming}
+          >
+            {isPending
+              ? "Confirm in wallet..."
+              : isConfirming
+              ? "Waiting for TX..."
+              : "Commit Policy → Chain"}
+          </Button>
+          <p className="font-mono text-[10px] text-ink-faint leading-relaxed border-t border-hairline pt-3">
+            ∎ Changes take effect immediately on confirmation. The agent reads policy
+            on every execution — there is no cache to invalidate.
+          </p>
+        </form>
+      </section>
+    </div>
+  );
+}
 
-          <div className="mt-4 flex items-start gap-2 text-xs text-white/40">
-            <Info className="h-4 w-4 shrink-0 mt-0.5" />
-            <p>
-              These parameters are enforced on-chain. The agent cannot execute
-              any strategy that violates the policy. Changes take effect immediately.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+function PageHeader({
+  num,
+  section,
+  title,
+  subtitle,
+}: {
+  num: string;
+  section: string;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <header className="border-b border-hairline pb-6">
+      <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
+        § {num} · {section}
+      </div>
+      <h1 className="font-serif text-5xl sm:text-6xl text-ink tracking-tightest leading-none">
+        {title}
+      </h1>
+      <p className="font-serif italic text-lg text-ink-dim mt-3">{subtitle}</p>
+    </header>
+  );
+}
+
+function PolicyRow({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <li className="grid grid-cols-[1.6fr_auto_1fr] items-center px-5 h-12 gap-4 hover:bg-bg-elev/40 transition-colors">
+      <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">{label}</span>
+      <span className="font-mono text-[14px] text-amber tabular tracking-tight">{value}</span>
+      <span className="font-mono text-[10px] text-ink-faint hidden sm:inline text-right">{hint}</span>
+    </li>
+  );
+}
+
+function FormField({
+  label,
+  unit,
+  value,
+  onChange,
+  disabled,
+  step,
+  min,
+  max,
+}: {
+  label: string;
+  unit: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+  step?: string;
+  min?: string;
+  max?: string;
+}) {
+  return (
+    <div>
+      <label className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint block mb-2">
+        {label} <span className="text-ink-mute">[{unit}]</span>
+      </label>
+      <Input
+        type="number"
+        step={step}
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      />
     </div>
   );
 }

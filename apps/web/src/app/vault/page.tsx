@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +17,6 @@ import {
   useWithdraw,
   useMintUsdc,
 } from "@/hooks/use-vault";
-import { Wallet, ArrowUpRight, ArrowDownRight, TrendingUp, Shield, Activity, Bot } from "lucide-react";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 
 export default function VaultPage() {
@@ -40,7 +38,6 @@ export default function VaultPage() {
   const withdrawAmountRef = useRef(withdrawAmount);
   withdrawAmountRef.current = withdrawAmount;
 
-  // Toast feedback
   useEffect(() => { if (mintSuccess) toast.success("10,000 USDC minted to your wallet"); }, [mintSuccess]);
   useEffect(() => { if (mintError) toast.error(`Mint failed: ${mintError.message}`); }, [mintError]);
   useEffect(() => { if (approveSuccess) toast.success("USDC approved for deposit"); }, [approveSuccess]);
@@ -62,10 +59,16 @@ export default function VaultPage() {
 
   if (!address) {
     return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <Wallet className="h-12 w-12 text-white/20 mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Connect Your Wallet</h2>
-        <p className="text-white/50">Connect your wallet to view the vault dashboard.</p>
+      <div className="space-y-10">
+        <PageHeader num="01" section="Vault" title="Connect" subtitle="Plug a wallet to read the treasury state." />
+        <div className="border border-hairline bg-bg-elev/20 py-20 text-center">
+          <p className="font-serif italic text-xl text-ink-dim mb-2">
+            Wallet not connected.
+          </p>
+          <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+            Use the Connect button in the header.
+          </p>
+        </div>
       </div>
     );
   }
@@ -73,12 +76,13 @@ export default function VaultPage() {
   if (isLoading || !vault) {
     return (
       <div className="space-y-6">
-        <div><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64 mt-2" /></div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Skeleton className="h-12 w-64" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {[...Array(4)].map((_, i) => (
-            <Card key={i}><CardContent className="pt-6"><Skeleton className="h-4 w-24 mb-2" /><Skeleton className="h-8 w-32" /></CardContent></Card>
+            <Skeleton key={i} className="h-24 w-full" />
           ))}
         </div>
+        <Skeleton className="h-32 w-full" />
       </div>
     );
   }
@@ -97,179 +101,136 @@ export default function VaultPage() {
   const depositInsufficient = depositAmount.length > 0 && depositAmountWei > userUsdcBalance;
   const withdrawInsufficient = withdrawAmount.length > 0 && withdrawAmountWei > vault.balance;
   const isOwner = address?.toLowerCase() === vault.owner.toLowerCase();
+  const status = vault.isKilled ? "killed" : vault.isPaused ? "paused" : "active";
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-10">
+      <header className="border-b border-hairline pb-6 flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Vault Overview</h1>
-          <p className="text-white/50 text-sm">Treasury status and fund management</p>
+          <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
+            § 01 · Vault
+          </div>
+          <h1 className="font-serif text-5xl sm:text-6xl text-ink tracking-tightest leading-none">
+            Treasury
+          </h1>
+          <p className="font-serif italic text-lg text-ink-dim mt-3">
+            Live state of the autonomous allocator.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          {vault.isKilled && <Badge variant="destructive">KILLED</Badge>}
-          {vault.isPaused && <Badge variant="warning">PAUSED</Badge>}
-          {!vault.isKilled && !vault.isPaused && <Badge variant="success">ACTIVE</Badge>}
-        </div>
-      </div>
+        <StatusPill status={status} />
+      </header>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-white/50 text-sm mb-1">
-              <Wallet className="h-4 w-4" />
-              Total Value (TVL)
-            </div>
-            <p className="text-2xl font-bold">${formatUSDC(vault.totalValue)}</p>
-            <p className="text-xs text-white/40 mt-1">
-              ${formatUSDC(vault.balance)} USDC + {(Number(vault.riskBalance) / 1e18).toFixed(4)} WETH
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-white/50 text-sm mb-1">
-              <TrendingUp className="h-4 w-4" />
-              High Water Mark
-            </div>
-            <p className="text-2xl font-bold">${formatUSDC(vault.highWaterMark)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-white/50 text-sm mb-1">
-              <Activity className="h-4 w-4" />
-              P&L from HWM
-            </div>
-            <p className={`text-2xl font-bold ${pnl >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}%
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-white/50 text-sm mb-1">
-              <Shield className="h-4 w-4" />
-              Executions
-            </div>
-            <p className="text-2xl font-bold">{vault.logCount.toString()}</p>
-          </CardContent>
-        </Card>
-      </div>
+      <section className="grid grid-cols-2 lg:grid-cols-4 border border-hairline divide-x divide-hairline">
+        <Stat label="Total Value" value={`$${formatUSDC(vault.totalValue)}`} sub={`${formatUSDC(vault.balance)} USDC + ${(Number(vault.riskBalance) / 1e18).toFixed(4)} WETH`} />
+        <Stat label="High Water Mark" value={`$${formatUSDC(vault.highWaterMark)}`} sub="Peak TVL since inception" />
+        <Stat
+          label="P&L from HWM"
+          value={`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`}
+          sub={pnl >= 0 ? "Above peak" : "Drawdown"}
+          valueClass={pnl >= 0 ? "text-phosphor" : "text-alert"}
+        />
+        <Stat label="Executions" value={vault.logCount.toString()} sub="Logged on-chain" />
+      </section>
 
-      {/* Agent Status */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-emerald-400" />
-            Agent Status
-          </CardTitle>
-          <CardDescription>Autonomous treasury operator powered by 0G Sealed Inference</CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Agent status */}
+      <section className="border border-hairline">
+        <header className="flex items-center justify-between px-5 h-9 border-b border-hairline">
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+            Agent · runtime
+          </span>
+          <AgentLed status={agentStatus?.status} />
+        </header>
+        <div className="px-5 py-5">
           {!agentStatus || agentStatus.status === "unavailable" ? (
-            <div className="flex items-center gap-3 text-sm text-white/50">
-              <div className="w-2 h-2 rounded-full bg-white/20" />
-              <span>Agent status unavailable — 0G Storage not reachable</span>
-            </div>
+            <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
+              ∅ Agent runtime status unavailable. 0G Storage KV unreachable —
+              the agent may not be running, or the storage endpoint is down.
+            </p>
           ) : agentStatus.status === "idle" && !agentStatus.lastAction ? (
-            <div className="flex items-center gap-3 text-sm text-white/50">
-              <div className="w-2 h-2 rounded-full bg-white/20" />
-              <span>Agent has not executed yet. Start it with <code className="px-1 py-0.5 bg-white/10 rounded text-xs">pnpm agent</code></span>
-            </div>
+            <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
+              ∅ Agent has not executed yet. Start the runtime with{" "}
+              <code className="px-1.5 py-0.5 border border-hairline-strong text-ink">pnpm agent</code>.
+            </p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <p className="text-white/40 text-xs mb-1">Status</p>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${agentStatus.status === "running" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"}`} />
-                  <span className="font-medium capitalize">{agentStatus.status}</span>
-                </div>
-              </div>
-              <div>
-                <p className="text-white/40 text-xs mb-1">Last Action</p>
-                <p className="font-medium">{agentStatus.lastAction ?? "—"}</p>
-              </div>
-              <div>
-                <p className="text-white/40 text-xs mb-1">Last Execution</p>
-                <p className="font-medium">
-                  {agentStatus.lastActionTime
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              <Field label="Last action" value={agentStatus.lastAction ?? "—"} />
+              <Field
+                label="Last execution"
+                value={
+                  agentStatus.lastActionTime
                     ? new Date(agentStatus.lastActionTime).toLocaleTimeString()
-                    : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-white/40 text-xs mb-1">Total Executions</p>
-                <p className="font-medium">{agentStatus.totalExecutions ?? 0}</p>
-              </div>
+                    : "—"
+                }
+                tabular
+              />
+              <Field label="Total executions" value={String(agentStatus.totalExecutions ?? 0)} tabular />
+              <Field label="Status" value={agentStatus.status} valueClass="text-phosphor" />
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
-      {/* Info */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Vault Info</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <span className="text-white/50">Owner</span>
-              <span className="font-mono">{shortenAddress(vault.owner)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-white/50">Agent</span>
-              <span className="font-mono">{shortenAddress(vault.agent)}</span>
-            </div>
+      {/* Vault info + your USDC */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="border border-hairline">
+          <header className="px-5 h-9 border-b border-hairline flex items-center">
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+              Vault info
+            </span>
+          </header>
+          <ul>
+            <DataRow label="Owner" value={shortenAddress(vault.owner)} mono />
+            <DataRow label="Agent" value={shortenAddress(vault.agent)} mono />
             {vault.policy && (
               <>
-                <div className="flex justify-between">
-                  <span className="text-white/50">Max Allocation</span>
-                  <span>{bpsToPercent(vault.policy.maxAllocationBps)}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-white/50">Max Drawdown</span>
-                  <span>{bpsToPercent(vault.policy.maxDrawdownBps)}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-white/50">Cooldown</span>
-                  <span>{vault.policy.cooldownPeriod}s</span>
-                </div>
+                <DataRow label="Max allocation" value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} accent />
+                <DataRow label="Max drawdown" value={`${bpsToPercent(vault.policy.maxDrawdownBps)} %`} accent />
+                <DataRow label="Cooldown" value={`${vault.policy.cooldownPeriod} s`} accent />
               </>
             )}
-          </CardContent>
-        </Card>
+          </ul>
+        </div>
 
-        {/* Your USDC */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Your USDC</CardTitle>
-            <CardDescription>Balance: ${formatUSDC(userUsdcBalance)}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="border border-hairline">
+          <header className="px-5 h-9 border-b border-hairline flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+              Your USDC
+            </span>
+            <span className="font-mono text-[11px] text-ink tabular">
+              ${formatUSDC(userUsdcBalance)}
+            </span>
+          </header>
+          <div className="px-5 py-5 space-y-3">
+            <p className="text-[13px] text-ink-dim leading-relaxed">
+              Mint testnet USDC to interact with the vault. No real value — Galileo testnet only.
+            </p>
             <Button
               variant="outline"
               size="sm"
+              className="w-full"
               onClick={() => mint(address, "10000")}
               disabled={isMinting || isMintConfirming}
             >
-              {isMinting ? "Confirm in wallet..." : isMintConfirming ? "Minting..." : "Mint 10,000 USDC (testnet)"}
+              {isMinting ? "Confirm in wallet..." : isMintConfirming ? "Minting..." : "Mint 10,000 USDC"}
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </section>
 
       {/* Deposit / Withdraw */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowDownRight className="h-5 w-5 text-emerald-400" />
-              Deposit
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Deposit */}
+        <div className="border border-hairline">
+          <header className="px-5 h-9 border-b border-hairline flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-amber">
+              ↘ Deposit
+            </span>
+            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
+              Anyone
+            </span>
+          </header>
+          <div className="px-5 py-5 space-y-3">
             <div className="relative">
               <Input
                 type="number"
@@ -282,14 +243,14 @@ export default function VaultPage() {
               <button
                 type="button"
                 onClick={() => setDepositAmount(formatUSDC(userUsdcBalance))}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-emerald-400 hover:text-emerald-300 font-medium px-2 py-1 rounded hover:bg-white/5 transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors px-2 py-1"
               >
                 MAX
               </button>
             </div>
-            <div className="flex items-center justify-between text-xs text-white/40">
+            <div className="flex items-center justify-between font-mono text-[10px] text-ink-faint tabular">
               <span>Available: ${formatUSDC(userUsdcBalance)}</span>
-              {depositInsufficient && <span className="text-red-400">Insufficient balance</span>}
+              {depositInsufficient && <span className="text-alert">Insufficient balance</span>}
             </div>
             {needsApproval ? (
               <Button
@@ -297,7 +258,7 @@ export default function VaultPage() {
                 onClick={() => approve(depositAmount)}
                 disabled={isApproving || isApproveConfirming || !depositAmount || depositNum <= 0 || depositInsufficient}
               >
-                {isApproving ? "Confirm in wallet..." : isApproveConfirming ? "Approving..." : "Approve USDC"}
+                {isApproving ? "Confirm in wallet..." : isApproveConfirming ? "Approving..." : "Approve USDC →"}
               </Button>
             ) : (
               <Button
@@ -305,21 +266,23 @@ export default function VaultPage() {
                 onClick={() => deposit(depositAmount)}
                 disabled={isDepositing || isDepositConfirming || !depositAmount || depositNum <= 0 || depositInsufficient}
               >
-                {isDepositing ? "Confirm in wallet..." : isDepositConfirming ? "Depositing..." : "Deposit"}
+                {isDepositing ? "Confirm in wallet..." : isDepositConfirming ? "Depositing..." : "Deposit →"}
               </Button>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowUpRight className="h-5 w-5 text-amber-400" />
-              Withdraw
-            </CardTitle>
-            <CardDescription>Owner only</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        {/* Withdraw */}
+        <div className="border border-hairline">
+          <header className="px-5 h-9 border-b border-hairline flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+              ↗ Withdraw
+            </span>
+            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
+              Owner only
+            </span>
+          </header>
+          <div className="px-5 py-5 space-y-3">
             <div className="relative">
               <Input
                 type="number"
@@ -334,15 +297,15 @@ export default function VaultPage() {
                 type="button"
                 onClick={() => setWithdrawAmount(formatUSDC(vault.balance))}
                 disabled={!isOwner}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-emerald-400 hover:text-emerald-300 font-medium px-2 py-1 rounded hover:bg-white/5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors px-2 py-1 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 MAX
               </button>
             </div>
-            <div className="flex items-center justify-between text-xs text-white/40">
+            <div className="flex items-center justify-between font-mono text-[10px] text-ink-faint tabular">
               <span>Vault: ${formatUSDC(vault.balance)}</span>
-              {!isOwner && <span className="text-amber-400">Owner only</span>}
-              {isOwner && withdrawInsufficient && <span className="text-red-400">Exceeds vault balance</span>}
+              {!isOwner && <span className="text-amber">Owner only</span>}
+              {isOwner && withdrawInsufficient && <span className="text-alert">Exceeds balance</span>}
             </div>
             <Button
               className="w-full"
@@ -352,9 +315,142 @@ export default function VaultPage() {
             >
               {isWithdrawing ? "Confirm in wallet..." : isWithdrawConfirming ? "Withdrawing..." : "Withdraw"}
             </Button>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PageHeader({
+  num,
+  section,
+  title,
+  subtitle,
+}: {
+  num: string;
+  section: string;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <header className="border-b border-hairline pb-6">
+      <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
+        § {num} · {section}
+      </div>
+      <h1 className="font-serif text-5xl sm:text-6xl text-ink tracking-tightest leading-none">
+        {title}
+      </h1>
+      <p className="font-serif italic text-lg text-ink-dim mt-3">{subtitle}</p>
+    </header>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  sub,
+  valueClass = "text-ink",
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="px-5 py-5 bg-bg-elev/30 hover:bg-bg-elev/50 transition-colors">
+      <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-2">
+        {label}
+      </div>
+      <div className={`font-serif text-3xl tabular ${valueClass}`}>{value}</div>
+      {sub && (
+        <div className="font-mono text-[10px] text-ink-faint mt-1.5 truncate">{sub}</div>
+      )}
+    </div>
+  );
+}
+
+function DataRow({
+  label,
+  value,
+  mono = false,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  accent?: boolean;
+}) {
+  return (
+    <li className="flex items-center justify-between px-5 h-11 border-b border-hairline last:border-b-0">
+      <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+        {label}
+      </span>
+      <span
+        className={`tabular ${mono ? "font-mono text-[11px]" : "text-[13px]"} ${
+          accent ? "text-amber" : "text-ink"
+        }`}
+      >
+        {value}
+      </span>
+    </li>
+  );
+}
+
+function Field({
+  label,
+  value,
+  tabular = false,
+  valueClass = "text-ink",
+}: {
+  label: string;
+  value: string;
+  tabular?: boolean;
+  valueClass?: string;
+}) {
+  return (
+    <div>
+      <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">
+        {label}
+      </div>
+      <div className={`text-[14px] ${tabular ? "font-mono tabular" : ""} ${valueClass}`}>
+        {value}
       </div>
     </div>
+  );
+}
+
+function StatusPill({ status }: { status: "active" | "paused" | "killed" }) {
+  if (status === "killed") {
+    return <Badge variant="destructive"><span className="inline-block w-1.5 h-1.5 rounded-full bg-alert mr-1.5" />Killed</Badge>;
+  }
+  if (status === "paused") {
+    return <Badge variant="warning"><span className="inline-block w-1.5 h-1.5 rounded-full bg-amber mr-1.5" />Paused</Badge>;
+  }
+  return <Badge variant="success"><span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot mr-1.5" />Active</Badge>;
+}
+
+function AgentLed({ status }: { status?: string }) {
+  if (status === "running") {
+    return (
+      <span className="font-mono text-[9px] uppercase tracking-kicker text-phosphor flex items-center gap-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
+        Online
+      </span>
+    );
+  }
+  if (status === "idle") {
+    return (
+      <span className="font-mono text-[9px] uppercase tracking-kicker text-amber flex items-center gap-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />
+        Cooldown
+      </span>
+    );
+  }
+  return (
+    <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint flex items-center gap-1.5">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-ink-faint" />
+      Offline
+    </span>
   );
 }
