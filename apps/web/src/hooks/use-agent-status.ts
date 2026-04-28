@@ -30,6 +30,8 @@ export interface AuditDetail {
   reasoning: string;
   confidence: number;
   txHash?: string;
+  storageTxHash?: string;
+  storageRootHash?: string;
 }
 
 export function useAuditDetail(timestamp: number | null) {

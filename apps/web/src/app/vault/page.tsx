@@ -28,10 +28,10 @@ export default function VaultPage() {
   const { data: allowance } = useUsdcAllowance(address);
 
   const { data: agentStatus } = useAgentStatus();
-  const { approve, isPending: isApproving, isSuccess: approveSuccess, error: approveError } = useApproveUsdc();
-  const { deposit, isPending: isDepositing, isSuccess: depositSuccess, error: depositError } = useDeposit();
-  const { withdraw, isPending: isWithdrawing, isSuccess: withdrawSuccess, error: withdrawError } = useWithdraw();
-  const { mint, isPending: isMinting, isSuccess: mintSuccess, error: mintError } = useMintUsdc();
+  const { approve, isPending: isApproving, isConfirming: isApproveConfirming, isSuccess: approveSuccess, error: approveError } = useApproveUsdc();
+  const { deposit, isPending: isDepositing, isConfirming: isDepositConfirming, isSuccess: depositSuccess, error: depositError } = useDeposit();
+  const { withdraw, isPending: isWithdrawing, isConfirming: isWithdrawConfirming, isSuccess: withdrawSuccess, error: withdrawError } = useWithdraw();
+  const { mint, isPending: isMinting, isConfirming: isMintConfirming, isSuccess: mintSuccess, error: mintError } = useMintUsdc();
 
   const [depositAmount, setDepositAmount] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -84,14 +84,19 @@ export default function VaultPage() {
   }
 
   const pnl = vault.highWaterMark > 0n
-    ? Number(((vault.balance - vault.highWaterMark) * 10000n) / vault.highWaterMark) / 100
+    ? Number(((vault.totalValue - vault.highWaterMark) * 10000n) / vault.highWaterMark) / 100
     : 0;
   const userUsdcBalance = (usdcBalance as bigint) ?? 0n;
   const currentAllowance = (allowance as bigint) ?? 0n;
 
-  const needsApproval = depositAmount
-    ? currentAllowance < BigInt(Math.floor(Number(depositAmount) * 1e6))
-    : false;
+  const depositNum = Number(depositAmount) || 0;
+  const withdrawNum = Number(withdrawAmount) || 0;
+  const depositAmountWei = BigInt(Math.floor(depositNum * 1e6));
+  const withdrawAmountWei = BigInt(Math.floor(withdrawNum * 1e6));
+  const needsApproval = depositAmount ? currentAllowance < depositAmountWei : false;
+  const depositInsufficient = depositAmount.length > 0 && depositAmountWei > userUsdcBalance;
+  const withdrawInsufficient = withdrawAmount.length > 0 && withdrawAmountWei > vault.balance;
+  const isOwner = address?.toLowerCase() === vault.owner.toLowerCase();
 
   return (
     <div className="space-y-6">
@@ -113,9 +118,12 @@ export default function VaultPage() {
           <CardContent className="pt-6">
             <div className="flex items-center gap-2 text-white/50 text-sm mb-1">
               <Wallet className="h-4 w-4" />
-              Vault Balance
+              Total Value (TVL)
             </div>
-            <p className="text-2xl font-bold">${formatUSDC(vault.balance)}</p>
+            <p className="text-2xl font-bold">${formatUSDC(vault.totalValue)}</p>
+            <p className="text-xs text-white/40 mt-1">
+              ${formatUSDC(vault.balance)} USDC + {(Number(vault.riskBalance) / 1e18).toFixed(4)} WETH
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -244,9 +252,9 @@ export default function VaultPage() {
               variant="outline"
               size="sm"
               onClick={() => mint(address, "10000")}
-              disabled={isMinting}
+              disabled={isMinting || isMintConfirming}
             >
-              {isMinting ? "Minting..." : "Mint 10,000 USDC (testnet)"}
+              {isMinting ? "Confirm in wallet..." : isMintConfirming ? "Minting..." : "Mint 10,000 USDC (testnet)"}
             </Button>
           </CardContent>
         </Card>
@@ -262,28 +270,42 @@ export default function VaultPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Input
-              type="number"
-              placeholder="Amount (USDC)"
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-              min="0"
-            />
+            <div className="relative">
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                min="0"
+                className="pr-16"
+              />
+              <button
+                type="button"
+                onClick={() => setDepositAmount(formatUSDC(userUsdcBalance))}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-emerald-400 hover:text-emerald-300 font-medium px-2 py-1 rounded hover:bg-white/5 transition-colors"
+              >
+                MAX
+              </button>
+            </div>
+            <div className="flex items-center justify-between text-xs text-white/40">
+              <span>Available: ${formatUSDC(userUsdcBalance)}</span>
+              {depositInsufficient && <span className="text-red-400">Insufficient balance</span>}
+            </div>
             {needsApproval ? (
               <Button
                 className="w-full"
                 onClick={() => approve(depositAmount)}
-                disabled={isApproving || !depositAmount || Number(depositAmount) <= 0}
+                disabled={isApproving || isApproveConfirming || !depositAmount || depositNum <= 0 || depositInsufficient}
               >
-                {isApproving ? "Approving..." : "Approve USDC"}
+                {isApproving ? "Confirm in wallet..." : isApproveConfirming ? "Approving..." : "Approve USDC"}
               </Button>
             ) : (
               <Button
                 className="w-full"
                 onClick={() => deposit(depositAmount)}
-                disabled={isDepositing || !depositAmount || Number(depositAmount) <= 0}
+                disabled={isDepositing || isDepositConfirming || !depositAmount || depositNum <= 0 || depositInsufficient}
               >
-                {isDepositing ? "Depositing..." : "Deposit"}
+                {isDepositing ? "Confirm in wallet..." : isDepositConfirming ? "Depositing..." : "Deposit"}
               </Button>
             )}
           </CardContent>
@@ -298,20 +320,37 @@ export default function VaultPage() {
             <CardDescription>Owner only</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Input
-              type="number"
-              placeholder="Amount (USDC)"
-              value={withdrawAmount}
-              onChange={(e) => setWithdrawAmount(e.target.value)}
-              min="0"
-            />
+            <div className="relative">
+              <Input
+                type="number"
+                placeholder="0.00"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                min="0"
+                className="pr-16"
+                disabled={!isOwner}
+              />
+              <button
+                type="button"
+                onClick={() => setWithdrawAmount(formatUSDC(vault.balance))}
+                disabled={!isOwner}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-emerald-400 hover:text-emerald-300 font-medium px-2 py-1 rounded hover:bg-white/5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                MAX
+              </button>
+            </div>
+            <div className="flex items-center justify-between text-xs text-white/40">
+              <span>Vault: ${formatUSDC(vault.balance)}</span>
+              {!isOwner && <span className="text-amber-400">Owner only</span>}
+              {isOwner && withdrawInsufficient && <span className="text-red-400">Exceeds vault balance</span>}
+            </div>
             <Button
               className="w-full"
               variant="outline"
               onClick={() => withdraw(address, withdrawAmount)}
-              disabled={isWithdrawing || !withdrawAmount || Number(withdrawAmount) <= 0}
+              disabled={!isOwner || isWithdrawing || isWithdrawConfirming || !withdrawAmount || withdrawNum <= 0 || withdrawInsufficient}
             >
-              {isWithdrawing ? "Withdrawing..." : "Withdraw"}
+              {isWithdrawing ? "Confirm in wallet..." : isWithdrawConfirming ? "Withdrawing..." : "Withdraw"}
             </Button>
           </CardContent>
         </Card>

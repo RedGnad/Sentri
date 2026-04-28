@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ethers } from "ethers";
-import { KvClient } from "@0gfoundation/0g-ts-sdk";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-const AUDIT_STREAM_ID = ethers.keccak256(ethers.toUtf8Bytes("sentri:audit-log"));
-const KV_NODE_URL = process.env.OG_KV_NODE_URL || "https://indexer-storage-testnet-turbo.0g.ai";
-
-function encodeKey(key: string): Uint8Array {
-  return Uint8Array.from(Buffer.from(key, "utf-8"));
-}
+const CACHE_DIR = process.env.SENTRI_CACHE_DIR ?? "/tmp/sentri-cache";
 
 export async function GET(request: NextRequest) {
   const timestamp = request.nextUrl.searchParams.get("timestamp");
@@ -15,21 +10,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing timestamp parameter" }, { status: 400 });
   }
 
+  const file = path.join(CACHE_DIR, "audit", `${timestamp}.json`);
+  if (!fs.existsSync(file)) {
+    return NextResponse.json(
+      { error: "No enriched audit entry found for this timestamp" },
+      { status: 404 },
+    );
+  }
+
   try {
-    const kvClient = new KvClient(KV_NODE_URL);
-    const logKey = `audit:${timestamp}`;
-    const keyBytes = encodeKey(logKey);
-
-    const val = await kvClient.getValue(AUDIT_STREAM_ID, keyBytes);
-    if (!val) {
-      return NextResponse.json({ error: "Audit entry not found in 0G Storage" }, { status: 404 });
-    }
-
-    const entry = JSON.parse(val.toString());
+    const entry = JSON.parse(fs.readFileSync(file, "utf-8"));
     return NextResponse.json(entry);
-  } catch {
-    return NextResponse.json({
-      error: "Could not reach 0G Storage",
-    }, { status: 503 });
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Failed to read audit entry: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 },
+    );
   }
 }

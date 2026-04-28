@@ -19,7 +19,9 @@ export default function PolicyPage() {
   const [maxAllocation, setMaxAllocation] = useState("");
   const [maxDrawdown, setMaxDrawdown] = useState("");
   const [rebalanceThreshold, setRebalanceThreshold] = useState("");
+  const [maxSlippage, setMaxSlippage] = useState("");
   const [cooldownPeriod, setCooldownPeriod] = useState("");
+  const [maxPriceStaleness, setMaxPriceStaleness] = useState("");
 
   const isOwner = address?.toLowerCase() === (vault?.owner ?? "").toLowerCase();
 
@@ -28,7 +30,9 @@ export default function PolicyPage() {
       setMaxAllocation(bpsToPercent(vault.policy.maxAllocationBps));
       setMaxDrawdown(bpsToPercent(vault.policy.maxDrawdownBps));
       setRebalanceThreshold(bpsToPercent(vault.policy.rebalanceThresholdBps));
+      setMaxSlippage(bpsToPercent(vault.policy.maxSlippageBps));
       setCooldownPeriod(vault.policy.cooldownPeriod.toString());
+      setMaxPriceStaleness(vault.policy.maxPriceStaleness.toString());
     }
   }, [vault?.policy]);
 
@@ -51,7 +55,9 @@ export default function PolicyPage() {
       maxAllocationBps: Math.round(Number(maxAllocation) * 100),
       maxDrawdownBps: Math.round(Number(maxDrawdown) * 100),
       rebalanceThresholdBps: Math.round(Number(rebalanceThreshold) * 100),
+      maxSlippageBps: Math.round(Number(maxSlippage) * 100),
       cooldownPeriod: Number(cooldownPeriod),
+      maxPriceStaleness: Number(maxPriceStaleness),
     });
   }
 
@@ -88,8 +94,16 @@ export default function PolicyPage() {
                 <p className="text-lg font-semibold">{bpsToPercent(vault.policy.rebalanceThresholdBps)}%</p>
               </div>
               <div>
+                <p className="text-white/50">Max Slippage</p>
+                <p className="text-lg font-semibold">{bpsToPercent(vault.policy.maxSlippageBps)}%</p>
+              </div>
+              <div>
                 <p className="text-white/50">Cooldown Period</p>
                 <p className="text-lg font-semibold">{vault.policy.cooldownPeriod}s</p>
+              </div>
+              <div>
+                <p className="text-white/50">Max Price Staleness</p>
+                <p className="text-lg font-semibold">{vault.policy.maxPriceStaleness}s</p>
               </div>
             </div>
           </CardContent>
@@ -152,6 +166,20 @@ export default function PolicyPage() {
             </div>
             <div>
               <label className="text-sm text-white/50 block mb-1">
+                Max Slippage (%)
+              </label>
+              <Input
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                value={maxSlippage}
+                onChange={(e) => setMaxSlippage(e.target.value)}
+                disabled={!isOwner}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-white/50 block mb-1">
                 Cooldown Period (seconds)
               </label>
               <Input
@@ -159,6 +187,18 @@ export default function PolicyPage() {
                 min="0"
                 value={cooldownPeriod}
                 onChange={(e) => setCooldownPeriod(e.target.value)}
+                disabled={!isOwner}
+              />
+            </div>
+            <div>
+              <label className="text-sm text-white/50 block mb-1">
+                Max Price Staleness (seconds)
+              </label>
+              <Input
+                type="number"
+                min="1"
+                value={maxPriceStaleness}
+                onChange={(e) => setMaxPriceStaleness(e.target.value)}
                 disabled={!isOwner}
               />
             </div>

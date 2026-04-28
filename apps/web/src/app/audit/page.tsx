@@ -19,7 +19,9 @@ function AuditEntry({
   logCount,
   timestamp,
   action,
-  amount,
+  amountIn,
+  amountOut,
+  tvlAfter,
   proofHash,
   teeAttestation,
 }: {
@@ -27,7 +29,9 @@ function AuditEntry({
   logCount: number;
   timestamp: bigint;
   action: number;
-  amount: bigint;
+  amountIn: bigint;
+  amountOut: bigint;
+  tvlAfter: bigint;
   proofHash: string;
   teeAttestation: string;
 }) {
@@ -47,10 +51,18 @@ function AuditEntry({
             <Badge variant={variant as "default" | "success" | "destructive"}>
               {actionLabel}
             </Badge>
-            <span className="text-lg font-semibold">${formatUSDC(amount)}</span>
+            <span className="text-lg font-semibold">
+              {action === 2
+                ? `${(Number(amountIn) / 1e18).toFixed(4)} WETH`
+                : `$${formatUSDC(amountIn)}`}
+            </span>
+            <span className="text-xs text-white/40">
+              → {action === 2 ? `$${formatUSDC(amountOut)}` : `${(Number(amountOut) / 1e18).toFixed(4)} WETH`}
+            </span>
           </div>
           <span className="text-sm text-white/40">{date.toLocaleString()}</span>
         </div>
+        <div className="text-xs text-white/40 mb-3">TVL after: ${formatUSDC(tvlAfter)}</div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
           <div>
@@ -94,7 +106,7 @@ function AuditEntry({
                   </div>
                   {detail.txHash && (
                     <div>
-                      <p className="text-white/40 text-xs mb-1">TX Hash</p>
+                      <p className="text-white/40 text-xs mb-1">Vault TX</p>
                       <a
                         href={`https://chainscan-galileo.0g.ai/tx/${detail.txHash}`}
                         target="_blank"
@@ -102,6 +114,19 @@ function AuditEntry({
                         className="text-sm text-emerald-400 hover:underline font-mono"
                       >
                         {detail.txHash.slice(0, 10)}...
+                      </a>
+                    </div>
+                  )}
+                  {detail.storageTxHash && (
+                    <div>
+                      <p className="text-white/40 text-xs mb-1">0G Storage TX</p>
+                      <a
+                        href={`https://chainscan-galileo.0g.ai/tx/${detail.storageTxHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-emerald-400 hover:underline font-mono"
+                      >
+                        {detail.storageTxHash.slice(0, 10)}...
                       </a>
                     </div>
                   )}
@@ -179,9 +204,8 @@ export default function AuditPage() {
         <div className="space-y-3">
           {logs?.map((log, i) => {
             if (!log.result) return null;
-            const [timestamp, action, amount, proofHash, teeAttestation] = log.result as [
-              bigint, number, bigint, string, string,
-            ];
+            const [timestamp, action, amountIn, amountOut, tvlAfter, proofHash, teeAttestation] =
+              log.result as [bigint, number, bigint, bigint, bigint, string, string];
             return (
               <AuditEntry
                 key={i}
@@ -189,7 +213,9 @@ export default function AuditPage() {
                 logCount={logCount}
                 timestamp={timestamp}
                 action={action}
-                amount={amount}
+                amountIn={amountIn}
+                amountOut={amountOut}
+                tvlAfter={tvlAfter}
                 proofHash={proofHash}
                 teeAttestation={teeAttestation}
               />

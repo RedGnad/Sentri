@@ -6,6 +6,12 @@ export const TREASURY_VAULT_ADDRESS =
 export const MOCK_USDC_ADDRESS =
   (process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as `0x${string}`) ?? "0x";
 
+export const MOCK_WETH_ADDRESS =
+  (process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS as `0x${string}`) ?? "0x";
+
+export const PRICE_FEED_ADDRESS =
+  (process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS as `0x${string}`) ?? "0x";
+
 export const TREASURY_VAULT_ABI = [
   {
     type: "function",
@@ -29,7 +35,7 @@ export const TREASURY_VAULT_ABI = [
     name: "executeStrategy",
     inputs: [
       { name: "action", type: "uint8" },
-      { name: "amount", type: "uint256" },
+      { name: "amountIn", type: "uint256" },
       { name: "proofHash", type: "bytes32" },
       { name: "teeAttestation", type: "bytes32" },
     ],
@@ -43,20 +49,8 @@ export const TREASURY_VAULT_ABI = [
     outputs: [],
     stateMutability: "nonpayable",
   },
-  {
-    type: "function",
-    name: "pause",
-    inputs: [],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "unpause",
-    inputs: [],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
+  { type: "function", name: "pause", inputs: [], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "unpause", inputs: [], outputs: [], stateMutability: "nonpayable" },
   {
     type: "function",
     name: "setPolicy",
@@ -68,7 +62,9 @@ export const TREASURY_VAULT_ABI = [
           { name: "maxAllocationBps", type: "uint16" },
           { name: "maxDrawdownBps", type: "uint16" },
           { name: "rebalanceThresholdBps", type: "uint16" },
+          { name: "maxSlippageBps", type: "uint16" },
           { name: "cooldownPeriod", type: "uint32" },
+          { name: "maxPriceStaleness", type: "uint32" },
         ],
       },
     ],
@@ -85,6 +81,20 @@ export const TREASURY_VAULT_ABI = [
   {
     type: "function",
     name: "vaultBalance",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "riskBalance",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "totalValue",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
@@ -110,7 +120,9 @@ export const TREASURY_VAULT_ABI = [
     outputs: [
       { name: "timestamp", type: "uint256" },
       { name: "action", type: "uint8" },
-      { name: "amount", type: "uint256" },
+      { name: "amountIn", type: "uint256" },
+      { name: "amountOut", type: "uint256" },
+      { name: "tvlAfter", type: "uint256" },
       { name: "proofHash", type: "bytes32" },
       { name: "teeAttestation", type: "bytes32" },
     ],
@@ -124,50 +136,46 @@ export const TREASURY_VAULT_ABI = [
       { name: "maxAllocationBps", type: "uint16" },
       { name: "maxDrawdownBps", type: "uint16" },
       { name: "rebalanceThresholdBps", type: "uint16" },
+      { name: "maxSlippageBps", type: "uint16" },
       { name: "cooldownPeriod", type: "uint32" },
+      { name: "maxPriceStaleness", type: "uint32" },
     ],
     stateMutability: "view",
   },
-  {
-    type: "function",
-    name: "agent",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "killed",
-    inputs: [],
-    outputs: [{ name: "", type: "bool" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "paused",
-    inputs: [],
-    outputs: [{ name: "", type: "bool" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "owner",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "asset",
-    inputs: [],
-    outputs: [{ name: "", type: "address" }],
-    stateMutability: "view",
-  },
+  { type: "function", name: "agent", inputs: [], outputs: [{ name: "", type: "address" }], stateMutability: "view" },
+  { type: "function", name: "killed", inputs: [], outputs: [{ name: "", type: "bool" }], stateMutability: "view" },
+  { type: "function", name: "paused", inputs: [], outputs: [{ name: "", type: "bool" }], stateMutability: "view" },
+  { type: "function", name: "owner", inputs: [], outputs: [{ name: "", type: "address" }], stateMutability: "view" },
+  { type: "function", name: "base", inputs: [], outputs: [{ name: "", type: "address" }], stateMutability: "view" },
+  { type: "function", name: "risk", inputs: [], outputs: [{ name: "", type: "address" }], stateMutability: "view" },
   {
     type: "function",
     name: "lastExecutionTime",
     inputs: [],
     outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+] as const satisfies Abi;
+
+export const PRICE_FEED_ABI = [
+  {
+    type: "function",
+    name: "latestRoundData",
+    inputs: [],
+    outputs: [
+      { name: "roundId", type: "uint80" },
+      { name: "answer", type: "int256" },
+      { name: "startedAt", type: "uint256" },
+      { name: "updatedAt", type: "uint256" },
+      { name: "answeredInRound", type: "uint80" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "decimals",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
     stateMutability: "view",
   },
 ] as const satisfies Abi;

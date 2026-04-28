@@ -1,39 +1,33 @@
 import { NextResponse } from "next/server";
-import { ethers } from "ethers";
-import { KvClient } from "@0gfoundation/0g-ts-sdk";
+import * as fs from "node:fs";
+import * as path from "node:path";
 
-const STATE_STREAM_ID = ethers.keccak256(ethers.toUtf8Bytes("sentri:portfolio-state"));
-const KV_NODE_URL = process.env.OG_KV_NODE_URL || "https://indexer-storage-testnet-turbo.0g.ai";
-
-function encodeKey(key: string): Uint8Array {
-  return Uint8Array.from(Buffer.from(key, "utf-8"));
-}
+const CACHE_DIR = process.env.SENTRI_CACHE_DIR ?? "/tmp/sentri-cache";
 
 export async function GET() {
+  const stateFile = path.join(CACHE_DIR, "state.json");
+
+  if (!fs.existsSync(stateFile)) {
+    return NextResponse.json({
+      status: "idle",
+      message: "Agent has not run yet. Start it with `pnpm --filter @steward/sdk agent`.",
+    });
+  }
+
   try {
-    const kvClient = new KvClient(KV_NODE_URL);
-    const keyBytes = encodeKey("portfolio:current");
-
-    const val = await kvClient.getValue(STATE_STREAM_ID, keyBytes);
-    if (!val) {
-      return NextResponse.json({
-        status: "idle",
-        message: "No portfolio state found. Agent may not have run yet.",
-      });
-    }
-
-    const state = JSON.parse(val.toString());
-    const isRecent = Date.now() - state.lastActionTime < 120_000; // < 2 min
+    const raw = fs.readFileSync(stateFile, "utf-8");
+    const state = JSON.parse(raw);
+    const lastTime = Number(state.updatedAt ?? state.lastActionTime ?? 0);
+    const isRecent = Date.now() - lastTime < 120_000;
 
     return NextResponse.json({
       status: isRecent ? "running" : "idle",
       ...state,
     });
-  } catch {
-    // If KV is not available, return a graceful fallback
+  } catch (err) {
     return NextResponse.json({
       status: "unavailable",
-      message: "Could not reach 0G Storage. Agent status unknown.",
+      message: `Failed to read agent state: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 }
