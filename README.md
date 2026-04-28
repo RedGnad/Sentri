@@ -1,11 +1,13 @@
 # Sentri
 
-**Autonomous treasury execution on 0G.**
+**Verifiable financial logic for autonomous treasury management.**
 Private strategy, verifiable results.
 
-Sentri is an autonomous stablecoin treasury agent. It plans privately inside a TEE via **0G Sealed Inference**, executes through an on-chain policy engine that it cannot override, and publishes cryptographic proofs of every decision to **0G Storage** — without revealing the strategy itself.
+Sentri is an autonomous, risk-managed stablecoin treasury agent. It plans privately inside a TEE via **0G Sealed Inference**, executes through an on-chain policy engine that it cannot override, and publishes cryptographic proofs of every decision to **0G Storage** — without revealing the strategy itself.
 
-Built for the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*.
+Built for the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*. Sentri implements the track's core thesis — *fully autonomous, verifiable financial logic* — applied to the treasury / risk-management end of the spectrum, with **Sealed Inference and TEE-based execution** as the privacy primitive that makes proprietary strategies safe to run on-chain.
+
+> Sentri is **not** an active trading bot. It is a *verifiable risk-managed allocator* — closer in spirit to a treasury fund than to a perp strategy. The agent's job is to keep the treasury within a declared risk envelope while remaining transparently provable, not to chase alpha.
 
 ---
 
@@ -189,6 +191,7 @@ The demo covers one full closed loop:
 
 ## What is intentionally out of scope
 
+- **Active trading / perp strategies.** Sentri rebalances and risk-manages — it does not chase short-term alpha. The interesting privacy story is *which constraints the agent enforces in private*, not *which trades it places*.
 - **Multiple strategies.** One closed loop, done well, beats a marketplace of half-finished bots.
 - **Persistent memory.** Every iteration is stateless by design — auditability first.
 - **Mainnet liquidity.** The mini-DEX (`SentriPair` / `SentriSwapRouter`) exists to make execution *real*, not to compete with Uniswap. It lets the vault actually move value so slippage, TVL impact, and drawdown are measurable on-chain.
