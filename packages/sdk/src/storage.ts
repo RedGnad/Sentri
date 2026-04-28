@@ -1,7 +1,27 @@
 import { ethers } from "ethers";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { Indexer, Batcher, KvClient, FixedPriceFlow__factory } from "@0gfoundation/0g-ts-sdk";
 import type { FixedPriceFlow } from "@0gfoundation/0g-ts-sdk";
 import { CHAIN, STORAGE } from "./constants.js";
+
+// Shared cache dir for fast dashboard reads. The 0G Storage write remains the
+// verifiable source of truth (proof tx is included in cached entries).
+const CACHE_DIR = process.env.SENTRI_CACHE_DIR ?? "/tmp/sentri-cache";
+
+function ensureDir(dir: string): void {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function writeCacheFile(relPath: string, data: unknown): void {
+  try {
+    const full = path.join(CACHE_DIR, relPath);
+    ensureDir(path.dirname(full));
+    fs.writeFileSync(full, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.warn(`[storage] cache write failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
 
 // Stream IDs for our KV namespaces (derived deterministically)
 const STATE_STREAM_ID = ethers.keccak256(ethers.toUtf8Bytes("sentri:portfolio-state"));
@@ -89,6 +109,8 @@ export interface AuditEntry {
   reasoning: string;
   confidence: number;
   txHash?: string;
+  marketPrice?: number;
+  marketSource?: string;
 }
 
 /**
@@ -111,6 +133,13 @@ export async function appendAuditLog(entry: AuditEntry): Promise<{ txHash: strin
     throw new Error(`Failed to append audit log: ${execErr}`);
   }
 
+  // Mirror to local cache so the dashboard can read it without a KV node.
+  writeCacheFile(`audit/${entry.timestamp}.json`, {
+    ...entry,
+    storageTxHash: result?.txHash,
+    storageRootHash: result?.rootHash,
+  });
+
   return result;
 }
 
@@ -125,18 +154,28 @@ export async function readAuditEntry(timestamp: number, kvNodeUrl: string): Prom
 
 export interface PortfolioState {
   vaultBalance: string;
+  riskBalance?: string;
+  totalValue?: string;
   highWaterMark: string;
   lastAction: string;
   lastActionTime: number;
   totalExecutions: number;
   pnlBps: number;
+  marketPrice?: number;
 }
 
 /**
  * Save full portfolio snapshot to 0G Storage KV.
  */
 export async function savePortfolioState(state: PortfolioState): Promise<{ txHash: string; rootHash: string } | null> {
-  return writeState("portfolio:current", state);
+  const result = await writeState("portfolio:current", state);
+  writeCacheFile("state.json", {
+    ...state,
+    updatedAt: Date.now(),
+    storageTxHash: result?.txHash,
+    storageRootHash: result?.rootHash,
+  });
+  return result;
 }
 
 /**

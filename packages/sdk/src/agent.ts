@@ -1,6 +1,13 @@
 import { ethers } from "ethers";
 import "dotenv/config";
-import { CHAIN, CONTRACTS, TREASURY_VAULT_ABI, ERC20_ABI, AGENT } from "./constants.js";
+import {
+  CHAIN,
+  CONTRACTS,
+  TREASURY_VAULT_ABI,
+  PRICE_FEED_ABI,
+  ERC20_ABI,
+  AGENT,
+} from "./constants.js";
 import {
   initInference,
   selectProvider,
@@ -9,6 +16,7 @@ import {
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
 import { initStorage, appendAuditLog, savePortfolioState } from "./storage.js";
+import { getMarketSnapshot } from "./market.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -43,14 +51,14 @@ async function runAgentLoop(): Promise<void> {
   const privateKey = getEnvOrThrow("PRIVATE_KEY");
   const vaultAddress = CONTRACTS.treasuryVault || getEnvOrThrow("NEXT_PUBLIC_TREASURY_VAULT_ADDRESS");
   const usdcAddress = CONTRACTS.mockUSDC || getEnvOrThrow("NEXT_PUBLIC_MOCK_USDC_ADDRESS");
+  const priceFeedAddress = CONTRACTS.priceFeed || getEnvOrThrow("NEXT_PUBLIC_PRICE_FEED_ADDRESS");
 
-  // Initialize provider + contracts
   const provider = new ethers.JsonRpcProvider(CHAIN.rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
   const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, wallet);
   const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, wallet);
+  const priceFeed = new ethers.Contract(priceFeedAddress, PRICE_FEED_ABI, wallet);
 
-  // Initialize 0G services
   log("Initializing 0G Sealed Inference broker...");
   await initInference(privateKey);
 
@@ -66,10 +74,9 @@ async function runAgentLoop(): Promise<void> {
 
   log("Agent initialized. Starting loop.\n");
 
-  // Main loop
   while (true) {
     try {
-      await executeOneIteration(vault, usdc, wallet);
+      await executeOneIteration(vault, usdc, priceFeed);
     } catch (err) {
       log(`ERROR in agent iteration: ${err instanceof Error ? err.message : err}`);
     }
@@ -81,10 +88,9 @@ async function runAgentLoop(): Promise<void> {
 
 async function executeOneIteration(
   vault: ethers.Contract,
-  usdc: ethers.Contract,
-  wallet: ethers.Wallet,
+  _usdc: ethers.Contract,
+  priceFeed: ethers.Contract,
 ): Promise<void> {
-  // 1. Check if vault is killed or paused
   const isKilled = await vault.killed();
   if (isKilled) {
     log("Vault is KILLED. Agent shutting down.");
@@ -97,38 +103,74 @@ async function executeOneIteration(
     return;
   }
 
-  // 2. Fetch current vault state
-  const [balance, hwm, policy, logCount] = await Promise.all([
+  // 1. Fetch real market price
+  const market = await getMarketSnapshot();
+  log(`Market: ETH=$${market.ethUsd.toFixed(2)} (${market.change24h.toFixed(2)}% 24h, ${market.source})`);
+
+  // 2. Push price on-chain so the vault's slippage check uses fresh data.
+  //    Feed decimals = 8 by deployment convention.
+  const feedDecimals: bigint = await priceFeed.decimals();
+  const answer = BigInt(Math.floor(market.ethUsd * 10 ** Number(feedDecimals)));
+  const priceAttestation = ethers.keccak256(
+    ethers.toUtf8Bytes(JSON.stringify({ source: market.source, price: market.ethUsd, ts: market.timestamp })),
+  );
+
+  try {
+    const pushTx = await priceFeed.pushAnswer(answer, priceAttestation);
+    await pushTx.wait();
+    log(`Price pushed on-chain: answer=${answer} (attestation=${priceAttestation.slice(0, 10)}...)`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("NotKeeper") || msg.includes("0xf7f0e693")) {
+      log("Agent is not a registered keeper on SentriPriceFeed. Skipping iteration.");
+      return;
+    }
+    throw err;
+  }
+
+  // 3. Fetch full vault state
+  const [baseBalance, riskBalance, tvl, hwm, policy, logCount] = await Promise.all([
     vault.vaultBalance(),
+    vault.riskBalance(),
+    vault.totalValue(),
     vault.highWaterMark(),
     vault.policy(),
     vault.executionLogCount(),
   ]);
 
-  const balanceStr = ethers.formatUnits(balance, 6);
+  const baseStr = ethers.formatUnits(baseBalance, 6);
+  const riskStr = ethers.formatUnits(riskBalance, 18);
+  const tvlStr = ethers.formatUnits(tvl, 6);
   const hwmStr = ethers.formatUnits(hwm, 6);
 
-  log(`Vault balance: ${balanceStr} USDC | HWM: ${hwmStr} USDC | Executions: ${logCount}`);
+  log(`Vault: ${baseStr} USDC + ${riskStr} WETH | TVL: ${tvlStr} | HWM: ${hwmStr} | Executions: ${logCount}`);
 
-  if (balance === 0n) {
+  if (tvl === 0n) {
     log("Vault is empty. Skipping iteration.");
     return;
   }
 
-  // 3. Build market data prompt (simulate market snapshot)
-  const prompt = buildMarketPrompt(balanceStr, hwmStr, {
-    maxAllocationBps: Number(policy[0]),
-    maxDrawdownBps: Number(policy[1]),
-    rebalanceThresholdBps: Number(policy[2]),
-    cooldownPeriod: Number(policy[3]),
+  // 4. Build prompt with real market data
+  const prompt = buildMarketPrompt({
+    baseBalance: baseStr,
+    riskBalance: riskStr,
+    tvl: tvlStr,
+    hwm: hwmStr,
+    market,
+    policy: {
+      maxAllocationBps: Number(policy[0]),
+      maxDrawdownBps: Number(policy[1]),
+      rebalanceThresholdBps: Number(policy[2]),
+      maxSlippageBps: Number(policy[3]),
+      cooldownPeriod: Number(policy[4]),
+    },
   });
 
-  // 4. Request private analysis via Sealed Inference (TEE)
+  // 5. Sealed Inference (TEE)
   log("Requesting Sealed Inference analysis (TEE)...");
   const inference = await requestInference(prompt, TREASURY_SYSTEM_PROMPT);
   log(`TEE verified: ${inference.verified} | ChatID: ${inference.chatID}`);
 
-  // 5. Parse the LLM decision
   let decision: AgentDecision;
   try {
     decision = JSON.parse(inference.content) as AgentDecision;
@@ -140,105 +182,147 @@ async function executeOneIteration(
   log(`Decision: ${decision.action} | Amount: ${decision.amount_bps} bps | Confidence: ${decision.confidence}%`);
   log(`Reasoning: ${decision.reasoning}`);
 
-  // 6. Skip if no action needed
   if (decision.amount_bps === 0) {
     log("No action needed. Skipping execution.");
     return;
   }
 
-  // 7. Calculate amount and check policy compliance locally
-  const amount = (balance * BigInt(decision.amount_bps)) / 10000n;
-  const maxAllocation = (balance * BigInt(policy[0])) / 10000n;
-
-  if (amount > maxAllocation) {
-    log(`Amount ${ethers.formatUnits(amount, 6)} exceeds max allocation ${ethers.formatUnits(maxAllocation, 6)}. Capping.`);
-    // Cap at max allocation
-    decision.amount_bps = Number(policy[0]);
+  // 6. Size the order
+  // - Rebalance/YieldFarm: amount_bps of BASE balance (USDC in)
+  // - EmergencyDeleverage: amount_bps of RISK balance (WETH in)
+  let amountIn: bigint;
+  if (decision.action === "EmergencyDeleverage") {
+    amountIn = (BigInt(riskBalance) * BigInt(decision.amount_bps)) / 10000n;
+    if (amountIn === 0n) {
+      log("No risk position to deleverage. Skipping.");
+      return;
+    }
+    log(`Deleveraging ${ethers.formatUnits(amountIn, 18)} WETH`);
+  } else {
+    amountIn = (BigInt(baseBalance) * BigInt(decision.amount_bps)) / 10000n;
+    if (amountIn === 0n) {
+      log("No base balance to allocate. Skipping.");
+      return;
+    }
+    // Cap locally to maxAllocationBps of TVL, respecting contract check
+    const maxAlloc = (BigInt(tvl) * BigInt(policy[0])) / 10000n;
+    if (amountIn > maxAlloc) {
+      log(`Capping amount from ${ethers.formatUnits(amountIn, 6)} to ${ethers.formatUnits(maxAlloc, 6)} USDC (max allocation)`);
+      amountIn = maxAlloc;
+    }
+    log(`Allocating ${ethers.formatUnits(amountIn, 6)} USDC to risk asset`);
   }
 
-  const execAmount = (balance * BigInt(decision.amount_bps)) / 10000n;
-
-  // 8. Execute on-chain
-  log(`Executing on-chain: ${decision.action} for ${ethers.formatUnits(execAmount, 6)} USDC...`);
-
+  // 7. Execute on-chain
   try {
     const tx = await vault.executeStrategy(
       ACTION_MAP[decision.action],
-      execAmount,
+      amountIn,
       inference.proofHash,
       inference.teeAttestation,
     );
     const receipt = await tx.wait();
     log(`TX confirmed: ${receipt.hash}`);
 
-    // 9. Log to 0G Storage (immutable audit trail)
+    // 8. Audit log to 0G Storage
     log("Saving audit entry to 0G Storage...");
     await appendAuditLog({
       timestamp: Date.now(),
       action: decision.action,
-      amount: ethers.formatUnits(execAmount, 6),
+      amount:
+        decision.action === "EmergencyDeleverage"
+          ? ethers.formatUnits(amountIn, 18)
+          : ethers.formatUnits(amountIn, 6),
       proofHash: inference.proofHash,
       teeAttestation: inference.teeAttestation,
       reasoning: decision.reasoning,
       confidence: decision.confidence,
       txHash: receipt.hash,
+      marketPrice: market.ethUsd,
+      marketSource: market.source,
     });
 
-    // 10. Update portfolio state in 0G KV
-    const newBalance = BigInt(await vault.vaultBalance());
-    const newHwm = BigInt(await vault.highWaterMark());
-    const newLogCount = Number(await vault.executionLogCount());
+    // 9. Persist portfolio state
+    const [newBase, newRisk, newTvl, newHwm, newLogCount] = await Promise.all([
+      vault.vaultBalance(),
+      vault.riskBalance(),
+      vault.totalValue(),
+      vault.highWaterMark(),
+      vault.executionLogCount(),
+    ]);
 
     await savePortfolioState({
-      vaultBalance: ethers.formatUnits(newBalance, 6),
+      vaultBalance: ethers.formatUnits(newBase, 6),
+      riskBalance: ethers.formatUnits(newRisk, 18),
+      totalValue: ethers.formatUnits(newTvl, 6),
       highWaterMark: ethers.formatUnits(newHwm, 6),
       lastAction: decision.action,
       lastActionTime: Date.now(),
-      totalExecutions: newLogCount,
-      pnlBps: newHwm > 0n ? Number(((newBalance - newHwm) * 10000n) / newHwm) : 0,
+      totalExecutions: Number(newLogCount),
+      pnlBps: newHwm > 0n ? Number(((BigInt(newTvl) - BigInt(newHwm)) * 10000n) / BigInt(newHwm)) : 0,
+      marketPrice: market.ethUsd,
     });
 
     log("Iteration complete.");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("CooldownNotElapsed")) {
+    const COOLDOWN = "0xa22b745e";
+    const ALLOCATION = "0xc630a00d";
+    const DRAWDOWN = "0x4f3a5fbf";
+    const STALE = "PriceStale";
+    if (msg.includes("CooldownNotElapsed") || msg.includes(COOLDOWN)) {
       log("Cooldown not elapsed. Skipping execution.");
-    } else if (msg.includes("AllocationExceeded")) {
+    } else if (msg.includes("AllocationExceeded") || msg.includes(ALLOCATION)) {
       log("Allocation exceeded policy. Skipping.");
-    } else if (msg.includes("DrawdownBreached")) {
+    } else if (msg.includes("DrawdownBreached") || msg.includes(DRAWDOWN)) {
       log("Drawdown breached policy. Skipping.");
+    } else if (msg.includes(STALE)) {
+      log("Oracle reported stale price. Skipping.");
+    } else if (msg.includes("InsufficientAmountOut")) {
+      log("Swap reverted on slippage guard. Skipping.");
     } else {
       throw err;
     }
   }
 }
 
-function buildMarketPrompt(
-  balance: string,
-  hwm: string,
-  policy: { maxAllocationBps: number; maxDrawdownBps: number; rebalanceThresholdBps: number; cooldownPeriod: number },
-): string {
+function buildMarketPrompt(input: {
+  baseBalance: string;
+  riskBalance: string;
+  tvl: string;
+  hwm: string;
+  market: { ethUsd: number; change24h: number; source: string };
+  policy: {
+    maxAllocationBps: number;
+    maxDrawdownBps: number;
+    rebalanceThresholdBps: number;
+    maxSlippageBps: number;
+    cooldownPeriod: number;
+  };
+}): string {
+  const pnl =
+    Number(input.hwm) > 0
+      ? (((Number(input.tvl) - Number(input.hwm)) / Number(input.hwm)) * 100).toFixed(2)
+      : "0";
   return `Current Treasury State:
-- Vault Balance: ${balance} USDC
-- High Water Mark: ${hwm} USDC
-- P&L from HWM: ${Number(hwm) > 0 ? (((Number(balance) - Number(hwm)) / Number(hwm)) * 100).toFixed(2) : "0"}%
+- Base (USDC) balance: ${input.baseBalance}
+- Risk (WETH) balance: ${input.riskBalance}
+- Total Value (base units): ${input.tvl}
+- High Water Mark: ${input.hwm}
+- P&L from HWM: ${pnl}%
 
 Risk Policy:
-- Max Allocation per Action: ${policy.maxAllocationBps / 100}%
-- Max Drawdown from HWM: ${policy.maxDrawdownBps / 100}%
-- Rebalance Threshold: ${policy.rebalanceThresholdBps / 100}%
-- Cooldown Period: ${policy.cooldownPeriod}s
+- Max Allocation per Action: ${input.policy.maxAllocationBps / 100}% of TVL
+- Max Drawdown from HWM: ${input.policy.maxDrawdownBps / 100}%
+- Max Slippage: ${input.policy.maxSlippageBps / 100}%
+- Cooldown: ${input.policy.cooldownPeriod}s
 
-Market Conditions (simulated for testnet):
-- USDC peg: $1.0001
-- ETH/USD: $3,245 (24h change: -1.2%)
-- Market volatility (VIX): 18.5 (moderate)
-- DeFi TVL trend: stable
+Live Market (${input.market.source}):
+- ETH/USD: $${input.market.ethUsd.toFixed(2)}
+- 24h change: ${input.market.change24h.toFixed(2)}%
 
-Based on the above, what action should the treasury take?`;
+Decide the next treasury action. Respond in JSON only.`;
 }
-
-// ── Entry Point ───────────────────────────────────────────────────────────
 
 runAgentLoop().catch((err) => {
   console.error("Fatal agent error:", err);

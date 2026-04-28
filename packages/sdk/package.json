@@ -8,10 +8,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "agent": "tsx src/agent.ts"
+    "agent": "tsx src/agent.ts",
+    "setup-broker": "tsx src/setup-broker.ts"
   },
   "dependencies": {
-    "@0glabs/0g-serving-broker": "^0.7.4",
+    "@0glabs/0g-serving-broker": "0.7.4",
     "@0gfoundation/0g-ts-sdk": "^1.2.1",
     "ethers": "^6.13.0",
     "viem": "^2.21.0",

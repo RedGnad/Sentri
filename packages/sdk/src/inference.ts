@@ -1,9 +1,13 @@
 import { ethers } from "ethers";
-import {
-  createZGComputeNetworkBroker,
-  type ZGComputeNetworkBroker,
-} from "@0glabs/0g-serving-broker";
+import { createRequire } from "node:module";
+import type { ZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
 import { CHAIN } from "./constants.js";
+
+// 0.7.4 ESM build is broken — import the CJS entrypoint via createRequire.
+const require = createRequire(import.meta.url);
+const { createZGComputeNetworkBroker } = require(
+  "@0glabs/0g-serving-broker",
+) as typeof import("@0glabs/0g-serving-broker");
 
 export interface InferenceResult {
   content: string;
@@ -64,9 +68,14 @@ export async function acknowledgeProvider(providerAddress?: string): Promise<voi
   const addr = providerAddress ?? _providerAddress;
   if (!addr) throw new Error("No provider address. Call selectProvider() first.");
 
-  const isAcknowledged = await broker.inference.acknowledged(addr);
-  if (!isAcknowledged) {
+  // First call creates the sub-account; wrap so re-runs are idempotent.
+  try {
     await broker.inference.acknowledgeProviderSigner(addr);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes("already") && !msg.includes("Acknowledge")) {
+      throw err;
+    }
   }
 }
 

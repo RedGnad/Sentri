@@ -16,35 +16,51 @@ export const STORAGE = {
 // Contract addresses — populated after deployment
 export const CONTRACTS = {
   mockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ?? "",
+  mockWETH: process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS ?? "",
   treasuryVault: process.env.NEXT_PUBLIC_TREASURY_VAULT_ADDRESS ?? "",
+  priceFeed: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS ?? "",
+  swapRouter: process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS ?? "",
+  agentINFT: process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS ?? "",
 } as const;
 
 // Agent loop timing
 export const AGENT = {
-  loopIntervalMs: 60_000, // 1 minute between iterations
-  cooldownPeriodS: 300,   // must match contract policy
+  loopIntervalMs: 60_000,
+  cooldownPeriodS: 300,
 } as const;
 
-// TreasuryVault ABI — only the functions we call from the SDK
+// TreasuryVault ABI — matches current contract (v2 with real swaps)
 export const TREASURY_VAULT_ABI = [
   "function deposit(uint256 amount) external",
   "function withdraw(address to, uint256 amount) external",
-  "function executeStrategy(uint8 action, uint256 amount, bytes32 proofHash, bytes32 teeAttestation) external",
+  "function executeStrategy(uint8 action, uint256 amountIn, bytes32 proofHash, bytes32 teeAttestation) external",
   "function emergencyWithdraw() external",
   "function pause() external",
   "function unpause() external",
-  "function setPolicy(tuple(uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint32 cooldownPeriod) _policy) external",
+  "function setPolicy(tuple(uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint16 maxSlippageBps, uint32 cooldownPeriod, uint32 maxPriceStaleness) _policy) external",
   "function setAgent(address _agent) external",
   "function vaultBalance() external view returns (uint256)",
+  "function riskBalance() external view returns (uint256)",
+  "function totalValue() external view returns (uint256)",
   "function highWaterMark() external view returns (uint256)",
   "function executionLogCount() external view returns (uint256)",
-  "function executionLogs(uint256 index) external view returns (uint256 timestamp, uint8 action, uint256 amount, bytes32 proofHash, bytes32 teeAttestation)",
-  "function policy() external view returns (uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint32 cooldownPeriod)",
+  "function executionLogs(uint256 index) external view returns (uint256 timestamp, uint8 action, uint256 amountIn, uint256 amountOut, uint256 tvlAfter, bytes32 proofHash, bytes32 teeAttestation)",
+  "function policy() external view returns (uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint16 maxSlippageBps, uint32 cooldownPeriod, uint32 maxPriceStaleness)",
   "function agent() external view returns (address)",
   "function killed() external view returns (bool)",
   "function paused() external view returns (bool)",
-  "function asset() external view returns (address)",
+  "function base() external view returns (address)",
+  "function risk() external view returns (address)",
   "function owner() external view returns (address)",
+  "function lastExecutionTime() external view returns (uint256)",
+] as const;
+
+export const PRICE_FEED_ABI = [
+  "function pushAnswer(int256 answer, bytes32 attestation) external",
+  "function latestAnswer() external view returns (int256)",
+  "function latestRoundData() external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound)",
+  "function decimals() external view returns (uint8)",
+  "function keepers(address) external view returns (bool)",
 ] as const;
 
 export const ERC20_ABI = [
