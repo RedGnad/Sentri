@@ -5,13 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ConnectButton } from "@/components/connect-button";
 import { cn } from "@/lib/utils";
-import { Shield, BarChart3, FileText, Settings, AlertTriangle, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/vault", label: "Vault", icon: BarChart3 },
-  { href: "/audit", label: "Audit", icon: FileText },
-  { href: "/policy", label: "Policy", icon: Settings },
-  { href: "/emergency", label: "Emergency", icon: AlertTriangle },
+  { href: "/vault", label: "Vault", num: "01" },
+  { href: "/audit", label: "Audit", num: "02" },
+  { href: "/policy", label: "Policy", num: "03" },
+  { href: "/emergency", label: "Emergency", num: "04" },
 ];
 
 export function Navbar() {
@@ -19,62 +19,72 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <nav className="border-b border-white/10 bg-black/50 backdrop-blur-xl sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav className="border-b border-hairline bg-bg/80 backdrop-blur-md sticky top-0 z-50">
+      <div className="max-w-[1200px] mx-auto px-6 sm:px-8 lg:px-12">
         <div className="flex items-center justify-between h-16">
-          <div className="flex items-center gap-8">
-            <Link href="/" className="flex items-center gap-2 text-white font-bold text-lg">
-              <Shield className="h-6 w-6 text-emerald-400" />
-              Sentri
+          <div className="flex items-center gap-10">
+            <Link href="/" className="flex items-baseline gap-2 group">
+              <span className="font-serif text-2xl text-ink leading-none tracking-tightest">
+                Sentri
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
+                [v0.1]
+              </span>
             </Link>
-            <div className="hidden md:flex items-center gap-1">
-              {NAV_ITEMS.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                    pathname === item.href
-                      ? "bg-white/10 text-white"
-                      : "text-white/60 hover:text-white hover:bg-white/5"
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              ))}
+            <div className="hidden md:flex items-center gap-0 border-l border-hairline pl-8">
+              {NAV_ITEMS.map((item) => {
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    prefetch={true}
+                    className={cn(
+                      "group flex items-baseline gap-1.5 px-4 py-2 font-mono text-[11px] uppercase tracking-kicker transition-colors relative",
+                      active ? "text-amber" : "text-ink-dim hover:text-ink"
+                    )}
+                  >
+                    <span className="text-ink-faint">{item.num}</span>
+                    <span>{item.label}</span>
+                    {active && (
+                      <span className="absolute bottom-0 left-4 right-4 h-px bg-amber" />
+                    )}
+                  </Link>
+                );
+              })}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <ConnectButton />
             <button
-              className="md:hidden p-2 rounded-lg hover:bg-white/10 transition-colors"
+              className="md:hidden p-2 border border-hairline hover:border-amber transition-colors"
               onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label="Toggle menu"
             >
-              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
           </div>
         </div>
 
-        {/* Mobile menu */}
         {mobileOpen && (
-          <div className="md:hidden border-t border-white/10 py-2 space-y-1">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                  pathname === item.href
-                    ? "bg-white/10 text-white"
-                    : "text-white/60 hover:text-white hover:bg-white/5"
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            ))}
+          <div className="md:hidden border-t border-hairline py-2">
+            {NAV_ITEMS.map((item) => {
+              const active = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "flex items-baseline gap-2 px-2 py-3 font-mono text-xs uppercase tracking-kicker border-b border-hairline last:border-b-0",
+                    active ? "text-amber" : "text-ink-dim"
+                  )}
+                >
+                  <span className="text-ink-faint">{item.num}</span>
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

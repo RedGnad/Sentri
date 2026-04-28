@@ -1,26 +1,38 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
+import { Instrument_Serif, JetBrains_Mono, Inter_Tight } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Navbar } from "@/components/navbar";
+import { NavProgress } from "@/components/nav-progress";
 import { Toaster } from "sonner";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
+const serif = Instrument_Serif({
+  weight: "400",
+  style: ["normal", "italic"],
+  subsets: ["latin"],
+  variable: "--font-serif",
+  display: "swap",
 });
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
+
+const sans = Inter_Tight({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+});
+
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["300", "400", "500", "600"],
+  display: "swap",
 });
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Sentri — Autonomous Treasury on 0G",
-  description: "Your AI treasurer — private strategy, verifiable results.",
+  description: "Your AI treasurer. Private strategy, verifiable results.",
 };
 
 export default function RootLayout({
@@ -29,16 +41,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#09090b] text-white min-h-screen`}
-      >
+    <html lang="en" className={`${serif.variable} ${sans.variable} ${mono.variable}`}>
+      <body className="min-h-screen antialiased">
         <Providers>
+          <NavProgress />
           <Navbar />
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <main className="max-w-[1200px] mx-auto px-6 sm:px-8 lg:px-12 py-12 relative">
             {children}
           </main>
-          <Toaster theme="dark" richColors position="bottom-right" />
+          <Toaster theme="dark" position="bottom-right" />
         </Providers>
       </body>
     </html>
