@@ -95,6 +95,26 @@ function readAuditFile(timestamp: string): Record<string, unknown> | null {
   }
 }
 
+/// Recover entries cached under the legacy `Date.now()` schema by finding the
+/// closest cached timestamp within a 5-second window of the requested one.
+function findClosestAuditFile(targetTs: number, windowMs = 5_000): string | null {
+  const dir = path.join(CACHE_DIR, "audit");
+  if (!fs.existsSync(dir)) return null;
+  let closest: string | null = null;
+  let minDelta = windowMs;
+  for (const f of fs.readdirSync(dir)) {
+    if (!f.endsWith(".json")) continue;
+    const ts = Number(f.replace(".json", ""));
+    if (!Number.isFinite(ts)) continue;
+    const delta = Math.abs(ts - targetTs);
+    if (delta <= minDelta) {
+      minDelta = delta;
+      closest = String(ts);
+    }
+  }
+  return closest;
+}
+
 function listAuditFiles(limit = 50): string[] {
   const dir = path.join(CACHE_DIR, "audit");
   if (!fs.existsSync(dir)) return [];
@@ -188,7 +208,13 @@ app.get("/audit", (_req, res) => {
 
 app.get("/audit/:timestamp", (req, res) => {
   const ts = req.params.timestamp;
-  const entry = readAuditFile(ts);
+  let entry = readAuditFile(ts);
+  if (!entry) {
+    // Legacy entries (cached pre-fix with Date.now() instead of block.timestamp×1000)
+    // can be off by a few hundred ms. Try a tolerant ±5s window.
+    const closest = findClosestAuditFile(Number(ts));
+    if (closest) entry = readAuditFile(closest);
+  }
   if (!entry) {
     res
       .status(404)

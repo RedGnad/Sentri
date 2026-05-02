@@ -219,10 +219,16 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
     const receipt = await tx.wait();
     log(`TX confirmed: ${receipt.hash}`);
 
-    // 8. Audit log to 0G Storage
+    // 8. Audit log to 0G Storage.
+    //    Key by the on-chain block.timestamp (×1000 → ms) so the cache lookup
+    //    matches `executionLogs[].timestamp * 1000` that the dashboard queries.
+    //    Date.now() drifts by sub-second; the chain rounds to the second.
     log("Saving audit entry to 0G Storage...");
+    const execBlock = await receipt.getBlock();
+    const chainTimestampMs = Number(execBlock.timestamp) * 1000;
+
     await appendAuditLog({
-      timestamp: Date.now(),
+      timestamp: chainTimestampMs,
       action: decision.action,
       amount:
         decision.action === "EmergencyDeleverage"
