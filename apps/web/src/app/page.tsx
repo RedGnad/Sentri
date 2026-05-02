@@ -79,18 +79,14 @@ export default async function LandingPage() {
           <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-3">
             Stables-first · Bounded risk · Fully kill-switchable
           </p>
-          <p className="text-[15px] text-ink-dim max-w-xl mt-8 leading-relaxed">
-            Sentri is a verifiable autonomous treasury for{" "}
-            <span className="text-ink">stablecoin reserves</span>. The vault holds USDC as
-            the home asset; the agent has bounded discretion (max 30% of TVL) to deploy
-            WETH for productive risk exposure when market conditions are constructive.
-            Strategy reasoning runs inside a{" "}
-            <span className="text-ink">Trusted Execution Environment</span>, execution is
-            bounded by on-chain policy it cannot override, and every decision is
-            cryptographically attested — without revealing the strategy.
+          <p className="text-[16px] text-ink-dim max-w-xl mt-8 leading-relaxed">
+            Sentri turns idle{" "}
+            <span className="text-ink">stablecoin reserves</span> into bounded
+            productive capital — privately decided in a TEE, gated by on-chain
+            policy.
           </p>
-          <p className="text-[13px] text-ink-faint max-w-xl mt-3 leading-relaxed">
-            Built for DAOs, protocol reserves, and foundations.
+          <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-4">
+            For DAOs · protocol reserves · foundations
           </p>
           <div className="flex items-center gap-3 mt-10">
             <Link href="/vault">
