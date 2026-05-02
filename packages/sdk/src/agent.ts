@@ -319,26 +319,41 @@ function buildMarketPrompt(input: {
     cooldownPeriod: number;
   };
 }): string {
-  const pnl =
-    Number(input.hwm) > 0
-      ? (((Number(input.tvl) - Number(input.hwm)) / Number(input.hwm)) * 100).toFixed(2)
-      : "0";
-  return `Current Treasury State:
-- Base (USDC) balance: ${input.baseBalance}
-- Risk (WETH) balance: ${input.riskBalance}
-- Total Value (base units): ${input.tvl}
-- High Water Mark: ${input.hwm}
-- P&L from HWM: ${pnl}%
+  // Pre-compute every metric deterministically. Small TEE-served LLMs
+  // (Qwen 2.5 7B class) are unreliable at float arithmetic — feeding raw
+  // balances + asking them to compute weth_share gave hallucinated values
+  // (e.g. claiming 42.78% when the real share was 99.99%). Compute here,
+  // let the LLM only pattern-match against the rule branches in its
+  // system prompt and emit the JSON decision.
+  const baseN = Number(input.baseBalance); // USDC, human units
+  const riskN = Number(input.riskBalance); // WETH, human units
+  const tvlN = Number(input.tvl); // USDC, human units
+  const hwmN = Number(input.hwm);
+  const wethValueUsd = riskN * input.market.ethUsd;
+  const wethShare = tvlN > 0 ? wethValueUsd / tvlN : 0;
+  const deviationFromTarget = wethShare - 0.5;
+  const drawdownPct = hwmN > 0 ? ((tvlN - hwmN) / hwmN) * 100 : 0;
 
-Risk Policy:
-- Max Allocation per Action: ${input.policy.maxAllocationBps / 100}% of TVL
-- Max Drawdown from HWM: ${input.policy.maxDrawdownBps / 100}%
-- Max Slippage: ${input.policy.maxSlippageBps / 100}%
-- Cooldown: ${input.policy.cooldownPeriod}s
+  return `Treasury state (computed):
+- USDC balance: ${baseN.toFixed(2)} USDC
+- WETH balance: ${riskN.toFixed(6)} WETH
+- WETH value at market: ${wethValueUsd.toFixed(2)} USDC
+- TVL: ${tvlN.toFixed(2)} USDC
+- HWM: ${hwmN.toFixed(2)} USDC
+- Drawdown from HWM: ${drawdownPct.toFixed(2)}%
+- WETH share of TVL: ${(wethShare * 100).toFixed(2)}%
+- Deviation from 50% target: ${(deviationFromTarget * 100).toFixed(2)} percentage points
 
-Live Market (${input.market.source}):
+Market (${input.market.source}):
 - ETH/USD: $${input.market.ethUsd.toFixed(2)}
 - 24h change: ${input.market.change24h.toFixed(2)}%
 
-Decide the next treasury action. Respond in JSON only.`;
+Policy bounds:
+- Max allocation per action: ${input.policy.maxAllocationBps / 100}% of TVL
+- Max drawdown from HWM: ${input.policy.maxDrawdownBps / 100}%
+- Max slippage: ${input.policy.maxSlippageBps / 100}%
+- Cooldown between actions: ${input.policy.cooldownPeriod}s
+
+Apply the decision rules from your system prompt against the values above.
+Respond with the JSON object only.`;
 }
