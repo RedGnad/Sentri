@@ -204,6 +204,23 @@ export function useEmergencyWithdraw() {
   return { emergencyWithdraw, isPending, isConfirming, isSuccess, error, hash };
 }
 
+export function useEmergencyDeleverageAndWithdraw() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  function emergencyDeleverageAndWithdraw(vaultAddress: `0x${string}`, minBaseOut: bigint = 0n) {
+    writeContract({
+      address: vaultAddress,
+      abi: TREASURY_VAULT_ABI,
+      chainId: CHAIN_ID,
+      functionName: "emergencyDeleverageAndWithdraw",
+      args: [minBaseOut],
+    });
+  }
+
+  return { emergencyDeleverageAndWithdraw, isPending, isConfirming, isSuccess, error, hash };
+}
+
 export function usePause() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });

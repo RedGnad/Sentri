@@ -12,6 +12,7 @@ export interface MarketSnapshot {
   timestamp: number;
   sourceCount: number;     // how many sources contributed (>= 2 required)
   spreadPct: number;       // (max - min) / median × 100, for monitoring
+  rawSources: Array<{ source: string; ethUsd: number }>;
 }
 
 interface SourceResult {
@@ -117,5 +118,6 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     timestamp: Date.now(),
     sourceCount: successes.length,
     spreadPct,
+    rawSources: successes.map((s) => ({ source: s.source, ethUsd: s.ethUsd })),
   };
 }

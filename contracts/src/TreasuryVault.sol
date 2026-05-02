@@ -54,6 +54,7 @@ contract TreasuryVault is
         bytes32 responseHash;
         address teeSigner;
         bytes32 teeAttestation;
+        uint256 deadline;
     }
 
     /// @notice Bundle of init params passed by the factory at clone init.
@@ -94,6 +95,9 @@ contract TreasuryVault is
 
     bool public killed;
 
+    mapping(bytes32 => bool) public usedIntentHashes;
+    mapping(bytes32 => bool) public usedResponseHashes;
+
     // ── Events ───────────────────────────────────────────────────────────
 
     event Deposited(address indexed from, uint256 amount);
@@ -107,7 +111,8 @@ contract TreasuryVault is
         bytes32 intentHash,
         bytes32 responseHash,
         address teeSigner,
-        bytes32 teeAttestation
+        bytes32 teeAttestation,
+        uint256 deadline
     );
     event PolicyUpdated(Policy newPolicy);
     event AgentUpdated(address newAgent);
@@ -128,6 +133,9 @@ contract TreasuryVault is
     error InsufficientRiskBalance();
     error NotFactory();
     error InvalidTEESignature();
+    error IntentAlreadyUsed();
+    error ResponseAlreadyUsed();
+    error ExpiredIntent();
 
     // ── Modifiers ────────────────────────────────────────────────────────
 
@@ -237,16 +245,21 @@ contract TreasuryVault is
     /// @param signedResponse Compact TEE-signed JSON response from the 0G provider
     /// @param teeSignature EIP-191 signature over `signedResponse`
     /// @param teeAttestation TEE attestation hash
+    /// @param deadline Last timestamp at which this intent may execute
     function executeStrategy(
         Action action,
         uint256 amountIn,
         bytes32 intentHash,
         string calldata signedResponse,
         bytes calldata teeSignature,
-        bytes32 teeAttestation
+        bytes32 teeAttestation,
+        uint256 deadline
     ) external onlyAgent whenNotPaused notKilled nonReentrant {
         if (amountIn == 0) revert ZeroAmount();
+        if (block.timestamp > deadline) revert ExpiredIntent();
+        if (usedIntentHashes[intentHash]) revert IntentAlreadyUsed();
         (address teeSigner, bytes32 responseHash) = _verifyTEE(signedResponse, teeSignature);
+        if (usedResponseHashes[responseHash]) revert ResponseAlreadyUsed();
 
         _enforceCooldown();
 
@@ -256,6 +269,8 @@ contract TreasuryVault is
         // detector. If the swap reverts, this whole TX reverts and the
         // timestamp update is undone.
         lastExecutionTime = block.timestamp;
+        usedIntentHashes[intentHash] = true;
+        usedResponseHashes[responseHash] = true;
 
         uint256 price = _fetchPrice();
         uint8 feedDec = priceFeed.decimals();
@@ -292,10 +307,22 @@ contract TreasuryVault is
             intentHash: intentHash,
             responseHash: responseHash,
             teeSigner: teeSigner,
-            teeAttestation: teeAttestation
+            teeAttestation: teeAttestation,
+            deadline: deadline
         }));
 
-        emit StrategyExecuted(logIndex, action, amountIn, amountOut, tvlAfter, intentHash, responseHash, teeSigner, teeAttestation);
+        emit StrategyExecuted(
+            logIndex,
+            action,
+            amountIn,
+            amountOut,
+            tvlAfter,
+            intentHash,
+            responseHash,
+            teeSigner,
+            teeAttestation,
+            deadline
+        );
     }
 
     function _doSwap(address tokenIn, uint256 amountIn, uint256 minOut) internal returns (uint256) {
@@ -318,6 +345,29 @@ contract TreasuryVault is
         if (b > 0) base.safeTransfer(owner(), b);
         if (r > 0) risk.safeTransfer(owner(), r);
         emit EmergencyKillSwitchActivated(msg.sender, b, r);
+    }
+
+    /// @notice Attempt to convert all risk asset to base before withdrawing.
+    /// @dev If the swap cannot satisfy `minBaseOut`, the whole transaction
+    ///      reverts and the vault remains live. Owners can always fall back to
+    ///      emergencyWithdraw(), which returns both assets without swapping.
+    function emergencyDeleverageAndWithdraw(uint256 minBaseOut) external onlyOwner nonReentrant {
+        killed = true;
+        uint256 riskBefore = risk.balanceOf(address(this));
+        if (riskBefore > 0) {
+            IERC20(address(risk)).forceApprove(address(router), riskBefore);
+            router.swapExactTokensForTokens(
+                address(risk),
+                riskBefore,
+                minBaseOut,
+                address(this),
+                block.timestamp + 300
+            );
+        }
+
+        uint256 b = base.balanceOf(address(this));
+        if (b > 0) base.safeTransfer(owner(), b);
+        emit EmergencyKillSwitchActivated(msg.sender, b, riskBefore);
     }
 
     // ── Pause ────────────────────────────────────────────────────────────

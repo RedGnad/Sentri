@@ -42,6 +42,7 @@ export interface VaultAuditEntry {
   teeSignature?: string;
   teeSigner: string;
   teeAttestation: string;
+  deadline?: number;
   verified: true;
   provider: string;
   model: string;
@@ -52,6 +53,10 @@ export interface VaultAuditEntry {
   txHash?: string;
   storageTxHash?: string;
   storageRootHash?: string;
+  marketSpreadPct?: number;
+  marketSourceCount?: number;
+  marketRawSources?: Array<{ source: string; ethUsd: number }>;
+  priceAttestationPayload?: unknown;
 }
 
 /**

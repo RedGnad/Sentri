@@ -149,8 +149,15 @@ export async function pushPrice(ctx: GlobalContext): Promise<MarketSnapshot> {
 
   const feedDecimals: bigint = await ctx.priceFeed.decimals();
   const answer = BigInt(Math.floor(market.ethUsd * 10 ** Number(feedDecimals)));
+  const priceAttestationPayload = {
+    medianPrice: market.ethUsd,
+    sourceCount: market.sourceCount,
+    spreadPct: market.spreadPct,
+    sources: market.rawSources,
+    timestamp: market.timestamp,
+  };
   const attestation = ethers.keccak256(
-    ethers.toUtf8Bytes(JSON.stringify({ source: market.source, price: market.ethUsd, ts: market.timestamp })),
+    ethers.toUtf8Bytes(canonicalJson(priceAttestationPayload)),
   );
 
   try {
@@ -268,10 +275,17 @@ export async function executeOneIterationForVault(
   } else {
     amountIn = (BigInt(baseBalance) * BigInt(decision.amount_bps)) / 10000n;
     if (amountIn === 0n) return { status: "skipped", reason: "no base balance to allocate" };
-    const maxAlloc = (BigInt(tvl) * BigInt(policy[0])) / 10000n;
-    if (amountIn > maxAlloc) {
-      log(`Capping amount from ${ethers.formatUnits(amountIn, baseDec)} to ${ethers.formatUnits(maxAlloc, baseDec)}`);
-      amountIn = maxAlloc;
+    const currentRiskValue = Number(riskStr) * market.ethUsd;
+    const maxRiskValue = Number(tvlStr) * Number(policy[0]) / 10000;
+    const remainingRiskHeadroom = Math.max(0, maxRiskValue - currentRiskValue);
+    const maxBaseIn = ethers.parseUnits(remainingRiskHeadroom.toFixed(Number(baseDec)), baseDec);
+    if (maxBaseIn === 0n) return { status: "skipped", reason: "no remaining WETH exposure headroom" };
+    if (amountIn > maxBaseIn) {
+      log(
+        `Capping amount from ${ethers.formatUnits(amountIn, baseDec)} to ` +
+          `${ethers.formatUnits(maxBaseIn, baseDec)} based on remaining WETH exposure headroom`,
+      );
+      amountIn = maxBaseIn;
     }
   }
 
@@ -302,6 +316,13 @@ export async function executeOneIterationForVault(
     deadline,
   };
   const intentHash = ethers.keccak256(ethers.toUtf8Bytes(canonicalJson(intent)));
+  const priceAttestationPayload = {
+    medianPrice: market.ethUsd,
+    sourceCount: market.sourceCount,
+    spreadPct: market.spreadPct,
+    sources: market.rawSources,
+    timestamp: market.timestamp,
+  };
 
   // Execute
   try {
@@ -312,6 +333,7 @@ export async function executeOneIterationForVault(
       inference.signedResponse,
       inference.teeSignature,
       inference.teeAttestation,
+      deadline,
     );
     const receipt = await tx.wait();
 
@@ -349,6 +371,7 @@ export async function executeOneIterationForVault(
       teeSignature: inference.teeSignature,
       teeSigner: inference.teeSignerAddress,
       teeAttestation: inference.teeAttestation,
+      deadline,
       verified: inference.verified,
       provider: inference.provider,
       model: inference.model,
@@ -359,6 +382,10 @@ export async function executeOneIterationForVault(
       txHash: receipt.hash,
       marketPrice: market.ethUsd,
       marketSource: market.source,
+      marketSpreadPct: market.spreadPct,
+      marketSourceCount: market.sourceCount,
+      marketRawSources: market.rawSources,
+      priceAttestationPayload,
     });
 
     // Refresh and persist portfolio state

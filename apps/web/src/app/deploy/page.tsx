@@ -167,7 +167,7 @@ function PresetStep({ tier, setTier, onNext }: { tier: number; setTier: (t: numb
     <div className="space-y-6">
       <h2 className="font-serif text-3xl text-ink">Choose a risk preset</h2>
       <p className="font-serif italic text-base text-ink-dim">
-        Each preset bakes a vetted policy: max WETH allocation, drawdown freeze, slippage cap, cooldown.
+        Each preset bakes a vetted policy: max WETH exposure, drawdown freeze, slippage cap, cooldown.
         You can change the policy later as the vault owner.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

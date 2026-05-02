@@ -123,7 +123,7 @@ export default function VaultOverviewPage() {
             <DataRow label="Agent" value={shortenAddress(vault.agent)} mono />
             {vault.policy && (
               <>
-                <DataRow label="Max allocation" value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} accent />
+                <DataRow label="Max WETH exposure" value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} accent />
                 <DataRow label="Max drawdown" value={`${bpsToPercent(vault.policy.maxDrawdownBps)} %`} accent />
                 <DataRow label="Cooldown" value={`${vault.policy.cooldownPeriod} s`} accent />
               </>

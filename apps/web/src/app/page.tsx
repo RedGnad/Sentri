@@ -10,7 +10,7 @@ const PRINCIPLES = [
     num: "i",
     title: "Private by construction",
     body:
-      "Strategy reasoning runs inside a Trusted Execution Environment via 0G Sealed Inference. Decision logic — thresholds, target allocation, risk rules — never leaves the enclave. Not to RPC, not to logs, not to the operator.",
+      "Strategy reasoning is requested through 0G Sealed Inference and a verifiable TEE-backed provider path. The audit page exposes the exact provider mode, signer, chat ID, and verification status.",
   },
   {
     num: "ii",
@@ -22,7 +22,7 @@ const PRINCIPLES = [
     num: "iii",
     title: "Bounded by policy",
     body:
-      "Each vault has its own on-chain policy: max WETH exposure, drawdown, cooldown, slippage. The agent proposes; the contract disposes. No override path. Owner kill-switch returns 100% to USDC instantly.",
+      "Each vault has its own on-chain policy: max WETH exposure, drawdown, cooldown, slippage. The agent proposes; the contract disposes. No override path. Owner kill-switch returns all vault assets instantly, with an optional USDC deleverage exit.",
   },
 ];
 

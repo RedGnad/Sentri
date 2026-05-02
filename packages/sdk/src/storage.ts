@@ -113,7 +113,7 @@ export async function loadPortfolioState(
   return _readKv<PortfolioState>(stateStreamId(vaultAddr), "portfolio:current", kvNodeUrl);
 }
 
-// ── Audit Log (Immutable Trail) ──────────────────────────────────────────
+// ── Audit entries (0G Storage KV) ────────────────────────────────────────
 
 export interface AuditEntry {
   timestamp: number;
@@ -127,6 +127,7 @@ export interface AuditEntry {
   teeSignature: string;
   teeSigner: string;
   teeAttestation: string;
+  deadline: number;
   verified: true;
   provider: string;
   model: string;
@@ -137,6 +138,18 @@ export interface AuditEntry {
   txHash?: string;
   marketPrice?: number;
   marketSource?: string;
+  marketSpreadPct?: number;
+  marketSourceCount?: number;
+  marketRawSources?: Array<{ source: string; ethUsd: number }>;
+  priceAttestationPayload?: unknown;
+}
+
+export function auditKey(
+  vaultAddr: string,
+  entry: Pick<AuditEntry, "txHash" | "logIndex" | "intentHash">,
+): string {
+  const safeTx = entry.txHash ?? "pending";
+  return `audit:${vaultAddr.toLowerCase()}:${safeTx}:${entry.logIndex}:${entry.intentHash}`;
 }
 
 /**
@@ -146,8 +159,7 @@ export async function appendAuditLog(
   vaultAddr: string,
   entry: AuditEntry,
 ): Promise<{ txHash: string; rootHash: string } | null> {
-  const safeTx = entry.txHash ?? "pending";
-  const logKey = `audit:${vaultAddr.toLowerCase()}:${safeTx}:${entry.logIndex}:${entry.intentHash}`;
+  const logKey = auditKey(vaultAddr, entry);
   const result = await _writeKv(auditStreamId(vaultAddr), logKey, entry);
   writeCacheFile(
     path.join("vaults", vaultAddr.toLowerCase(), "audit", `${entry.timestamp}.json`),
@@ -162,10 +174,10 @@ export async function appendAuditLog(
 
 export async function readAuditEntry(
   vaultAddr: string,
-  timestamp: number,
+  entry: Pick<AuditEntry, "txHash" | "logIndex" | "intentHash">,
   kvNodeUrl: string,
 ): Promise<AuditEntry | null> {
-  return _readKv<AuditEntry>(auditStreamId(vaultAddr), `audit:${timestamp}`, kvNodeUrl);
+  return _readKv<AuditEntry>(auditStreamId(vaultAddr), auditKey(vaultAddr, entry), kvNodeUrl);
 }
 
 // ── Internal KV primitives ───────────────────────────────────────────────

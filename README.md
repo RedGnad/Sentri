@@ -3,13 +3,13 @@
 **Verifiable autonomous treasury for stablecoin reserves.**
 Private strategy, verifiable results.
 
-Sentri is a multi-tenant verifiable treasury protocol. Anyone can deploy their own treasury vault — owned by them, with their own risk policy — and a shared agent operates across all vaults: planning privately inside a TEE via **0G Sealed Inference**, executing under on-chain policy each vault enforces, and writing per-vault audit trails to **0G Storage**.
+Sentri is a multi-tenant verifiable treasury protocol. Anyone can deploy their own treasury vault — owned by them, with their own risk policy — and a shared agent operates across all vaults: requesting strategy through a verifiable **0G Sealed Inference** TEE provider path, executing under on-chain policy each vault enforces, and writing per-vault audit trails to **0G Storage**.
 
-The vault holds USDC as the home asset. The agent has bounded discretion (preset policies cap WETH allocation at 15% / 30% / 50% depending on the chosen risk tier) to deploy capital into productive risk exposure when conditions are constructive — and to deleverage automatically when they aren't.
+The vault holds USDC as the home asset. The agent has bounded discretion (preset policies cap post-trade WETH exposure at 15% / 30% / 50% depending on the chosen risk tier) to deploy capital into productive risk exposure when conditions are constructive — and to deleverage automatically when they aren't.
 
 Built for **DAOs, protocol reserves, and foundations** that hold stablecoin reserves and want intelligent — and verifiable — productive deployment, without trusting a black-box trader. Submitted to the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*.
 
-> Sentri is **not** a trading bot. It is a *stables-first verifiable treasury* with a per-vault kill-switch that returns 100% to USDC instantly. Each vault's owner has unilateral pause and kill rights at any time.
+> Sentri is **not** a trading bot. It is a *stables-first verifiable treasury* with per-vault pause and kill controls. Each vault's owner can withdraw all vault assets immediately, or attempt an emergency deleverage to USDC with a slippage guard.
 
 ---
 
@@ -26,10 +26,10 @@ Neither is acceptable for a treasury that needs **both autonomy and auditability
 
 A treasury infrastructure where:
 - Every user owns their own vault contract (factory-deployed clone) with their own policy.
-- A shared agent operates across all vaults, with reasoning **inside a TEE** so the strategy is private even from us.
+- A shared agent operates across all vaults, with reasoning requested through a **0G verifiable TEE provider path** so the strategy flow is private/auditable without exposing operator-side prompts in the UI.
 - Execution is **gated by each vault's on-chain policy** — the agent literally cannot break the constraints.
 - Every decision is **cryptographically attested** and the audit trail is verifiable on 0G Storage.
-- The vault owner can **pause, reconfigure, or kill** their vault at any moment, returning 100% to USDC.
+- The vault owner can **pause, reconfigure, or kill** their vault at any moment. The hard kill returns all assets; the deleverage kill attempts to convert residual WETH to USDC first.
 
 ```
 ┌──────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌──────────────┐
@@ -46,7 +46,7 @@ A treasury infrastructure where:
 
 | Component | Usage |
 |---|---|
-| **Chain** | `VaultFactory.sol` deploys per-user `TreasuryVault` clones (EIP-1167 minimal proxies). Every vault enforces its own policy on-chain and emits `StrategyExecuted` events with an execution intent hash, TEE response hash, recovered TEE signer, and TEE attestation hash for every action. |
+| **Chain** | `VaultFactory.sol` deploys per-user `TreasuryVault` clones (EIP-1167 minimal proxies). Every vault enforces its own policy on-chain and emits `StrategyExecuted` events with an execution intent hash, TEE response hash, recovered TEE signer, TEE attestation hash, and deadline for every action. Used intent/response hashes cannot be replayed. |
 | **Sealed Inference** | Each strategy decision is computed through a verifiable 0G inference provider. The agent fail-closes unless `processResponse(provider, chatID, content)` returns `true`, then the vault checks the TEE signer's EIP-191 signature over the compact JSON response before any swap. |
 | **Storage KV** | Per-vault portfolio snapshot (TVL, balances, last action, total executions, P&L) keyed by `keccak256("sentri:portfolio-state:" + vault_address)`. The dashboard reads it via the agent server's `/vault/:address/state` endpoint. |
 | **Storage-backed audit** | Per-vault audit entries are written to 0G Storage under keys derived from vault + tx hash + log index + intent hash. Each entry includes the full execution intent, compact signed response, TEE signature, provider metadata, on-chain TX hash, 0G Storage TX hash, and root hash. |
@@ -88,7 +88,7 @@ packages/sdk/                    TypeScript multi-vault agent runtime
                                     GET /vault/:addr/state        per-vault portfolio snapshot
                                     GET /vault/:addr/audit        per-vault recent audit entries
                                     GET /vault/:addr/audit/:ts    single entry with ±5s tolerant lookup
-    storage.ts                    0G Storage KV + Log writers, namespaced per vault address.
+    storage.ts                    0G Storage KV writers, namespaced per vault address.
                                   Local cache mirror at /tmp/sentri-cache/vaults/{addr}/
     inference.ts                  0G Sealed Inference client with TEE attestation
     market.ts                     ETH/USD oracle (Binance / CoinGecko fallback)
@@ -132,7 +132,7 @@ System prompt is a deterministic decision tree, applied in order:
 4. WETH share < 20% **and** 24h ≥ +1% **and** drawdown < 1% → deploy USDC toward 25% target.
 5. Otherwise → hold (cautious default).
 
-Default state is 100% USDC. Maximum WETH allocation is 30% of TVL — never exceeded by the agent. Each vault's on-chain `policy` independently caps `maxAllocationBps` per action (15% / 30% / 50% depending on preset).
+Default state is 100% USDC. Maximum WETH exposure is 30% of TVL by default — never exceeded by the vault. Each vault's on-chain `policy` independently caps post-trade WETH exposure (15% / 30% / 50% depending on preset).
 
 ---
 
@@ -213,6 +213,10 @@ pnpm agent                                       # standalone CLI loop (no HTTP 
 
 The agent wallet must (1) be registered as `agent` on the VaultFactory (immutable, set at factory deploy), (2) hold an active Agent INFT, and (3) be a registered keeper on `SentriPriceFeed`. The official deployer wallet at the addresses above is configured for all three.
 
+### 0G SDK note
+
+The SDK currently uses `@0glabs/0g-serving-broker` 0.7.4 because it exposes the Direct Compute broker methods used by this hackathon flow, including `processResponse()` and chat signature retrieval. The package's ESM entry is loaded through its CJS path in the agent because the published ESM export is currently unreliable in this environment.
+
 ### Re-deploy contracts (only if you fork)
 
 ```bash
@@ -256,7 +260,7 @@ The demo covers one full lifecycle:
 3. Goes to **Deploy** → chooses Balanced → deposits 1,000 USDC → vault created in one TX.
 4. Watches the agent execute on the new vault on the next cycle (~5 min).
 5. Inspects `/v/[address]/audit` to see the on-chain intent hash, response hash, recovered TEE signer, provider metadata, storage tx/root hash, and hash-match status.
-6. Updates policy, then activates kill-switch — funds returned to owner instantly.
+6. Updates policy, then activates kill-switch — either all assets are returned instantly, or the owner uses the deleverage kill to attempt a USDC-only exit with slippage protection.
 
 ---
 
@@ -269,8 +273,9 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 - **Caller is the registered agent** — `msg.sender == agent` (set at vault creation, owner-mutable).
 - **Caller holds an active Agent INFT bound to the recovered TEE signer** — the vault recovers the signer from the compact signed response and checks `agentNFT.isActiveAgentWithSigner(msg.sender, teeSigner)`. Owner can revoke any time.
 - **TEE signer signature over the response** — the vault verifies the EIP-191 signature over the compact public JSON response before swapping.
+- **Intent freshness and replay protection** — each execution includes a deadline checked on-chain, and both the `intentHash` and signed `responseHash` are single-use.
 - **Cooldown elapsed** — `block.timestamp ≥ lastExecutionTime + cooldownPeriod`.
-- **Post-trade WETH exposure within policy** — risk-on actions revert if WETH value after the swap exceeds `maxAllocationBps` of TVL. Emergency deleverage is never blocked by the allocation cap.
+- **Post-trade WETH exposure within policy** — risk-on actions revert if WETH value after the swap exceeds `maxAllocationBps` of TVL. Emergency deleverage is never blocked by the exposure cap.
 - **Drawdown within policy** — post-trade TVL must remain within `maxDrawdownBps` of the high-water mark.
 - **Oracle price is fresh** — `block.timestamp - oracleUpdatedAt ≤ maxPriceStaleness`.
 - **Swap respects oracle slippage bound** — `minOut = expected × (1 − maxSlippageBps)`. Router reverts otherwise.
@@ -280,7 +285,8 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 ### What the chain DOES NOT verify (and why this is honest)
 
 - **The full TEE attestation report is NOT cryptographically verified on-chain.** The agent verifies the 0G response off-chain with `broker.inference.processResponse(provider, chatID, content)` and the vault verifies the TEE signer signature over the compact JSON response on-chain. The on-chain check proves the response came from the INFT-bound TEE signer; the broader provider attestation and service verification remain off-chain and auditable.
-- **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed allocation, drawdown, slippage, or cooldown.
+- **The contract does not parse the signed JSON response.** The vault verifies the TEE signer, deadline, and single-use hashes on-chain, then stores the intent/response hashes for audit. The enriched audit page binds the signed response, reconstructed execution intent, transaction hash, and 0G Storage proof for human verification.
+- **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed WETH exposure, drawdown, slippage, or cooldown.
 - **The market price comes from centralised exchanges** (Binance, CoinGecko, Coinbase, Kraken — median of 4 sources, 2-of-4 quorum required). This is more robust than a single source but it is not a fully decentralised oracle. A coordinated manipulation across all four CEX feeds would be required to push a bad price.
 - **The swap routes through `SentriPair`**, an in-protocol AMM seeded with `MockUSDC`/`MockWETH` for testnet reproducibility. v2 mainnet would integrate a real DEX (Jaine on 0G mainnet, or equivalent) with real liquidity.
 
@@ -289,9 +295,9 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 A vault owner can reason about Sentri's safety along **two independent dimensions**:
 
 1. **Bound** — what's the worst the agent can do within policy? This is fully on-chain and tight: bounded post-trade WETH exposure, bounded drawdown from peak, bounded slippage per swap, bounded cadence (cooldown). The owner sets the bounds at vault creation and can update them; the agent cannot.
-2. **Recourse** — what happens if something goes wrong? `pause()` blocks all activity reversibly; `emergencyWithdraw()` returns 100% of base + risk to the owner irreversibly. Both are owner-only and not gated by the agent or the price feed.
+2. **Recourse** — what happens if something goes wrong? `pause()` blocks all activity reversibly; `emergencyWithdraw()` returns 100% of base + risk assets to the owner irreversibly; `emergencyDeleverageAndWithdraw(minBaseOut)` attempts to swap all WETH to USDC first and reverts if the slippage guard cannot be met. All are owner-only and not gated by the agent or the price feed.
 
-The TEE story is now split honestly: 0G response verification and provider attestation happen off-chain in the agent, while the vault checks the recovered TEE signer signature on-chain and commits the intent hash for audit replay.
+The TEE story is now split honestly: 0G response verification and provider attestation happen off-chain in the agent, while the vault checks the recovered TEE signer signature on-chain, rejects expired/replayed intents, and commits the intent hash for audit replay.
 
 ---
 

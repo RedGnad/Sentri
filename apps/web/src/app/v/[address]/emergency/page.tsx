@@ -6,7 +6,7 @@ import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatUSDC, shortenAddress } from "@/lib/utils";
-import { useParsedVaultData, useEmergencyWithdraw, usePause, useUnpause } from "@/hooks/use-vault";
+import { useParsedVaultData, useEmergencyWithdraw, useEmergencyDeleverageAndWithdraw, usePause, useUnpause } from "@/hooks/use-vault";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function VaultEmergencyPage() {
@@ -16,6 +16,12 @@ export default function VaultEmergencyPage() {
 
   const { data: vault, isLoading } = useParsedVaultData(address);
   const { emergencyWithdraw, isPending: isKilling, isSuccess: killSuccess, error: killError } = useEmergencyWithdraw();
+  const {
+    emergencyDeleverageAndWithdraw,
+    isPending: isDeleveragingKill,
+    isSuccess: deleverageKillSuccess,
+    error: deleverageKillError,
+  } = useEmergencyDeleverageAndWithdraw();
   const { pause, isPending: isPausing, isSuccess: pauseSuccess, error: pauseError } = usePause();
   const { unpause, isPending: isUnpausing, isSuccess: unpauseSuccess, error: unpauseError } = useUnpause();
 
@@ -32,6 +38,15 @@ export default function VaultEmergencyPage() {
     }
   }, [killSuccess]);
   useEffect(() => { if (killError) toast.error(`Kill-switch failed: ${killError.message}`); }, [killError]);
+  useEffect(() => {
+    if (deleverageKillSuccess) {
+      toast.error("Vault permanently killed. WETH deleveraged before withdrawal.");
+      setConfirmKill(false);
+    }
+  }, [deleverageKillSuccess]);
+  useEffect(() => {
+    if (deleverageKillError) toast.error(`Deleverage kill failed: ${deleverageKillError.message}`);
+  }, [deleverageKillError]);
 
   if (isLoading || !vault) {
     return <Skeleton className="h-96 w-full" />;
@@ -82,10 +97,12 @@ export default function VaultEmergencyPage() {
         </header>
         <div className="px-5 py-5 space-y-4">
           <p className="font-serif italic text-lg text-ink leading-snug">
-            Withdraw <span className="text-amber tabular">${formatUSDC(vault.balance)}</span> to the owner and disable the vault forever.
+            Withdraw <span className="text-amber tabular">${formatUSDC(vault.balance)}</span> USDC
+            {vault.riskBalance > 0n ? ` plus ${(Number(vault.riskBalance) / 1e18).toFixed(4)} WETH` : ""}
+            {" "}to the owner and disable the vault forever.
           </p>
           <p className="text-[13px] text-ink-dim leading-relaxed">
-            The kill-switch is the ultimate guarantee. Once activated, the vault rejects all future executions, including yours.
+            The hard kill never relies on a swap. The USDC-exit kill first attempts to convert all WETH through the router, then withdraws.
           </p>
 
           {vault.isKilled ? (
@@ -99,12 +116,15 @@ export default function VaultEmergencyPage() {
           ) : (
             <div className="space-y-3">
               <div className="border border-alert/40 px-4 py-3 bg-alert/[0.04] font-mono text-[11px] text-alert leading-relaxed">
-                {"> "}This will withdraw <span className="tabular">${formatUSDC(vault.balance)}</span> USDC to the owner and permanently disable the vault.
+                {"> "}This permanently disables the vault. Hard kill returns USDC plus residual WETH. USDC-exit kill tries to swap WETH first and may revert on liquidity or slippage.
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Button variant="outline" onClick={() => setConfirmKill(false)}>Cancel</Button>
+                <Button variant="outline" onClick={() => emergencyDeleverageAndWithdraw(address, 0n)} disabled={isDeleveragingKill}>
+                  {isDeleveragingKill ? "Swapping..." : "USDC Exit"}
+                </Button>
                 <Button variant="destructive" onClick={() => emergencyWithdraw(address)} disabled={isKilling}>
-                  {isKilling ? "Executing..." : "Confirm Kill ∎"}
+                  {isKilling ? "Executing..." : "Hard Kill"}
                 </Button>
               </div>
             </div>

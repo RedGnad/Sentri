@@ -63,8 +63,8 @@ export default function VaultAuditPage() {
       ) : (
         logs?.map((log, i) => {
           if (!log.result) return null;
-          const [timestamp, action, amountIn, amountOut, tvlAfter, intentHash, responseHash, teeSigner, teeAttestation] =
-            log.result as [bigint, number, bigint, bigint, bigint, string, string, string, string];
+          const [timestamp, action, amountIn, amountOut, tvlAfter, intentHash, responseHash, teeSigner, teeAttestation, deadline] =
+            log.result as [bigint, number, bigint, bigint, bigint, string, string, string, string, bigint];
           return (
             <AuditEntry
               key={i}
@@ -80,6 +80,7 @@ export default function VaultAuditPage() {
               responseHash={responseHash}
               teeSigner={teeSigner}
               teeAttestation={teeAttestation}
+              deadline={deadline}
             />
           );
         })
@@ -101,6 +102,7 @@ function AuditEntry({
   responseHash,
   teeSigner,
   teeAttestation,
+  deadline,
 }: {
   vaultAddress: `0x${string}`;
   index: number;
@@ -114,6 +116,7 @@ function AuditEntry({
   responseHash: string;
   teeSigner: string;
   teeAttestation: string;
+  deadline: bigint;
 }) {
   const [expanded, setExpanded] = useState(false);
   const tsMs = Number(timestamp) * 1000;
@@ -169,6 +172,12 @@ function AuditEntry({
           <code className="font-mono text-[11px] text-ink-dim break-all">{responseHash}</code>
         </div>
       </div>
+      <div className="border-t border-hairline px-5 py-4">
+        <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">Intent deadline</div>
+        <code className="font-mono text-[11px] text-ink-dim break-all">
+          {new Date(Number(deadline) * 1000).toISOString().slice(0, 19).replace("T", " ")} UTC
+        </code>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 border-t border-hairline">
         <div className="px-5 py-4 md:border-r border-hairline">
           <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">TEE signer</div>
@@ -213,6 +222,21 @@ function AuditEntry({
                 </Field>
                 <Field label="Provider">
                   <span className="font-mono text-[11px] text-ink-dim tabular">{detail.provider ? `${detail.provider.slice(0, 10)}...` : "-"}</span>
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
+                <Field label="Verifiability">
+                  <span className="font-mono text-[11px] text-ink-dim tabular">{detail.verifiability || "-"}</span>
+                </Field>
+                <Field label="Market quorum">
+                  <span className="font-mono text-[11px] text-ink-dim tabular">
+                    {detail.marketSourceCount ? `${detail.marketSourceCount}/4` : "-"}
+                  </span>
+                </Field>
+                <Field label="Market spread">
+                  <span className="font-mono text-[11px] text-ink-dim tabular">
+                    {typeof detail.marketSpreadPct === "number" ? `${detail.marketSpreadPct.toFixed(3)}%` : "-"}
+                  </span>
                 </Field>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">

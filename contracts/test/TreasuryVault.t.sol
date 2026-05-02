@@ -257,8 +257,47 @@ contract TreasuryVaultTest is Test {
             keccak256("intent"),
             _response("bad"),
             badSig,
-            keccak256("att")
+            keccak256("att"),
+            block.timestamp + 300
         );
+    }
+
+    function test_executeStrategy_reverts_reusedIntentHash() public {
+        _depositAs(alice, 10_000e6);
+        bytes32 intentHash = keccak256("same-intent");
+        vm.prank(agent);
+        _executeWithIntent(vault, TreasuryVault.Action.Rebalance, 500e6, "p1", intentHash, block.timestamp + 300);
+
+        vm.warp(block.timestamp + 61);
+        vm.prank(agent);
+        vm.expectRevert(TreasuryVault.IntentAlreadyUsed.selector);
+        _executeWithIntent(vault, TreasuryVault.Action.YieldFarm, 500e6, "p2", intentHash, block.timestamp + 300);
+    }
+
+    function test_executeStrategy_reverts_reusedResponseHash() public {
+        _depositAs(alice, 10_000e6);
+        vm.prank(agent);
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "same-response");
+
+        vm.warp(block.timestamp + 61);
+        vm.prank(agent);
+        vm.expectRevert(TreasuryVault.ResponseAlreadyUsed.selector);
+        _executeWithIntent(
+            vault,
+            TreasuryVault.Action.YieldFarm,
+            500e6,
+            "same-response",
+            keccak256("fresh-intent-same-response"),
+            block.timestamp + 300
+        );
+    }
+
+    function test_executeStrategy_reverts_expiredIntent() public {
+        _depositAs(alice, 10_000e6);
+        vm.warp(block.timestamp + 301);
+        vm.prank(agent);
+        vm.expectRevert(TreasuryVault.ExpiredIntent.selector);
+        _executeWithIntent(vault, TreasuryVault.Action.Rebalance, 500e6, "expired", keccak256("expired"), block.timestamp - 1);
     }
 
     // ── Execute: risk → base (Deleverage) ────────────────────────────────
@@ -328,6 +367,20 @@ contract TreasuryVaultTest is Test {
         assertGt(weth.balanceOf(owner), wethBefore);
     }
 
+    function test_emergencyDeleverageAndWithdraw_returnsBaseOnly() public {
+        _depositAs(alice, 10_000e6);
+        vm.prank(agent);
+        _execute(vault, TreasuryVault.Action.Rebalance, 1_000e6, "p");
+
+        uint256 usdcBefore = usdc.balanceOf(owner);
+        vault.emergencyDeleverageAndWithdraw(0);
+
+        assertEq(vault.killed(), true);
+        assertEq(vault.vaultBalance(), 0);
+        assertEq(vault.riskBalance(), 0);
+        assertGt(usdc.balanceOf(owner), usdcBefore);
+    }
+
     // ── Admin ────────────────────────────────────────────────────────────
 
     function test_setPolicy() public {
@@ -377,14 +430,33 @@ contract TreasuryVaultTest is Test {
     }
 
     function _execute(TreasuryVault target, TreasuryVault.Action action, uint256 amount, string memory tag) internal {
+        _executeWithIntent(
+            target,
+            action,
+            amount,
+            tag,
+            keccak256(abi.encodePacked("intent:", tag)),
+            block.timestamp + 300
+        );
+    }
+
+    function _executeWithIntent(
+        TreasuryVault target,
+        TreasuryVault.Action action,
+        uint256 amount,
+        string memory tag,
+        bytes32 intentHash,
+        uint256 deadline
+    ) internal {
         string memory response = _response(tag);
         target.executeStrategy(
             action,
             amount,
-            keccak256(abi.encodePacked("intent:", tag)),
+            intentHash,
             response,
             _signature(teeSignerKey, response),
-            keccak256(abi.encodePacked("att:", tag))
+            keccak256(abi.encodePacked("att:", tag)),
+            deadline
         );
     }
 

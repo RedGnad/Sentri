@@ -46,22 +46,22 @@ export const PRESET_LABELS: Record<number, { name: PresetTierName; description: 
   0: {
     name: "Conservative",
     description: "Foundation-grade. Capital preservation first.",
-    bullets: ["15% max WETH allocation", "2% drawdown freeze", "0.5% slippage cap", "10 min cooldown"],
+    bullets: ["15% max WETH exposure", "2% drawdown freeze", "0.5% slippage cap", "10 min cooldown"],
   },
   1: {
     name: "Balanced",
     description: "Standard DAO treasury. Productive but bounded.",
-    bullets: ["30% max WETH allocation", "5% drawdown freeze", "1% slippage cap", "5 min cooldown"],
+    bullets: ["30% max WETH exposure", "5% drawdown freeze", "1% slippage cap", "5 min cooldown"],
   },
   2: {
     name: "Aggressive",
     description: "Protocol with appetite for productive risk.",
-    bullets: ["50% max WETH allocation", "10% drawdown freeze", "2% slippage cap", "3 min cooldown"],
+    bullets: ["50% max WETH exposure", "10% drawdown freeze", "2% slippage cap", "3 min cooldown"],
   },
   3: {
     name: "Custom",
     description: "Set your own bounded parameters.",
-    bullets: ["≤ 50% allocation", "≤ 20% drawdown", "≤ 5% slippage", "≥ 60s cooldown"],
+    bullets: ["≤ 50% WETH exposure", "≤ 20% drawdown", "≤ 5% slippage", "≥ 60s cooldown"],
   },
 };
 
@@ -218,11 +218,19 @@ export const TREASURY_VAULT_ABI = [
       { name: "signedResponse", type: "string" },
       { name: "teeSignature", type: "bytes" },
       { name: "teeAttestation", type: "bytes32" },
+      { name: "deadline", type: "uint256" },
     ],
     outputs: [],
     stateMutability: "nonpayable",
   },
   { type: "function", name: "emergencyWithdraw", inputs: [], outputs: [], stateMutability: "nonpayable" },
+  {
+    type: "function",
+    name: "emergencyDeleverageAndWithdraw",
+    inputs: [{ name: "minBaseOut", type: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
   { type: "function", name: "pause", inputs: [], outputs: [], stateMutability: "nonpayable" },
   { type: "function", name: "unpause", inputs: [], outputs: [], stateMutability: "nonpayable" },
   {
@@ -265,6 +273,7 @@ export const TREASURY_VAULT_ABI = [
       { name: "responseHash", type: "bytes32" },
       { name: "teeSigner", type: "address" },
       { name: "teeAttestation", type: "bytes32" },
+      { name: "deadline", type: "uint256" },
     ],
     stateMutability: "view",
   },

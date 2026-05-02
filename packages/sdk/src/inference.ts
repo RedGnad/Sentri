@@ -129,7 +129,7 @@ export async function acknowledgeProvider(providerAddress?: string): Promise<voi
  * Send an inference request through Sealed Inference (TEE).
  *
  * The request is processed inside a Trusted Execution Environment:
- * - Strategy reasoning stays private (encrypted in-enclave)
+ * - Strategy reasoning is routed through the selected 0G verifiable TEE provider path
  * - Response is cryptographically signed by the TEE
  * - Response signature is checked off-chain and then by the vault on-chain
  */
@@ -268,7 +268,7 @@ function isVerifiableService(verifiability: string): boolean {
  * rules) so a small TEE-served model (Qwen 2.5 7B class) produces
  * meaningful, varied decisions instead of collapsing to a single mode.
  */
-export const TREASURY_SYSTEM_PROMPT = `You are Sentri, an autonomous treasury agent for stablecoin reserves running inside a TEE.
+export const TREASURY_SYSTEM_PROMPT = `You are Sentri, an autonomous treasury agent for stablecoin reserves served through a 0G verifiable TEE provider path.
 
 ROLE
 The vault holds USDC as the home asset. Mandate: keep the treasury stables-first
@@ -277,7 +277,7 @@ constructive. Never compromise the stables-first nature.
 
 POSITION ENVELOPE
 - Default state: 100% USDC
-- Maximum WETH allocation: 30% of TVL. Never exceed.
+- Maximum WETH exposure: 30% of TVL. Never exceed.
 - Target band when deployed: 20–30% WETH
 
 DECISION RULES (apply in order, stop at first match)
