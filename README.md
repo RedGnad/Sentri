@@ -1,23 +1,27 @@
 # Sentri
 
-**Verifiable financial logic for autonomous treasury management.**
+**Verifiable financial logic for autonomous treasury allocation.**
 Private strategy, verifiable results.
 
-Sentri is an autonomous, risk-managed stablecoin treasury agent. It plans privately inside a TEE via **0G Sealed Inference**, executes through an on-chain policy engine that it cannot override, and publishes cryptographic proofs of every decision to **0G Storage** — without revealing the strategy itself.
+Sentri is an autonomous, risk-managed **treasury allocator**. The vault holds two assets — a base asset (USDC) and a risk asset (WETH) — and the agent maintains a target allocation between them according to a strategy that it plans privately inside a TEE via **0G Sealed Inference**, executes through an on-chain policy engine it cannot override, and audits via **0G Storage** — without revealing the strategy itself.
 
 Built for the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*. Sentri implements the track's core thesis — *fully autonomous, verifiable financial logic* — applied to the treasury / risk-management end of the spectrum, with **Sealed Inference and TEE-based execution** as the privacy primitive that makes proprietary strategies safe to run on-chain.
 
-> Sentri is **not** an active trading bot. It is a *verifiable risk-managed allocator* — closer in spirit to a treasury fund than to a perp strategy. The agent's job is to keep the treasury within a declared risk envelope while remaining transparently provable, not to chase alpha.
+> Sentri is **not** an active trading bot. It is a *verifiable risk-managed allocator* — closer in spirit to a foundation treasury or a protocol reserve than to a perp strategy. The job is to keep the portfolio inside a declared risk envelope while remaining transparently provable. The agent does not chase alpha; it enforces discipline.
 
 ---
 
 ## The problem
 
-On-chain treasury management is either manual (slow, emotional) or bot-driven (public strategies, frontrunnable, no accountability). Neither option is acceptable for funds that need both autonomy and auditability — the exact profile of a DAO treasury, protocol reserve, or yield fund.
+On-chain treasuries that hold a mix of stable and risk assets need someone (or something) to keep the allocation in shape. The two existing options are bad:
+- **Manual** — slow, emotional, expensive in attention.
+- **Bot-driven** — public strategy, frontrunnable, no accountability when it misbehaves.
+
+Neither works for a DAO treasury, a protocol reserve, or a foundation fund that needs **both autonomy and auditability**.
 
 ## The answer
 
-A treasurer agent whose **reasoning runs inside a TEE**, whose **execution is gated by on-chain policy**, and whose **audit trail is cryptographically verifiable** — all without leaking the alpha.
+A treasurer agent whose **reasoning runs inside a TEE**, whose **execution is gated by on-chain policy**, and whose **audit trail is cryptographically verifiable** — all without leaking the strategy.
 
 ```
 ┌──────────────┐   ┌───────────────────┐   ┌──────────────┐   ┌────────────┐   ┌──────────────┐

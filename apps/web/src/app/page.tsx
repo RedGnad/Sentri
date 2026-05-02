@@ -10,7 +10,7 @@ const PRINCIPLES = [
     num: "i",
     title: "Private by construction",
     body:
-      "Strategy reasoning executes inside a Trusted Execution Environment via 0G Sealed Inference. The alpha never leaves the enclave — not to RPC, not to logs, not to the operator.",
+      "Strategy reasoning executes inside a Trusted Execution Environment via 0G Sealed Inference. The decision logic — thresholds, target allocation, risk rules — never leaves the enclave. Not to RPC, not to logs, not to the operator.",
   },
   {
     num: "ii",
@@ -77,10 +77,12 @@ export default async function LandingPage() {
             Private strategy. Verifiable results.
           </p>
           <p className="text-[15px] text-ink-dim max-w-xl mt-8 leading-relaxed">
-            Sentri is an autonomous, risk-managed stablecoin treasury agent. It plans privately
-            inside a <span className="text-ink">Trusted Execution Environment</span>, executes
-            under on-chain risk policies it cannot override, and publishes
-            cryptographic proofs of every decision — without revealing the strategy.
+            Sentri is an autonomous, risk-managed <span className="text-ink">treasury allocator</span>.
+            The vault holds a base asset (USDC) and a risk asset (WETH); the agent
+            maintains the target allocation. Strategy reasoning runs inside a
+            <span className="text-ink"> Trusted Execution Environment</span>, execution
+            is bounded by on-chain policy it cannot override, and every decision is
+            cryptographically attested — without revealing the strategy.
           </p>
           <div className="flex items-center gap-3 mt-10">
             <Link href="/vault">
