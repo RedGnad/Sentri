@@ -137,7 +137,10 @@ export async function discoverVaults(ctx: GlobalContext): Promise<string[]> {
  */
 export async function pushPrice(ctx: GlobalContext): Promise<MarketSnapshot> {
   const market = await getMarketSnapshot();
-  log(`Market: ETH=$${market.ethUsd.toFixed(2)} (${market.change24h.toFixed(2)}% 24h, ${market.source})`);
+  log(
+    `Market: ETH=$${market.ethUsd.toFixed(2)} · 24h ${market.change24h.toFixed(2)}% · ` +
+      `${market.sourceCount}/4 sources · spread ${market.spreadPct.toFixed(3)}% · ${market.source}`,
+  );
 
   const feedDecimals: bigint = await ctx.priceFeed.decimals();
   const answer = BigInt(Math.floor(market.ethUsd * 10 ** Number(feedDecimals)));
