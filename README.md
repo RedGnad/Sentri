@@ -260,6 +260,40 @@ The demo covers one full lifecycle:
 
 ---
 
+## Trust boundary
+
+We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
+
+### What the chain verifies (on every executeStrategy)
+
+- **Caller is the registered agent** — `msg.sender == agent` (set at vault creation, owner-mutable).
+- **Caller holds an active Agent INFT** — `agentNFT.isActiveAgent(msg.sender)`. Owner can revoke any time.
+- **Cooldown elapsed** — `block.timestamp ≥ lastExecutionTime + cooldownPeriod`.
+- **Allocation within policy** — the action is sized in base-equivalent units and rejected if it exceeds `maxAllocationBps` of TVL.
+- **Drawdown within policy** — post-trade TVL must remain within `maxDrawdownBps` of the high-water mark.
+- **Oracle price is fresh** — `block.timestamp - oracleUpdatedAt ≤ maxPriceStaleness`.
+- **Swap respects oracle slippage bound** — `minOut = expected × (1 − maxSlippageBps)`. Router reverts otherwise.
+- **Vault is not paused or killed.**
+- **Re-entrancy guarded.**
+
+### What the chain DOES NOT verify (and why this is honest)
+
+- **The TEE attestation is NOT cryptographically verified on-chain.** The contract stores `proofHash` and `teeAttestation` as `bytes32` in the execution log so anyone can reproduce them off-chain, but the EVM has no way today to validate an Intel SGX/TDX quote natively. The TEE verification happens **off-chain** inside the agent: `broker.inference.processResponse(provider, chatID, content)` from `@0glabs/0g-serving-broker` calls into the 0G compute network, which checks the provider's attestation and returns a boolean. We trust the broker's verification result and commit its hashes to the chain. **A reviewer who wants stronger guarantees should run their own TEE verification by replaying the chatID against the broker.**
+- **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed allocation, drawdown, slippage, or cooldown.
+- **The market price comes from centralised exchanges** (Binance, CoinGecko, Coinbase, Kraken — median of 4 sources, 2-of-4 quorum required). This is more robust than a single source but it is not a fully decentralised oracle. A coordinated manipulation across all four CEX feeds would be required to push a bad price.
+- **The swap routes through `SentriPair`**, an in-protocol AMM seeded with `MockUSDC`/`MockWETH` for testnet reproducibility. v2 mainnet would integrate a real DEX (Jaine on 0G mainnet, or equivalent) with real liquidity.
+
+### What this means for the user
+
+A vault owner can reason about Sentri's safety along **two independent dimensions**:
+
+1. **Bound** — what's the worst the agent can do within policy? This is fully on-chain and tight: bounded allocation per action, bounded drawdown from peak, bounded slippage per swap, bounded cadence (cooldown). The owner sets the bounds at vault creation and can update them; the agent cannot.
+2. **Recourse** — what happens if something goes wrong? `pause()` blocks all activity reversibly; `emergencyWithdraw()` returns 100% of base + risk to the owner irreversibly. Both are owner-only and not gated by the agent or the price feed.
+
+The TEE story is a transparency story (every decision has an auditable trail mirrored to 0G Storage) more than a cryptographic-validation story (the chain does not validate the inference itself). When 0G compute exposes raw TEE signatures from inference providers, an EIP-712 sealed-mode upgrade becomes possible — see Roadmap.
+
+---
+
 ## What is intentionally out of scope
 
 - **Active trading / perp strategies.** Sentri rebalances and risk-manages — it does not chase short-term alpha. The interesting privacy story is *which constraints the agent enforces in private*, not *which trades it places*.
