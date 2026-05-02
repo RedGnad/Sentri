@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test, console2} from "forge-std/Test.sol";
+import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
 import {MockWETH} from "../src/MockWETH.sol";
 import {TreasuryVault} from "../src/TreasuryVault.sol";
@@ -66,19 +67,70 @@ contract TreasuryVaultTest is Test {
             maxPriceStaleness: 3600
         });
 
-        vault = new TreasuryVault(
-            address(usdc),
-            address(weth),
-            address(agentNFT),
-            address(router),
-            address(feed),
-            agent,
-            defaultPolicy
-        );
+        // Deploy implementation, clone, initialize — same flow the factory uses.
+        TreasuryVault impl = new TreasuryVault();
+        vault = TreasuryVault(Clones.clone(address(impl)));
+        vault.initialize(TreasuryVault.InitParams({
+            owner: owner,
+            base: address(usdc),
+            risk: address(weth),
+            agentNFT: address(agentNFT),
+            router: address(router),
+            priceFeed: address(feed),
+            agent: agent,
+            policy: defaultPolicy
+        }));
 
         agentNFT.mint(agent, keccak256("enclave-v1"), keccak256("att-v1"), "0G Sealed Inference");
 
         usdc.mint(alice, 100_000e6);
+    }
+
+    // ── Init pattern ─────────────────────────────────────────────────────
+
+    function test_implementation_disabled_initializers() public {
+        TreasuryVault impl = new TreasuryVault();
+        vm.expectRevert();
+        impl.initialize(TreasuryVault.InitParams({
+            owner: owner,
+            base: address(usdc),
+            risk: address(weth),
+            agentNFT: address(agentNFT),
+            router: address(router),
+            priceFeed: address(feed),
+            agent: agent,
+            policy: defaultPolicy
+        }));
+    }
+
+    function test_clone_cannot_be_double_initialized() public {
+        vm.expectRevert();
+        vault.initialize(TreasuryVault.InitParams({
+            owner: owner,
+            base: address(usdc),
+            risk: address(weth),
+            agentNFT: address(agentNFT),
+            router: address(router),
+            priceFeed: address(feed),
+            agent: agent,
+            policy: defaultPolicy
+        }));
+    }
+
+    function test_initialize_reverts_zeroAddress() public {
+        TreasuryVault impl = new TreasuryVault();
+        TreasuryVault freshClone = TreasuryVault(Clones.clone(address(impl)));
+        vm.expectRevert(TreasuryVault.ZeroAddress.selector);
+        freshClone.initialize(TreasuryVault.InitParams({
+            owner: address(0),
+            base: address(usdc),
+            risk: address(weth),
+            agentNFT: address(agentNFT),
+            router: address(router),
+            priceFeed: address(feed),
+            agent: agent,
+            policy: defaultPolicy
+        }));
     }
 
     // ── Deposit ──────────────────────────────────────────────────────────
@@ -102,6 +154,50 @@ contract TreasuryVaultTest is Test {
         vm.expectRevert(TreasuryVault.VaultKilled.selector);
         vault.deposit(1_000e6);
         vm.stopPrank();
+    }
+
+    function test_depositFrom_byProxy_creditsCorrectly() public {
+        address proxy = makeAddr("proxy");
+        // Alice approves proxy to spend her USDC, proxy approves vault.
+        // Realistically the factory does this. Here we simulate.
+        vm.prank(alice);
+        usdc.approve(proxy, 5_000e6);
+        // proxy pulls funds and deposits into vault on alice's behalf
+        vm.startPrank(proxy);
+        usdc.transferFrom(alice, proxy, 5_000e6);
+        usdc.approve(address(vault), 5_000e6);
+        vault.depositFrom(proxy, 5_000e6);
+        vm.stopPrank();
+        assertEq(vault.vaultBalance(), 5_000e6);
+        assertEq(vault.highWaterMark(), 5_000e6);
+    }
+
+    function test_depositFrom_reverts_zeroPayer() public {
+        vm.expectRevert(TreasuryVault.ZeroAddress.selector);
+        vault.depositFrom(address(0), 100);
+    }
+
+    function test_withdraw_scalesHWMProportionally() public {
+        _depositAs(alice, 10_000e6);
+        // Strategy gain: simulate by directly transferring more USDC to vault
+        // (no oracle move involved, so TVL tracks balance).
+        usdc.mint(address(this), 1_000e6);
+        usdc.transfer(address(vault), 1_000e6);
+        // Trigger HWM bump: another deposit (smallest possible) updates HWM
+        usdc.mint(alice, 1);
+        vm.startPrank(alice);
+        usdc.approve(address(vault), 1);
+        vault.deposit(1);
+        vm.stopPrank();
+        uint256 hwmBefore = vault.highWaterMark();
+        assertEq(hwmBefore, 11_000e6 + 1);
+
+        // Now withdraw half — HWM must scale to half
+        uint256 tvlBefore = vault.totalValue();
+        vault.withdraw(owner, 5_500e6);
+        uint256 tvlAfter = vault.totalValue();
+        uint256 expectedHWM = (hwmBefore * tvlAfter) / tvlBefore;
+        assertEq(vault.highWaterMark(), expectedHWM);
     }
 
     // ── Execute: base → risk (Rebalance) ─────────────────────────────────

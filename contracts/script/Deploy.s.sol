@@ -9,36 +9,32 @@ import {SentriPair} from "../src/SentriPair.sol";
 import {SentriSwapRouter} from "../src/SentriSwapRouter.sol";
 import {SentriPriceFeed} from "../src/SentriPriceFeed.sol";
 import {TreasuryVault} from "../src/TreasuryVault.sol";
+import {VaultFactory} from "../src/VaultFactory.sol";
 
+/// @notice Deploys the full Sentri stack on Galileo testnet:
+///         tokens, oracle, AMM, agent identity, vault implementation, and
+///         the public VaultFactory anyone can use to create their own vault.
+///         Also creates one Balanced demo vault owned by the deployer.
 contract Deploy is Script {
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address agent = vm.envAddress("AGENT_ADDRESS");
         address deployer = vm.addr(deployerKey);
 
-        TreasuryVault.Policy memory policy = TreasuryVault.Policy({
-            maxAllocationBps: 2000,        // 20%
-            maxDrawdownBps: 1000,          // 10%
-            rebalanceThresholdBps: 500,    // 5%
-            maxSlippageBps: 300,           // 3%
-            cooldownPeriod: 300,           // 5 minutes
-            maxPriceStaleness: 3600        // 1 hour
-        });
-
         vm.startBroadcast(deployerKey);
 
         // ── Tokens ───────────────────────────────────────────────────────
         MockUSDC usdc = new MockUSDC();
         MockWETH weth = new MockWETH();
-        console2.log("MockUSDC:", address(usdc));
-        console2.log("MockWETH:", address(weth));
+        console2.log("MockUSDC:        ", address(usdc));
+        console2.log("MockWETH:        ", address(weth));
 
         // ── Price feed ───────────────────────────────────────────────────
         SentriPriceFeed feed = new SentriPriceFeed(8, "WETH/USDC");
         feed.setKeeper(agent, true);
         feed.setKeeper(deployer, true);
         feed.pushAnswer(2000 * 1e8, keccak256("initial-deploy"));
-        console2.log("SentriPriceFeed:", address(feed));
+        console2.log("SentriPriceFeed: ", address(feed));
 
         // ── AMM ──────────────────────────────────────────────────────────
         (address t0, address t1) = address(usdc) < address(weth)
@@ -46,10 +42,10 @@ contract Deploy is Script {
             : (address(weth), address(usdc));
         SentriPair pair = new SentriPair(t0, t1);
         SentriSwapRouter router = new SentriSwapRouter(address(pair));
-        console2.log("SentriPair:", address(pair));
+        console2.log("SentriPair:      ", address(pair));
         console2.log("SentriSwapRouter:", address(router));
 
-        // Seed initial liquidity: 1,000,000 USDC + 500 WETH  (1 WETH = 2000 USDC)
+        // Seed initial liquidity: 1,000,000 USDC + 500 WETH (1 WETH = 2000 USDC).
         usdc.mint(deployer, 1_000_000e6);
         weth.mint(deployer, 500e18);
         usdc.approve(address(router), type(uint256).max);
@@ -61,7 +57,7 @@ contract Deploy is Script {
 
         // ── Agent identity ───────────────────────────────────────────────
         AgentINFT agentNFT = new AgentINFT();
-        console2.log("AgentINFT:", address(agentNFT));
+        console2.log("AgentINFT:       ", address(agentNFT));
         agentNFT.mint(
             agent,
             keccak256("sentri-enclave-v1"),
@@ -69,19 +65,27 @@ contract Deploy is Script {
             "0G Sealed Inference"
         );
 
-        // ── Vault ────────────────────────────────────────────────────────
-        TreasuryVault vault = new TreasuryVault(
-            address(usdc),
-            address(weth),
+        // ── Vault implementation (master, never used directly) ───────────
+        TreasuryVault vaultImpl = new TreasuryVault();
+        console2.log("TreasuryVault impl:", address(vaultImpl));
+
+        // ── Vault factory (the public entry point) ───────────────────────
+        VaultFactory factory = new VaultFactory(
+            address(vaultImpl),
+            agent,
             address(agentNFT),
             address(router),
             address(feed),
-            agent,
-            policy
+            address(usdc),
+            address(weth)
         );
-        console2.log("TreasuryVault:", address(vault));
+        console2.log("VaultFactory:    ", address(factory));
 
-        // Deployer dust for testing
+        // ── Demo vault owned by the deployer (Balanced preset) ───────────
+        address demoVault = factory.createVault(VaultFactory.PresetTier.Balanced);
+        console2.log("Demo vault:      ", demoVault);
+
+        // Mint the deployer some USDC to seed the demo vault later if desired.
         usdc.mint(deployer, 100_000e6);
 
         vm.stopBroadcast();

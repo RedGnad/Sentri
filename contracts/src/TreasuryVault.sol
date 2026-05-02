@@ -4,18 +4,25 @@ pragma solidity ^0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {AgentINFT} from "./AgentINFT.sol";
 import {SentriSwapRouter} from "./SentriSwapRouter.sol";
 import {SentriPriceFeed} from "./SentriPriceFeed.sol";
 
-/// @title TreasuryVault — Autonomous treasury executing real swaps under policy
+/// @title TreasuryVault — Per-user verifiable autonomous treasury (clone implementation)
 /// @notice Holds a base stable asset and a risk asset. The agent executes real
 ///         swaps through a router, with slippage enforced against an oracle
-///         price. All actions are policy-gated and logged on-chain.
-contract TreasuryVault is Ownable, Pausable, ReentrancyGuard {
+///         price. All actions are policy-gated and logged on-chain. Designed
+///         to be deployed via VaultFactory as an EIP-1167 minimal proxy clone.
+contract TreasuryVault is
+    Initializable,
+    Ownable2StepUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuard
+{
     using SafeERC20 for IERC20;
 
     // ── Types ────────────────────────────────────────────────────────────
@@ -45,21 +52,37 @@ contract TreasuryVault is Ownable, Pausable, ReentrancyGuard {
         bytes32 teeAttestation;
     }
 
+    /// @notice Bundle of init params passed by the factory at clone init.
+    struct InitParams {
+        address owner;
+        address base;
+        address risk;
+        address agentNFT;
+        address router;
+        address priceFeed;
+        address agent;
+        Policy policy;
+    }
+
     // ── State ────────────────────────────────────────────────────────────
 
-    IERC20 public immutable base;        // e.g. MockUSDC
-    IERC20 public immutable risk;        // e.g. MockWETH
-    uint8 public immutable baseDecimals;
-    uint8 public immutable riskDecimals;
+    IERC20 public base;        // e.g. MockUSDC
+    IERC20 public risk;        // e.g. MockWETH
+    uint8 public baseDecimals;
+    uint8 public riskDecimals;
 
-    AgentINFT public immutable agentNFT;
-    SentriSwapRouter public immutable router;
-    SentriPriceFeed public immutable priceFeed;
+    AgentINFT public agentNFT;
+    SentriSwapRouter public router;
+    SentriPriceFeed public priceFeed;
 
     address public agent;
     Policy public policy;
 
-    uint256 public highWaterMark; // in base units (TVL denominated in base)
+    /// @notice High-water mark of TVL (in base units). Bumped on deposit and
+    ///         on profitable strategy execution. Scaled DOWN proportionally on
+    ///         withdraw so per-share NAV peak is preserved (a withdrawal
+    ///         shrinks the vault but does not register as drawdown).
+    uint256 public highWaterMark;
     uint256 public lastExecutionTime;
 
     ExecutionLog[] public executionLogs;
@@ -110,51 +133,82 @@ contract TreasuryVault is Ownable, Pausable, ReentrancyGuard {
         _;
     }
 
-    // ── Constructor ──────────────────────────────────────────────────────
+    // ── Constructor / Initializer ────────────────────────────────────────
 
-    constructor(
-        address _base,
-        address _risk,
-        address _agentNFT,
-        address _router,
-        address _priceFeed,
-        address _agent,
-        Policy memory _policy
-    ) Ownable(msg.sender) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /// @notice One-shot initialization. Called once by the factory after a clone is deployed.
+    /// @param p Bundle of all init params; see InitParams struct above.
+    function initialize(InitParams calldata p) external initializer {
         if (
-            _base == address(0) ||
-            _risk == address(0) ||
-            _agentNFT == address(0) ||
-            _router == address(0) ||
-            _priceFeed == address(0) ||
-            _agent == address(0)
+            p.owner == address(0) ||
+            p.base == address(0) ||
+            p.risk == address(0) ||
+            p.agentNFT == address(0) ||
+            p.router == address(0) ||
+            p.priceFeed == address(0) ||
+            p.agent == address(0)
         ) revert ZeroAddress();
-        _validatePolicy(_policy);
+        _validatePolicy(p.policy);
 
-        base = IERC20(_base);
-        risk = IERC20(_risk);
-        baseDecimals = IERC20Metadata(_base).decimals();
-        riskDecimals = IERC20Metadata(_risk).decimals();
-        agentNFT = AgentINFT(_agentNFT);
-        router = SentriSwapRouter(_router);
-        priceFeed = SentriPriceFeed(_priceFeed);
-        agent = _agent;
-        policy = _policy;
+        // ReentrancyGuard uses storage default (0) which behaves as NOT_ENTERED
+        // on clones, no init call needed. Ownable + Pausable do need __init.
+        __Ownable_init(p.owner);
+        __Pausable_init();
+
+        base = IERC20(p.base);
+        risk = IERC20(p.risk);
+        baseDecimals = IERC20Metadata(p.base).decimals();
+        riskDecimals = IERC20Metadata(p.risk).decimals();
+        agentNFT = AgentINFT(p.agentNFT);
+        router = SentriSwapRouter(p.router);
+        priceFeed = SentriPriceFeed(p.priceFeed);
+        agent = p.agent;
+        policy = p.policy;
     }
 
     // ── Deposit / Withdraw ───────────────────────────────────────────────
 
+    /// @notice Deposit base tokens from the caller into the vault.
     function deposit(uint256 amount) external whenNotPaused notKilled nonReentrant {
-        if (amount == 0) revert ZeroAmount();
-        base.safeTransferFrom(msg.sender, address(this), amount);
-        _bumpHighWaterMark();
-        emit Deposited(msg.sender, amount);
+        _depositFrom(msg.sender, amount);
     }
 
+    /// @notice Deposit base tokens from an explicit payer (e.g. the factory
+    ///         performing an atomic create-and-deposit on the user's behalf).
+    ///         The payer must have approved `address(this)` to spend `amount`.
+    function depositFrom(address payer, uint256 amount) external whenNotPaused notKilled nonReentrant {
+        _depositFrom(payer, amount);
+    }
+
+    function _depositFrom(address payer, uint256 amount) private {
+        if (amount == 0) revert ZeroAmount();
+        if (payer == address(0)) revert ZeroAddress();
+        base.safeTransferFrom(payer, address(this), amount);
+        _bumpHighWaterMark();
+        emit Deposited(payer, amount);
+    }
+
+    /// @notice Withdraw base tokens to a recipient. HWM is scaled DOWN
+    ///         proportionally to preserve per-share NAV peak (withdrawals
+    ///         shrink the vault but should not register as strategy drawdown).
     function withdraw(address to, uint256 amount) external onlyOwner whenNotPaused notKilled nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
+
+        uint256 price = _fetchPriceOrZero();
+        uint8 feedDec = priceFeed.decimals();
+        uint256 tvlBefore = (price > 0) ? _tvl(price, feedDec) : base.balanceOf(address(this));
+
         base.safeTransfer(to, amount);
+
+        if (highWaterMark > 0 && tvlBefore > 0) {
+            uint256 tvlAfter = (price > 0) ? _tvl(price, feedDec) : base.balanceOf(address(this));
+            highWaterMark = (highWaterMark * tvlAfter) / tvlBefore;
+        }
         emit Withdrawn(to, amount);
     }
 
@@ -287,8 +341,6 @@ contract TreasuryVault is Ownable, Pausable, ReentrancyGuard {
 
     /// @dev base value of `riskAmount` using `price` (price of 1 risk in base)
     function _quoteRiskToBase(uint256 riskAmount, uint256 price, uint8 feedDec) internal view returns (uint256) {
-        // value = riskAmount * price / 10^feedDec, then decimal-adjust risk->base
-        // value_in_base = riskAmount * price * 10^baseDec / (10^feedDec * 10^riskDec)
         return (riskAmount * price * (10 ** baseDecimals)) / ((10 ** feedDec) * (10 ** riskDecimals));
     }
 
@@ -306,7 +358,6 @@ contract TreasuryVault is Ownable, Pausable, ReentrancyGuard {
     function _bumpHighWaterMark() internal {
         uint256 price = _fetchPriceOrZero();
         if (price == 0) {
-            // No oracle data yet (e.g. first deposit): use base balance
             uint256 b = base.balanceOf(address(this));
             if (b > highWaterMark) highWaterMark = b;
             return;
