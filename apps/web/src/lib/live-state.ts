@@ -1,12 +1,17 @@
-// Server-side probes for the landing page. Reads live data from:
-//   - 0G Galileo RPC (latest block, vault state)
-//   - The agent server (/healthz endpoint)
+// Server-side probes for the landing page (public observatory).
+// Reads protocol-wide live data from:
+//   - 0G Galileo RPC (latest block, factory state, aggregate vault TVL)
+//   - The agent server (/healthz endpoint with cycle counters)
 //
 // Returns "unavailable" markers when a probe fails, never throws — so the
-// landing page can render even if one source is down.
+// landing renders even if a source is down.
 
 import { createPublicClient, http } from "viem";
-import { TREASURY_VAULT_ADDRESS, TREASURY_VAULT_ABI } from "@/config/contracts";
+import {
+  VAULT_FACTORY_ADDRESS,
+  VAULT_FACTORY_ABI,
+  TREASURY_VAULT_ABI,
+} from "@/config/contracts";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://evmrpc-testnet.0g.ai";
 const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 16602);
@@ -20,45 +25,45 @@ export interface LiveSnapshot {
     blockAgeSec: number | null;
     rpcOk: boolean;
   };
-  vault: {
-    totalValue: string | null; // formatted USDC e.g. "10056.39"
-    executionLogCount: number | null;
-    isPaused: boolean | null;
-    isKilled: boolean | null;
+  protocol: {
+    factoryAddress: string;
+    vaultsCount: number | null;
+    totalTVL: string | null; // formatted USDC, e.g. "120,453.21"
+    totalExecutions: number | null;
   };
   agent: {
     ok: boolean;
     status: "ready" | "initializing" | "error" | "unreachable";
     walletAddress: string | null;
     model: string | null;
-    totalIterations: number | null;
-    lastIterationAt: number | null;
-    lastIterationStatus: "ok" | "error" | "skipped" | null;
+    cycles: number | null;
+    lastCycleAt: number | null;
     intervalSec: number | null;
     uptimeSec: number | null;
+    trackedVaultCount: number | null;
     error: string | null;
   };
   links: {
     explorer: string;
-    vaultAddress: string;
+    factoryExplorer: string;
   };
   fetchedAt: number;
 }
 
-async function probeChainAndVault(): Promise<{
+async function probeChainAndProtocol(): Promise<{
   chain: LiveSnapshot["chain"];
-  vault: LiveSnapshot["vault"];
+  protocol: LiveSnapshot["protocol"];
 }> {
   const baseChain = { id: CHAIN_ID, blockNumber: null, blockAgeSec: null, rpcOk: false };
-  const baseVault = {
-    totalValue: null,
-    executionLogCount: null,
-    isPaused: null,
-    isKilled: null,
+  const baseProtocol = {
+    factoryAddress: VAULT_FACTORY_ADDRESS,
+    vaultsCount: null,
+    totalTVL: null,
+    totalExecutions: null,
   };
 
-  if (!TREASURY_VAULT_ADDRESS || TREASURY_VAULT_ADDRESS === "0x") {
-    return { chain: baseChain, vault: baseVault };
+  if (!VAULT_FACTORY_ADDRESS || VAULT_FACTORY_ADDRESS === "0x") {
+    return { chain: baseChain, protocol: baseProtocol };
   }
 
   try {
@@ -66,32 +71,55 @@ async function probeChainAndVault(): Promise<{
       transport: http(RPC_URL, { timeout: 5_000, retryCount: 0 }),
     });
 
-    const [block, totalValue, logCount, isPaused, isKilled] = await Promise.all([
+    const [block, count] = await Promise.all([
       client.getBlock({ blockTag: "latest" }),
       client.readContract({
-        address: TREASURY_VAULT_ADDRESS as `0x${string}`,
-        abi: TREASURY_VAULT_ABI,
-        functionName: "totalValue",
-      }),
-      client.readContract({
-        address: TREASURY_VAULT_ADDRESS as `0x${string}`,
-        abi: TREASURY_VAULT_ABI,
-        functionName: "executionLogCount",
-      }),
-      client.readContract({
-        address: TREASURY_VAULT_ADDRESS as `0x${string}`,
-        abi: TREASURY_VAULT_ABI,
-        functionName: "paused",
-      }),
-      client.readContract({
-        address: TREASURY_VAULT_ADDRESS as `0x${string}`,
-        abi: TREASURY_VAULT_ABI,
-        functionName: "killed",
-      }),
+        address: VAULT_FACTORY_ADDRESS,
+        abi: VAULT_FACTORY_ABI,
+        functionName: "vaultsCount",
+      }) as Promise<bigint>,
     ]);
 
     const blockTimestamp = Number(block.timestamp);
     const blockAgeSec = Math.max(0, Math.floor(Date.now() / 1000 - blockTimestamp));
+
+    const vaultsCount = Number(count);
+
+    // Aggregate TVL + executions across all vaults (capped at 50 for sanity).
+    let totalTVL = 0n;
+    let totalExecutions = 0;
+    if (vaultsCount > 0) {
+      const limit = Math.min(vaultsCount, 50);
+      const addrs = (await client.readContract({
+        address: VAULT_FACTORY_ADDRESS,
+        abi: VAULT_FACTORY_ABI,
+        functionName: "vaultsPage",
+        args: [0n, BigInt(limit)],
+      })) as readonly `0x${string}`[];
+
+      const tvlReads = addrs.map((addr) =>
+        client.readContract({
+          address: addr,
+          abi: TREASURY_VAULT_ABI,
+          functionName: "totalValue",
+        }) as Promise<bigint>,
+      );
+      const logReads = addrs.map((addr) =>
+        client.readContract({
+          address: addr,
+          abi: TREASURY_VAULT_ABI,
+          functionName: "executionLogCount",
+        }) as Promise<bigint>,
+      );
+      const tvlResults = await Promise.allSettled(tvlReads);
+      const logResults = await Promise.allSettled(logReads);
+      for (const r of tvlResults) {
+        if (r.status === "fulfilled") totalTVL += r.value;
+      }
+      for (const r of logResults) {
+        if (r.status === "fulfilled") totalExecutions += Number(r.value);
+      }
+    }
 
     return {
       chain: {
@@ -100,91 +128,67 @@ async function probeChainAndVault(): Promise<{
         blockAgeSec,
         rpcOk: true,
       },
-      vault: {
-        totalValue: (Number(totalValue as bigint) / 1e6).toFixed(2),
-        executionLogCount: Number(logCount as bigint),
-        isPaused: isPaused as boolean,
-        isKilled: isKilled as boolean,
+      protocol: {
+        factoryAddress: VAULT_FACTORY_ADDRESS,
+        vaultsCount,
+        totalTVL: (Number(totalTVL) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+        totalExecutions,
       },
     };
   } catch {
-    return { chain: baseChain, vault: baseVault };
+    return { chain: baseChain, protocol: baseProtocol };
   }
 }
 
 async function probeAgent(): Promise<LiveSnapshot["agent"]> {
-  if (!AGENT_URL) {
-    return {
-      ok: false,
-      status: "unreachable",
-      walletAddress: null,
-      model: null,
-      totalIterations: null,
-      lastIterationAt: null,
-      lastIterationStatus: null,
-      intervalSec: null,
-      uptimeSec: null,
-      error: "AGENT_URL not configured",
-    };
-  }
+  const empty: LiveSnapshot["agent"] = {
+    ok: false,
+    status: "unreachable",
+    walletAddress: null,
+    model: null,
+    cycles: null,
+    lastCycleAt: null,
+    intervalSec: null,
+    uptimeSec: null,
+    trackedVaultCount: null,
+    error: null,
+  };
+
+  if (!AGENT_URL) return { ...empty, error: "AGENT_URL not configured" };
 
   try {
     const res = await fetch(`${AGENT_URL.replace(/\/$/, "")}/healthz`, {
       cache: "no-store",
       signal: AbortSignal.timeout(5_000),
     });
-    if (!res.ok) {
-      return {
-        ok: false,
-        status: "unreachable",
-        walletAddress: null,
-        model: null,
-        totalIterations: null,
-        lastIterationAt: null,
-        lastIterationStatus: null,
-        intervalSec: null,
-        uptimeSec: null,
-        error: `HTTP ${res.status}`,
-      };
-    }
+    if (!res.ok) return { ...empty, error: `HTTP ${res.status}` };
     const body = await res.json();
     return {
       ok: body.ok === true,
       status: body.agent ?? "unreachable",
       walletAddress: body.config?.walletAddress ?? null,
       model: body.config?.model ?? null,
-      totalIterations: body.iterations?.total ?? null,
-      lastIterationAt: body.iterations?.lastAt ?? null,
-      lastIterationStatus: body.iterations?.lastStatus ?? null,
+      cycles: body.cycles?.total ?? null,
+      lastCycleAt: body.cycles?.lastAt ?? null,
       intervalSec: body.config?.intervalSec ?? null,
       uptimeSec: body.uptimeSec ?? null,
-      error: body.iterations?.lastError ?? body.setupError ?? null,
+      trackedVaultCount: body.trackedVaultCount ?? null,
+      error: body.setupError ?? null,
     };
   } catch (err) {
-    return {
-      ok: false,
-      status: "unreachable",
-      walletAddress: null,
-      model: null,
-      totalIterations: null,
-      lastIterationAt: null,
-      lastIterationStatus: null,
-      intervalSec: null,
-      uptimeSec: null,
-      error: err instanceof Error ? err.message : String(err),
-    };
+    return { ...empty, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
 export async function getLiveSnapshot(): Promise<LiveSnapshot> {
-  const [{ chain, vault }, agent] = await Promise.all([probeChainAndVault(), probeAgent()]);
+  const [{ chain, protocol }, agent] = await Promise.all([probeChainAndProtocol(), probeAgent()]);
   return {
     chain,
-    vault,
+    protocol,
     agent,
     links: {
       explorer: EXPLORER,
-      vaultAddress: TREASURY_VAULT_ADDRESS,
+      factoryExplorer: `${EXPLORER}/address/${VAULT_FACTORY_ADDRESS}`,
     },
     fetchedAt: Date.now(),
   };

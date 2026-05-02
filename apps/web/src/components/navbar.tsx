@@ -8,15 +8,19 @@ import { cn } from "@/lib/utils";
 import { Menu, X } from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/vault", label: "Vault", num: "01" },
-  { href: "/audit", label: "Audit", num: "02" },
-  { href: "/policy", label: "Policy", num: "03" },
-  { href: "/emergency", label: "Emergency", num: "04" },
+  { href: "/vaults", label: "Vaults", num: "01" },
+  { href: "/deploy", label: "Deploy", num: "02" },
+  { href: "/my", label: "My Vaults", num: "03" },
 ];
 
 export function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  function isActive(href: string): boolean {
+    if (href === "/vaults") return pathname === "/vaults" || pathname.startsWith("/v/");
+    return pathname === href;
+  }
 
   return (
     <nav className="border-b border-hairline bg-bg/80 backdrop-blur-md sticky top-0 z-50">
@@ -28,12 +32,12 @@ export function Navbar() {
                 Sentri
               </span>
               <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-                [v0.1]
+                [v1.0]
               </span>
             </Link>
             <div className="hidden md:flex items-center gap-0 border-l border-hairline pl-8">
               {NAV_ITEMS.map((item) => {
-                const active = pathname === item.href;
+                const active = isActive(item.href);
                 return (
                   <Link
                     key={item.href}
@@ -41,14 +45,12 @@ export function Navbar() {
                     prefetch={true}
                     className={cn(
                       "group flex items-baseline gap-1.5 px-4 py-2 font-mono text-[11px] uppercase tracking-kicker transition-colors relative",
-                      active ? "text-amber" : "text-ink-dim hover:text-ink"
+                      active ? "text-amber" : "text-ink-dim hover:text-ink",
                     )}
                   >
                     <span className="text-ink-faint">{item.num}</span>
                     <span>{item.label}</span>
-                    {active && (
-                      <span className="absolute bottom-0 left-4 right-4 h-px bg-amber" />
-                    )}
+                    {active && <span className="absolute bottom-0 left-4 right-4 h-px bg-amber" />}
                   </Link>
                 );
               })}
@@ -69,7 +71,7 @@ export function Navbar() {
         {mobileOpen && (
           <div className="md:hidden border-t border-hairline py-2">
             {NAV_ITEMS.map((item) => {
-              const active = pathname === item.href;
+              const active = isActive(item.href);
               return (
                 <Link
                   key={item.href}
@@ -77,7 +79,7 @@ export function Navbar() {
                   onClick={() => setMobileOpen(false)}
                   className={cn(
                     "flex items-baseline gap-2 px-2 py-3 font-mono text-xs uppercase tracking-kicker border-b border-hairline last:border-b-0",
-                    active ? "text-amber" : "text-ink-dim"
+                    active ? "text-amber" : "text-ink-dim",
                   )}
                 >
                   <span className="text-ink-faint">{item.num}</span>

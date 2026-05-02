@@ -1,19 +1,13 @@
 "use client";
 
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { TREASURY_VAULT_ADDRESS, TREASURY_VAULT_ABI, ERC20_ABI, MOCK_USDC_ADDRESS } from "@/config/contracts";
+import { TREASURY_VAULT_ABI, ERC20_ABI, MOCK_USDC_ADDRESS } from "@/config/contracts";
 import { parseUnits } from "viem";
 import { galileo } from "@/config/wagmi";
 
 const CHAIN_ID = galileo.id;
 
-const vaultContract = {
-  address: TREASURY_VAULT_ADDRESS,
-  abi: TREASURY_VAULT_ABI,
-  chainId: CHAIN_ID,
-} as const;
-
-// ── Parsed Vault Data ────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────
 
 export interface Policy {
   maxAllocationBps: number;
@@ -25,6 +19,7 @@ export interface Policy {
 }
 
 export interface VaultData {
+  address: `0x${string}`;
   balance: bigint;       // base (USDC) balance
   riskBalance: bigint;   // risk (WETH) balance
   totalValue: bigint;    // TVL in base units
@@ -38,32 +33,38 @@ export interface VaultData {
   lastExecutionTime: bigint;
 }
 
-export function useVaultData() {
+type PolicyTuple = readonly [number, number, number, number, number, number];
+
+// ── Read hooks (parameterized by vault address) ──────────────────────────
+
+export function useVaultData(vaultAddress: `0x${string}` | undefined) {
+  const enabled = !!vaultAddress && vaultAddress !== "0x";
   return useReadContracts({
-    contracts: [
-      { ...vaultContract, functionName: "vaultBalance" },
-      { ...vaultContract, functionName: "riskBalance" },
-      { ...vaultContract, functionName: "totalValue" },
-      { ...vaultContract, functionName: "highWaterMark" },
-      { ...vaultContract, functionName: "executionLogCount" },
-      { ...vaultContract, functionName: "policy" },
-      { ...vaultContract, functionName: "agent" },
-      { ...vaultContract, functionName: "killed" },
-      { ...vaultContract, functionName: "paused" },
-      { ...vaultContract, functionName: "owner" },
-      { ...vaultContract, functionName: "lastExecutionTime" },
-    ],
-    query: { refetchInterval: 10_000 },
+    contracts: enabled
+      ? [
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "vaultBalance" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "riskBalance" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "totalValue" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "highWaterMark" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "executionLogCount" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "policy" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "agent" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "killed" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "paused" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "owner" },
+          { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "lastExecutionTime" },
+        ]
+      : [],
+    query: { enabled, refetchInterval: 10_000 },
   });
 }
 
-type PolicyTuple = readonly [number, number, number, number, number, number];
+export function useParsedVaultData(vaultAddress: `0x${string}` | undefined) {
+  const { data, isLoading, isError } = useVaultData(vaultAddress);
 
-export function useParsedVaultData() {
-  const { data, isLoading, isError } = useVaultData();
-
-  const parsed: VaultData | null = data
+  const parsed: VaultData | null = data && vaultAddress
     ? {
+        address: vaultAddress,
         balance: (data[0]?.result as bigint) ?? 0n,
         riskBalance: (data[1]?.result as bigint) ?? 0n,
         totalValue: (data[2]?.result as bigint) ?? 0n,
@@ -90,15 +91,18 @@ export function useParsedVaultData() {
   return { data: parsed, isLoading, isError };
 }
 
-// ── Read Hooks ────────────────────────────────────────────────────────────
-
-export function useExecutionLog(index: bigint) {
+export function useExecutionLog(vaultAddress: `0x${string}` | undefined, index: bigint) {
   return useReadContract({
-    ...vaultContract,
+    address: vaultAddress,
+    abi: TREASURY_VAULT_ABI,
+    chainId: CHAIN_ID,
     functionName: "executionLogs",
     args: [index],
+    query: { enabled: !!vaultAddress },
   });
 }
+
+// ── ERC20 reads ──────────────────────────────────────────────────────────
 
 export function useUsdcBalance(address: `0x${string}` | undefined) {
   return useReadContract({
@@ -111,29 +115,38 @@ export function useUsdcBalance(address: `0x${string}` | undefined) {
   });
 }
 
-export function useUsdcAllowance(owner: `0x${string}` | undefined) {
+/**
+ * Allowance from `owner` to a specific `spender` (vault or factory).
+ */
+export function useUsdcAllowance(
+  owner: `0x${string}` | undefined,
+  spender: `0x${string}` | undefined,
+) {
   return useReadContract({
     address: MOCK_USDC_ADDRESS,
     abi: ERC20_ABI,
     functionName: "allowance",
-    args: owner ? [owner, TREASURY_VAULT_ADDRESS] : undefined,
+    args: owner && spender ? [owner, spender] : undefined,
     chainId: CHAIN_ID,
-    query: { enabled: !!owner, refetchInterval: 10_000 },
+    query: { enabled: !!owner && !!spender, refetchInterval: 10_000 },
   });
 }
 
-// ── Write Hooks ───────────────────────────────────────────────────────────
+// ── Write hooks (parameterized by vault address where relevant) ──────────
 
+/**
+ * Approve a specific spender (vault for deposits, factory for atomic deposits).
+ */
 export function useApproveUsdc() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function approve(amount: string) {
+  function approve(spender: `0x${string}`, amount: string) {
     writeContract({
       address: MOCK_USDC_ADDRESS,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [TREASURY_VAULT_ADDRESS, parseUnits(amount, 6)],
+      args: [spender, parseUnits(amount, 6)],
       chainId: CHAIN_ID,
     });
   }
@@ -145,12 +158,13 @@ export function useDeposit() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function deposit(amount: string) {
+  function deposit(vaultAddress: `0x${string}`, amount: string) {
     writeContract({
-      ...vaultContract,
+      address: vaultAddress,
+      abi: TREASURY_VAULT_ABI,
+      chainId: CHAIN_ID,
       functionName: "deposit",
       args: [parseUnits(amount, 6)],
-      chainId: CHAIN_ID,
     });
   }
 
@@ -161,12 +175,13 @@ export function useWithdraw() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function withdraw(to: `0x${string}`, amount: string) {
+  function withdraw(vaultAddress: `0x${string}`, to: `0x${string}`, amount: string) {
     writeContract({
-      ...vaultContract,
+      address: vaultAddress,
+      abi: TREASURY_VAULT_ABI,
+      chainId: CHAIN_ID,
       functionName: "withdraw",
       args: [to, parseUnits(amount, 6)],
-      chainId: CHAIN_ID,
     });
   }
 
@@ -177,8 +192,13 @@ export function useEmergencyWithdraw() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function emergencyWithdraw() {
-    writeContract({ ...vaultContract, functionName: "emergencyWithdraw", chainId: CHAIN_ID });
+  function emergencyWithdraw(vaultAddress: `0x${string}`) {
+    writeContract({
+      address: vaultAddress,
+      abi: TREASURY_VAULT_ABI,
+      chainId: CHAIN_ID,
+      functionName: "emergencyWithdraw",
+    });
   }
 
   return { emergencyWithdraw, isPending, isConfirming, isSuccess, error, hash };
@@ -188,8 +208,13 @@ export function usePause() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function pause() {
-    writeContract({ ...vaultContract, functionName: "pause", chainId: CHAIN_ID });
+  function pause(vaultAddress: `0x${string}`) {
+    writeContract({
+      address: vaultAddress,
+      abi: TREASURY_VAULT_ABI,
+      chainId: CHAIN_ID,
+      functionName: "pause",
+    });
   }
 
   return { pause, isPending, isConfirming, isSuccess, error, hash };
@@ -199,8 +224,13 @@ export function useUnpause() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function unpause() {
-    writeContract({ ...vaultContract, functionName: "unpause", chainId: CHAIN_ID });
+  function unpause(vaultAddress: `0x${string}`) {
+    writeContract({
+      address: vaultAddress,
+      abi: TREASURY_VAULT_ABI,
+      chainId: CHAIN_ID,
+      functionName: "unpause",
+    });
   }
 
   return { unpause, isPending, isConfirming, isSuccess, error, hash };
@@ -210,12 +240,13 @@ export function useSetPolicy() {
   const { writeContract, data: hash, isPending, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
 
-  function setPolicy(policy: Policy) {
+  function setPolicy(vaultAddress: `0x${string}`, policy: Policy) {
     writeContract({
-      ...vaultContract,
+      address: vaultAddress,
+      abi: TREASURY_VAULT_ABI,
+      chainId: CHAIN_ID,
       functionName: "setPolicy",
       args: [policy],
-      chainId: CHAIN_ID,
     });
   }
 

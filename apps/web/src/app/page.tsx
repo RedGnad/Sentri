@@ -10,7 +10,7 @@ const PRINCIPLES = [
     num: "i",
     title: "Private by construction",
     body:
-      "Strategy reasoning executes inside a Trusted Execution Environment via 0G Sealed Inference. The decision logic — thresholds, target allocation, risk rules — never leaves the enclave. Not to RPC, not to logs, not to the operator.",
+      "Strategy reasoning runs inside a Trusted Execution Environment via 0G Sealed Inference. Decision logic — thresholds, target allocation, risk rules — never leaves the enclave. Not to RPC, not to logs, not to the operator.",
   },
   {
     num: "ii",
@@ -22,30 +22,31 @@ const PRINCIPLES = [
     num: "iii",
     title: "Bounded by policy",
     body:
-      "Max allocation, drawdown, cooldown and slippage live in the vault contract. The agent proposes; the contract disposes. No override path exists.",
+      "Each vault has its own on-chain policy: max allocation, drawdown, cooldown, slippage. The agent proposes; the contract disposes. No override path. Owner kill-switch returns 100% to USDC instantly.",
   },
 ];
 
 const MECHANISM = [
-  { id: "01", label: "Market snapshot", detail: "ETH/USD pulled from multiple oracles" },
-  { id: "02", label: "Push price on-chain", detail: "Agent is sole keeper of SentriPriceFeed" },
-  { id: "03", label: "Sealed inference", detail: "TEE analyzes state · returns decision" },
-  { id: "04", label: "Proof sealed", detail: "Hash reasoning · attest enclave" },
-  { id: "05", label: "Policy check", detail: "On-chain allocation / drawdown / cooldown" },
-  { id: "06", label: "Execute", detail: "Swap routed through SentriPair AMM" },
-  { id: "07", label: "Audit log", detail: "Event on-chain + entry written to 0G Storage" },
-  { id: "08", label: "Heartbeat", detail: "Portfolio snapshot pushed to 0G Storage KV" },
+  { id: "01", label: "User deploys vault", detail: "Pick a preset (Conservative / Balanced / Aggressive) or custom" },
+  { id: "02", label: "User seeds USDC", detail: "Atomic create + deposit in one TX" },
+  { id: "03", label: "Agent discovers", detail: "Reads VaultFactory.allVaults() each cycle" },
+  { id: "04", label: "Push price on-chain", detail: "Agent is sole keeper of SentriPriceFeed" },
+  { id: "05", label: "Sealed inference", detail: "TEE analyzes per-vault state · returns decision" },
+  { id: "06", label: "Policy check", detail: "Per-vault on-chain enforcement" },
+  { id: "07", label: "Execute", detail: "Real swap routed through SentriPair AMM" },
+  { id: "08", label: "Audit log", detail: "On-chain event + per-vault entry on 0G Storage" },
   { id: "09", label: "Kill-switch", detail: "Owner can halt and drain at any time" },
 ];
 
 const STACK_ROWS = [
-  { layer: "Settlement", component: "TreasuryVault.sol", purpose: "Funds, policy engine, execution gate" },
-  { layer: "Identity", component: "AgentINFT.sol", purpose: "Enclave measurement + revocation" },
+  { layer: "Settlement", component: "TreasuryVault.sol", purpose: "Per-user clone (EIP-1167) with funds + policy + audit log" },
+  { layer: "Factory", component: "VaultFactory.sol", purpose: "Deploys vault clones · presets + custom policy" },
+  { layer: "Identity", component: "AgentINFT.sol", purpose: "Enclave measurement + revocation (shared)" },
   { layer: "Execution", component: "SentriSwapRouter", purpose: "Uniswap v2 router, 0.3% fee" },
   { layer: "Liquidity", component: "SentriPair", purpose: "Constant-product AMM (USDC/WETH)" },
   { layer: "Oracle", component: "SentriPriceFeed", purpose: "AggregatorV3 pushed by agent" },
   { layer: "Inference", component: "0G Sealed Inference", purpose: "Private strategy in TEE" },
-  { layer: "Storage", component: "0G Storage KV + Log", purpose: "Audit trail + live state" },
+  { layer: "Storage", component: "0G Storage KV + Log", purpose: "Per-vault audit trail" },
 ];
 
 export default async function LandingPage() {
@@ -55,7 +56,7 @@ export default async function LandingPage() {
     <div className="relative">
       {/* Meta bar */}
       <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-kicker text-ink-faint pb-6 border-b border-hairline">
-        <span>Sentri · Verifiable Treasury Execution</span>
+        <span>Sentri · Verifiable Treasury Infrastructure</span>
         <span className="hidden sm:inline">0G APAC Hackathon 2026 · Track II · Verifiable Finance</span>
         <span>Galileo {snapshot.chain.id}</span>
       </div>
@@ -83,23 +84,23 @@ export default async function LandingPage() {
             Sentri turns idle{" "}
             <span className="text-ink">stablecoin reserves</span> into bounded
             productive capital — privately decided in a TEE, gated by on-chain
-            policy.
+            policy you control.
           </p>
           <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-4">
             For DAOs · protocol reserves · foundations
           </p>
           <div className="flex items-center gap-3 mt-10">
-            <Link href="/vault">
-              <Button size="lg">Open Dashboard →</Button>
+            <Link href="/deploy">
+              <Button size="lg">Deploy a Vault →</Button>
             </Link>
-            <Link href="/audit">
+            <Link href="/vaults">
               <Button size="lg" variant="outline">
-                View Audit Trail
+                Explore Vaults
               </Button>
             </Link>
           </div>
           <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-4">
-            ↓ Audit page is read-only · no wallet required
+            ↓ All vaults are public · audit trail readable without a wallet
           </p>
         </div>
 
@@ -129,14 +130,14 @@ export default async function LandingPage() {
       </section>
 
       {/* Section II — Mechanism */}
-      <SectionHeader num="II" title="Mechanism" subtitle="The loop, in nine steps" />
+      <SectionHeader num="II" title="Mechanism" subtitle="The lifecycle, in nine steps" />
       <section className="border border-hairline bg-bg-elev/20 mb-24 animate-fade-up">
         <div className="flex items-center justify-between px-5 h-9 border-b border-hairline">
           <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-            agent.loop()
+            agent.cycle()
           </span>
           <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-            while (running)
+            for vault in factory.allVaults()
           </span>
         </div>
         <ol className="divide-y divide-hairline">
@@ -158,7 +159,7 @@ export default async function LandingPage() {
       </section>
 
       {/* Section III — Stack */}
-      <SectionHeader num="III" title="The Stack" subtitle="Seven layers · five 0G components" />
+      <SectionHeader num="III" title="The Stack" subtitle="Eight layers · five 0G components" />
       <section className="border border-hairline mb-24 animate-fade-up">
         <div className="grid grid-cols-[1fr_1.2fr_2fr] border-b border-hairline bg-bg-elev/40 h-9 items-center px-5">
           <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">Layer</span>
@@ -188,8 +189,13 @@ export default async function LandingPage() {
           <span className="text-amber">you do not have to</span>.
         </p>
         <div className="flex items-center justify-center gap-3 mt-12">
-          <Link href="/vault">
-            <Button size="lg">Enter the Vault →</Button>
+          <Link href="/deploy">
+            <Button size="lg">Deploy a Vault →</Button>
+          </Link>
+          <Link href="/vaults">
+            <Button size="lg" variant="outline">
+              Browse Vaults
+            </Button>
           </Link>
         </div>
       </section>
@@ -219,9 +225,7 @@ function SectionHeader({
         <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
           § {num}
         </span>
-        <h2 className="font-serif text-4xl sm:text-5xl text-ink tracking-tightest">
-          {title}
-        </h2>
+        <h2 className="font-serif text-4xl sm:text-5xl text-ink tracking-tightest">{title}</h2>
       </div>
       {subtitle && (
         <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint hidden sm:inline">
@@ -246,48 +250,47 @@ function chainState(snapshot: LiveSnapshot): "ok" | "warn" | "off" {
 
 function agentState(snapshot: LiveSnapshot): "ok" | "warn" | "off" {
   if (!snapshot.agent.ok) return "off";
-  if (!snapshot.agent.lastIterationAt) return "warn";
-  const ageMs = Date.now() - snapshot.agent.lastIterationAt;
+  if (!snapshot.agent.lastCycleAt) return "warn";
+  const ageMs = Date.now() - snapshot.agent.lastCycleAt;
   const intervalMs = (snapshot.agent.intervalSec ?? 300) * 1000;
   if (ageMs > intervalMs * 3) return "warn";
-  return "ok";
-}
-
-function vaultState(snapshot: LiveSnapshot): "ok" | "warn" | "off" {
-  if (snapshot.vault.totalValue === null) return "off";
-  if (snapshot.vault.isKilled) return "off";
-  if (snapshot.vault.isPaused) return "warn";
   return "ok";
 }
 
 function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
   const c = chainState(snapshot);
   const a = agentState(snapshot);
-  const v = vaultState(snapshot);
 
   const rows = [
     {
       key: "Chain",
       value: snapshot.chain.rpcOk
-        ? `Galileo · block #${snapshot.chain.blockNumber} · ${snapshot.chain.blockAgeSec}s`
+        ? `Galileo · #${snapshot.chain.blockNumber} · ${snapshot.chain.blockAgeSec}s`
         : "RPC unreachable",
       state: c,
     },
     {
-      key: "Vault",
-      value:
-        snapshot.vault.totalValue !== null
-          ? `$${snapshot.vault.totalValue} · ${snapshot.vault.executionLogCount} exec`
-          : "—",
-      state: v,
+      key: "Vaults",
+      value: snapshot.protocol.vaultsCount !== null ? `${snapshot.protocol.vaultsCount} live` : "—",
+      state: snapshot.protocol.vaultsCount !== null ? "ok" : ("off" as const),
+    },
+    {
+      key: "Total TVL",
+      value: snapshot.protocol.totalTVL !== null ? `$${snapshot.protocol.totalTVL}` : "—",
+      state: snapshot.protocol.totalTVL !== null ? "ok" : ("off" as const),
+    },
+    {
+      key: "Executions",
+      value: snapshot.protocol.totalExecutions !== null
+        ? `${snapshot.protocol.totalExecutions.toLocaleString()} total`
+        : "—",
+      state: snapshot.protocol.totalExecutions !== null ? "ok" : ("off" as const),
     },
     {
       key: "Agent",
       value:
         snapshot.agent.status === "ready"
-          ? `${snapshot.agent.totalIterations ?? 0} iter · ${formatRelative(
-              snapshot.agent.lastIterationAt,
-            )}`
+          ? `${snapshot.agent.cycles ?? 0} cycles · ${formatRelative(snapshot.agent.lastCycleAt)}`
           : snapshot.agent.status === "initializing"
           ? "Initializing"
           : snapshot.agent.status === "error"
@@ -297,26 +300,21 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
     },
     {
       key: "Model",
-      value:
-        snapshot.agent.model
-          ? snapshot.agent.model.slice(0, 22) + (snapshot.agent.model.length > 22 ? "…" : "")
-          : "—",
-      state: snapshot.agent.model ? "ok" : "off",
-    },
-    {
-      key: "Cadence",
-      value: snapshot.agent.intervalSec ? `every ${snapshot.agent.intervalSec}s` : "—",
-      state: snapshot.agent.intervalSec ? "ok" : "off",
+      value: snapshot.agent.model
+        ? snapshot.agent.model.slice(0, 22) + (snapshot.agent.model.length > 22 ? "…" : "")
+        : "—",
+      state: (snapshot.agent.model ? "ok" : "off") as "ok" | "off",
     },
   ] as const;
 
-  const overall = c === "ok" && v === "ok" && a === "ok" ? "ok" : a === "off" || c === "off" ? "off" : "warn";
+  const overall =
+    c === "ok" && a === "ok" && snapshot.protocol.vaultsCount !== null ? "ok" : a === "off" || c === "off" ? "off" : "warn";
 
   return (
     <div className="border border-hairline bg-bg-elev/30">
       <div className="flex items-center justify-between px-4 h-9 border-b border-hairline">
         <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-          Live system
+          Protocol live
         </span>
         <span
           className={`font-mono text-[9px] uppercase tracking-kicker flex items-center gap-1.5 ${
@@ -342,13 +340,16 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
       </ul>
       <div className="px-4 py-3 border-t border-hairline">
         <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
-          Last execution
+          Factory
         </div>
-        <div className="font-mono text-[11px] text-ink tabular">
-          {snapshot.agent.lastIterationAt
-            ? `${formatRelative(snapshot.agent.lastIterationAt)} · ${snapshot.agent.lastIterationStatus ?? "—"}`
-            : "no run yet"}
-        </div>
+        <a
+          href={snapshot.links.factoryExplorer}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-mono text-[10px] text-ink hover:text-amber transition-colors tabular truncate block"
+        >
+          {snapshot.protocol.factoryAddress.slice(0, 10)}…{snapshot.protocol.factoryAddress.slice(-8)} ↗
+        </a>
       </div>
     </div>
   );
@@ -356,7 +357,7 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
 
 function FooterStatus({ snapshot }: { snapshot: LiveSnapshot }) {
   const overall =
-    snapshot.chain.rpcOk && snapshot.vault.totalValue !== null
+    snapshot.chain.rpcOk && snapshot.protocol.vaultsCount !== null
       ? snapshot.agent.ok
         ? "ok"
         : "warn"

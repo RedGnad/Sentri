@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,9 +10,12 @@ import { useParsedVaultData, useSetPolicy } from "@/hooks/use-vault";
 import { bpsToPercent } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export default function PolicyPage() {
-  const { address } = useAccount();
-  const { data: vault, isLoading } = useParsedVaultData();
+export default function VaultPolicyPage() {
+  const params = useParams<{ address: string }>();
+  const address = params.address as `0x${string}`;
+  const { address: connected } = useAccount();
+
+  const { data: vault, isLoading } = useParsedVaultData(address);
   const { setPolicy, isPending, isConfirming, isSuccess, error } = useSetPolicy();
 
   const [maxAllocation, setMaxAllocation] = useState("");
@@ -21,7 +25,7 @@ export default function PolicyPage() {
   const [cooldownPeriod, setCooldownPeriod] = useState("");
   const [maxPriceStaleness, setMaxPriceStaleness] = useState("");
 
-  const isOwner = address?.toLowerCase() === (vault?.owner ?? "").toLowerCase();
+  const isOwner = connected?.toLowerCase() === (vault?.owner ?? "").toLowerCase();
 
   useEffect(() => {
     if (vault?.policy) {
@@ -34,21 +38,16 @@ export default function PolicyPage() {
     }
   }, [vault?.policy]);
 
-  useEffect(() => { if (isSuccess) toast.success("Risk policy updated on-chain"); }, [isSuccess]);
+  useEffect(() => { if (isSuccess) toast.success("Policy updated on-chain"); }, [isSuccess]);
   useEffect(() => { if (error) toast.error(`Policy update failed: ${error.message}`); }, [error]);
 
   if (isLoading) {
-    return (
-      <div className="space-y-6 max-w-3xl">
-        <Skeleton className="h-12 w-64" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
+    return <Skeleton className="h-96 w-full" />;
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setPolicy({
+    setPolicy(address, {
       maxAllocationBps: Math.round(Number(maxAllocation) * 100),
       maxDrawdownBps: Math.round(Number(maxDrawdown) * 100),
       rebalanceThresholdBps: Math.round(Number(rebalanceThreshold) * 100),
@@ -59,22 +58,16 @@ export default function PolicyPage() {
   }
 
   return (
-    <div className="space-y-10 max-w-3xl">
-      <PageHeader num="03" section="Risk Policy" title="Constraints" subtitle="On-chain bounds the agent cannot override" />
-
-      {/* Manifesto */}
+    <div className="space-y-8 max-w-3xl">
       <p className="font-serif italic text-xl text-ink-dim leading-snug border-l-2 border-amber pl-5">
         The agent proposes. The policy disposes. Every parameter below is enforced
         by the vault contract — not by trust.
       </p>
 
-      {/* Current policy table */}
       {vault?.policy && (
         <section className="border border-hairline bg-bg-elev/30">
           <header className="flex items-center justify-between px-5 h-9 border-b border-hairline">
-            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-              Current policy
-            </span>
+            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">Current policy</span>
             <span className="font-mono text-[9px] uppercase tracking-kicker text-phosphor flex items-center gap-1.5">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
               Live
@@ -91,115 +84,29 @@ export default function PolicyPage() {
         </section>
       )}
 
-      {/* Update form */}
       <section className="border border-hairline">
         <header className="flex items-center justify-between px-5 h-9 border-b border-hairline">
-          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
-            Update policy
-          </span>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">Update policy</span>
           <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
             {isOwner ? "Owner authorized" : "Owner only"}
           </span>
         </header>
         <form onSubmit={handleSubmit} className="px-5 py-5 space-y-5">
-          <FormField
-            label="Max allocation per action"
-            unit="%"
-            value={maxAllocation}
-            onChange={setMaxAllocation}
-            disabled={!isOwner}
-            step="0.1"
-            min="0.1"
-            max="100"
-          />
-          <FormField
-            label="Max drawdown from HWM"
-            unit="%"
-            value={maxDrawdown}
-            onChange={setMaxDrawdown}
-            disabled={!isOwner}
-            step="0.1"
-            min="0.1"
-            max="100"
-          />
-          <FormField
-            label="Rebalance threshold"
-            unit="%"
-            value={rebalanceThreshold}
-            onChange={setRebalanceThreshold}
-            disabled={!isOwner}
-            step="0.1"
-            min="0"
-            max="100"
-          />
-          <FormField
-            label="Max slippage"
-            unit="%"
-            value={maxSlippage}
-            onChange={setMaxSlippage}
-            disabled={!isOwner}
-            step="0.1"
-            min="0"
-            max="100"
-          />
-          <FormField
-            label="Cooldown period"
-            unit="s"
-            value={cooldownPeriod}
-            onChange={setCooldownPeriod}
-            disabled={!isOwner}
-            min="0"
-          />
-          <FormField
-            label="Max price staleness"
-            unit="s"
-            value={maxPriceStaleness}
-            onChange={setMaxPriceStaleness}
-            disabled={!isOwner}
-            min="1"
-          />
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={!isOwner || isPending || isConfirming}
-          >
-            {isPending
-              ? "Confirm in wallet..."
-              : isConfirming
-              ? "Waiting for TX..."
-              : "Commit Policy → Chain"}
+          <FormField label="Max allocation per action" unit="%" value={maxAllocation} onChange={setMaxAllocation} disabled={!isOwner} step="0.1" min="0.1" max="100" />
+          <FormField label="Max drawdown from HWM" unit="%" value={maxDrawdown} onChange={setMaxDrawdown} disabled={!isOwner} step="0.1" min="0.1" max="100" />
+          <FormField label="Rebalance threshold" unit="%" value={rebalanceThreshold} onChange={setRebalanceThreshold} disabled={!isOwner} step="0.1" min="0" max="100" />
+          <FormField label="Max slippage" unit="%" value={maxSlippage} onChange={setMaxSlippage} disabled={!isOwner} step="0.1" min="0" max="100" />
+          <FormField label="Cooldown period" unit="s" value={cooldownPeriod} onChange={setCooldownPeriod} disabled={!isOwner} min="0" />
+          <FormField label="Max price staleness" unit="s" value={maxPriceStaleness} onChange={setMaxPriceStaleness} disabled={!isOwner} min="1" />
+          <Button type="submit" className="w-full" disabled={!isOwner || isPending || isConfirming}>
+            {isPending ? "Confirm in wallet..." : isConfirming ? "Waiting for TX..." : "Commit Policy → Chain"}
           </Button>
           <p className="font-mono text-[10px] text-ink-faint leading-relaxed border-t border-hairline pt-3">
-            ∎ Changes take effect immediately on confirmation. The agent reads policy
-            on every execution — there is no cache to invalidate.
+            ∎ Changes take effect immediately on confirmation. The agent reads policy on every execution — there is no cache to invalidate.
           </p>
         </form>
       </section>
     </div>
-  );
-}
-
-function PageHeader({
-  num,
-  section,
-  title,
-  subtitle,
-}: {
-  num: string;
-  section: string;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <header className="border-b border-hairline pb-6">
-      <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
-        § {num} · {section}
-      </div>
-      <h1 className="font-serif text-5xl sm:text-6xl text-ink tracking-tightest leading-none">
-        {title}
-      </h1>
-      <p className="font-serif italic text-lg text-ink-dim mt-3">{subtitle}</p>
-    </header>
   );
 }
 
@@ -237,15 +144,7 @@ function FormField({
       <label className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint block mb-2">
         {label} <span className="text-ink-mute">[{unit}]</span>
       </label>
-      <Input
-        type="number"
-        step={step}
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-      />
+      <Input type="number" step={step} min={min} max={max} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
     </div>
   );
 }

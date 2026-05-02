@@ -10,6 +10,7 @@ import {
   useSwitchChain,
 } from "wagmi";
 import { toast } from "sonner";
+import { formatUnits } from "viem";
 import { Button } from "@/components/ui/button";
 import { galileo } from "@/config/wagmi";
 import { shortenAddress } from "@/lib/utils";
@@ -167,7 +168,7 @@ export function ConnectButton() {
   // ── Connected ────────────────────────────────────────────────────────
   const wrongNetwork = walletChainId !== galileo.id;
   const balanceFormatted = balanceData
-    ? `${Number(balanceData.formatted).toFixed(3)} ${balanceData.symbol}`
+    ? `${Number(formatUnits(balanceData.value, balanceData.decimals)).toFixed(3)} ${balanceData.symbol}`
     : "—";
 
   return (
