@@ -6,6 +6,7 @@ import {
   TREASURY_VAULT_ABI,
   PRICE_FEED_ABI,
   ERC20_ABI,
+  VAULT_FACTORY_ABI,
   AGENT,
 } from "./constants.js";
 import {
@@ -16,7 +17,7 @@ import {
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
 import { initStorage, appendAuditLog, savePortfolioState } from "./storage.js";
-import { getMarketSnapshot } from "./market.js";
+import { getMarketSnapshot, type MarketSnapshot } from "./market.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -33,13 +34,29 @@ const ACTION_MAP: Record<string, number> = {
   EmergencyDeleverage: 2,
 };
 
-export interface AgentContext {
-  vault: ethers.Contract;
-  usdc: ethers.Contract;
+/**
+ * GlobalContext — singletons the agent uses across every vault iteration.
+ * The factory is the source of truth for which vaults exist; the priceFeed
+ * is shared across all vaults; the wallet, broker, and storage are global.
+ */
+export interface GlobalContext {
+  wallet: ethers.Wallet;
+  provider: ethers.JsonRpcProvider;
+  factory: ethers.Contract;
   priceFeed: ethers.Contract;
   walletAddress: string;
   providerInfo: { address: string; model: string; endpoint: string };
 }
+
+/**
+ * IterationOutcome — result of a single executeOneIterationForVault call.
+ * Captured by the server for per-vault status tracking.
+ */
+export type IterationOutcome =
+  | { status: "executed"; action: string; amountIn: string; amountOut: string; txHash: string; reasoning: string }
+  | { status: "skipped"; reason: string }
+  | { status: "killed"; reason: string }
+  | { status: "error"; reason: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -53,18 +70,24 @@ function getEnvOrThrow(key: string): string {
   return val;
 }
 
-// ── Setup (run once) ──────────────────────────────────────────────────────
+// ── Setup (run once at startup) ──────────────────────────────────────────
 
-export async function setupAgent(): Promise<AgentContext> {
+/**
+ * Initialize everything that's shared across all vaults: wallet, factory
+ * contract handle, price feed handle, 0G compute broker, 0G storage client.
+ */
+export async function setupGlobalContext(): Promise<GlobalContext> {
   const privateKey = getEnvOrThrow("PRIVATE_KEY");
-  const vaultAddress = CONTRACTS.treasuryVault || getEnvOrThrow("NEXT_PUBLIC_TREASURY_VAULT_ADDRESS");
-  const usdcAddress = CONTRACTS.mockUSDC || getEnvOrThrow("NEXT_PUBLIC_MOCK_USDC_ADDRESS");
-  const priceFeedAddress = CONTRACTS.priceFeed || getEnvOrThrow("NEXT_PUBLIC_PRICE_FEED_ADDRESS");
+  const factoryAddress = CONTRACTS.vaultFactory;
+  const priceFeedAddress = CONTRACTS.priceFeed;
+
+  if (!factoryAddress || factoryAddress === "0x") {
+    throw new Error("VaultFactory address not configured");
+  }
 
   const provider = new ethers.JsonRpcProvider(CHAIN.rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
-  const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, wallet);
-  const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, wallet);
+  const factory = new ethers.Contract(factoryAddress, VAULT_FACTORY_ABI, wallet);
   const priceFeed = new ethers.Contract(priceFeedAddress, PRICE_FEED_ABI, wallet);
 
   log("Initializing 0G Sealed Inference broker...");
@@ -81,53 +104,91 @@ export async function setupAgent(): Promise<AgentContext> {
   initStorage(privateKey);
 
   log(`Agent ready. Wallet: ${wallet.address}`);
+  log(`Factory: ${factoryAddress}`);
 
-  return { vault, usdc, priceFeed, walletAddress: wallet.address, providerInfo };
+  return { wallet, provider, factory, priceFeed, walletAddress: wallet.address, providerInfo };
 }
 
-// ── One iteration of the agent loop ───────────────────────────────────────
+// ── Vault discovery ──────────────────────────────────────────────────────
 
-export async function executeOneIteration(ctx: AgentContext): Promise<void> {
-  const { vault, priceFeed } = ctx;
-
-  const isKilled = await vault.killed();
-  if (isKilled) {
-    log("Vault is KILLED. Agent cannot operate.");
-    throw new Error("VAULT_KILLED");
+/**
+ * Read the factory's vault registry. Called every cycle so newly-created
+ * vaults are picked up automatically.
+ */
+export async function discoverVaults(ctx: GlobalContext): Promise<string[]> {
+  const count: bigint = await ctx.factory.vaultsCount();
+  const n = Number(count);
+  if (n === 0) return [];
+  // Read in pages of 50 to avoid deep multicall depth on large registries.
+  const PAGE = 50;
+  const vaults: string[] = [];
+  for (let start = 0; start < n; start += PAGE) {
+    const page: string[] = await ctx.factory.vaultsPage(start, PAGE);
+    vaults.push(...page);
   }
+  return vaults;
+}
 
-  const isPaused = await vault.paused();
-  if (isPaused) {
-    log("Vault is PAUSED. Skipping iteration.");
-    return;
-  }
+// ── Price feed (pushed once per cycle) ───────────────────────────────────
 
-  // 1. Fetch real market price
+/**
+ * Push the latest ETH/USD spot to the on-chain oracle. Done once at the
+ * start of each cycle so all vault iterations use the same fresh price.
+ */
+export async function pushPrice(ctx: GlobalContext): Promise<MarketSnapshot> {
   const market = await getMarketSnapshot();
   log(`Market: ETH=$${market.ethUsd.toFixed(2)} (${market.change24h.toFixed(2)}% 24h, ${market.source})`);
 
-  // 2. Push price on-chain so the vault's slippage check uses fresh data.
-  const feedDecimals: bigint = await priceFeed.decimals();
+  const feedDecimals: bigint = await ctx.priceFeed.decimals();
   const answer = BigInt(Math.floor(market.ethUsd * 10 ** Number(feedDecimals)));
-  const priceAttestation = ethers.keccak256(
+  const attestation = ethers.keccak256(
     ethers.toUtf8Bytes(JSON.stringify({ source: market.source, price: market.ethUsd, ts: market.timestamp })),
   );
 
   try {
-    const pushTx = await priceFeed.pushAnswer(answer, priceAttestation);
-    await pushTx.wait();
-    log(`Price pushed on-chain: answer=${answer} (attestation=${priceAttestation.slice(0, 10)}...)`);
+    const tx = await ctx.priceFeed.pushAnswer(answer, attestation);
+    await tx.wait();
+    log(`Price pushed on-chain: answer=${answer} (att=${attestation.slice(0, 10)}...)`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("NotKeeper") || msg.includes("0xf7f0e693")) {
-      log("Agent is not a registered keeper on SentriPriceFeed. Skipping iteration.");
-      return;
+      log("Agent is not a registered keeper on SentriPriceFeed. Skipping price push.");
+    } else {
+      throw err;
     }
-    throw err;
+  }
+  return market;
+}
+
+// ── One iteration on one vault ───────────────────────────────────────────
+
+/**
+ * Executes a single decision cycle on a specific vault: read vault state →
+ * build prompt → TEE inference → execute on-chain → write audit + state.
+ *
+ * Throws are caught at the call site (server.ts) so a failure on one vault
+ * never breaks the cycle for others.
+ */
+export async function executeOneIterationForVault(
+  ctx: GlobalContext,
+  vaultAddress: string,
+  market: MarketSnapshot,
+): Promise<IterationOutcome> {
+  const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, ctx.wallet);
+
+  const isKilled: boolean = await vault.killed();
+  if (isKilled) {
+    return { status: "killed", reason: "vault is killed" };
+  }
+  const isPaused: boolean = await vault.paused();
+  if (isPaused) {
+    return { status: "skipped", reason: "vault is paused" };
   }
 
-  // 3. Fetch full vault state
-  const [baseBalance, riskBalance, tvl, hwm, policy, logCount] = await Promise.all([
+  // Read full vault state
+  const [baseAddr, riskAddr, baseBalance, riskBalance, tvl, hwm, policy, logCount] = await Promise.all([
+    vault.base(),
+    vault.risk(),
     vault.vaultBalance(),
     vault.riskBalance(),
     vault.totalValue(),
@@ -136,19 +197,23 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
     vault.executionLogCount(),
   ]);
 
-  const baseStr = ethers.formatUnits(baseBalance, 6);
-  const riskStr = ethers.formatUnits(riskBalance, 18);
-  const tvlStr = ethers.formatUnits(tvl, 6);
-  const hwmStr = ethers.formatUnits(hwm, 6);
+  const baseToken = new ethers.Contract(baseAddr, ERC20_ABI, ctx.wallet);
+  const riskToken = new ethers.Contract(riskAddr, ERC20_ABI, ctx.wallet);
+  const [baseDec, riskDec] = await Promise.all([baseToken.decimals(), riskToken.decimals()]);
 
-  log(`Vault: ${baseStr} USDC + ${riskStr} WETH | TVL: ${tvlStr} | HWM: ${hwmStr} | Executions: ${logCount}`);
+  const baseStr = ethers.formatUnits(baseBalance, baseDec);
+  const riskStr = ethers.formatUnits(riskBalance, riskDec);
+  const tvlStr = ethers.formatUnits(tvl, baseDec);
+  const hwmStr = ethers.formatUnits(hwm, baseDec);
+
+  log(
+    `Vault ${vaultAddress.slice(0, 10)}...: ${baseStr} USDC + ${riskStr} WETH | TVL ${tvlStr} | HWM ${hwmStr} | logs ${logCount}`,
+  );
 
   if (tvl === 0n) {
-    log("Vault is empty. Skipping iteration.");
-    return;
+    return { status: "skipped", reason: "vault is empty" };
   }
 
-  // 4. Build prompt
   const prompt = buildMarketPrompt({
     baseBalance: baseStr,
     riskBalance: riskStr,
@@ -164,8 +229,7 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
     },
   });
 
-  // 5. Sealed Inference (TEE)
-  log("Requesting Sealed Inference analysis (TEE)...");
+  log("Requesting Sealed Inference (TEE)...");
   const inference = await requestInference(prompt, TREASURY_SYSTEM_PROMPT);
   log(`TEE verified: ${inference.verified} | ChatID: ${inference.chatID}`);
 
@@ -173,42 +237,31 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
   try {
     decision = JSON.parse(inference.content) as AgentDecision;
   } catch {
-    log(`Failed to parse LLM response: ${inference.content.slice(0, 200)}`);
-    return;
+    return { status: "skipped", reason: `invalid JSON from LLM: ${inference.content.slice(0, 120)}` };
   }
-
-  log(`Decision: ${decision.action} | Amount: ${decision.amount_bps} bps | Confidence: ${decision.confidence}%`);
+  log(`Decision: ${decision.action} | ${decision.amount_bps}bps | conf ${decision.confidence}%`);
   log(`Reasoning: ${decision.reasoning}`);
 
   if (decision.amount_bps === 0) {
-    log("No action needed. Skipping execution.");
-    return;
+    return { status: "skipped", reason: "no action needed (amount_bps=0)" };
   }
 
-  // 6. Size the order
+  // Size the order
   let amountIn: bigint;
   if (decision.action === "EmergencyDeleverage") {
     amountIn = (BigInt(riskBalance) * BigInt(decision.amount_bps)) / 10000n;
-    if (amountIn === 0n) {
-      log("No risk position to deleverage. Skipping.");
-      return;
-    }
-    log(`Deleveraging ${ethers.formatUnits(amountIn, 18)} WETH`);
+    if (amountIn === 0n) return { status: "skipped", reason: "no risk balance to deleverage" };
   } else {
     amountIn = (BigInt(baseBalance) * BigInt(decision.amount_bps)) / 10000n;
-    if (amountIn === 0n) {
-      log("No base balance to allocate. Skipping.");
-      return;
-    }
+    if (amountIn === 0n) return { status: "skipped", reason: "no base balance to allocate" };
     const maxAlloc = (BigInt(tvl) * BigInt(policy[0])) / 10000n;
     if (amountIn > maxAlloc) {
-      log(`Capping amount from ${ethers.formatUnits(amountIn, 6)} to ${ethers.formatUnits(maxAlloc, 6)} USDC (max allocation)`);
+      log(`Capping amount from ${ethers.formatUnits(amountIn, baseDec)} to ${ethers.formatUnits(maxAlloc, baseDec)}`);
       amountIn = maxAlloc;
     }
-    log(`Allocating ${ethers.formatUnits(amountIn, 6)} USDC to risk asset`);
   }
 
-  // 7. Execute on-chain
+  // Execute
   try {
     const tx = await vault.executeStrategy(
       ACTION_MAP[decision.action],
@@ -217,23 +270,33 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
       inference.teeAttestation,
     );
     const receipt = await tx.wait();
-    log(`TX confirmed: ${receipt.hash}`);
 
-    // 8. Audit log to 0G Storage.
-    //    Key by the on-chain block.timestamp (×1000 → ms) so the cache lookup
-    //    matches `executionLogs[].timestamp * 1000` that the dashboard queries.
-    //    Date.now() drifts by sub-second; the chain rounds to the second.
-    log("Saving audit entry to 0G Storage...");
+    // Use chain block timestamp × 1000 for the audit cache key so the dashboard
+    // (which reads executionLogs[].timestamp from chain and queries by × 1000)
+    // gets a deterministic match.
     const execBlock = await receipt.getBlock();
     const chainTimestampMs = Number(execBlock.timestamp) * 1000;
 
-    await appendAuditLog({
+    // Determine actual amounts from the latest log
+    const idx = (await vault.executionLogCount()) - 1n;
+    const latestLog = await vault.executionLogs(idx);
+    const amountOut = latestLog[3];
+
+    const formattedAmountIn =
+      decision.action === "EmergencyDeleverage"
+        ? ethers.formatUnits(amountIn, riskDec)
+        : ethers.formatUnits(amountIn, baseDec);
+    const formattedAmountOut =
+      decision.action === "EmergencyDeleverage"
+        ? ethers.formatUnits(amountOut, baseDec)
+        : ethers.formatUnits(amountOut, riskDec);
+
+    log(`TX confirmed: ${receipt.hash}. Saving audit + state to 0G Storage...`);
+
+    await appendAuditLog(vaultAddress, {
       timestamp: chainTimestampMs,
       action: decision.action,
-      amount:
-        decision.action === "EmergencyDeleverage"
-          ? ethers.formatUnits(amountIn, 18)
-          : ethers.formatUnits(amountIn, 6),
+      amount: formattedAmountIn,
       proofHash: inference.proofHash,
       teeAttestation: inference.teeAttestation,
       reasoning: decision.reasoning,
@@ -243,7 +306,7 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
       marketSource: market.source,
     });
 
-    // 9. Persist portfolio state
+    // Refresh and persist portfolio state
     const [newBase, newRisk, newTvl, newHwm, newLogCount] = await Promise.all([
       vault.vaultBalance(),
       vault.riskBalance(),
@@ -252,11 +315,11 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
       vault.executionLogCount(),
     ]);
 
-    await savePortfolioState({
-      vaultBalance: ethers.formatUnits(newBase, 6),
-      riskBalance: ethers.formatUnits(newRisk, 18),
-      totalValue: ethers.formatUnits(newTvl, 6),
-      highWaterMark: ethers.formatUnits(newHwm, 6),
+    await savePortfolioState(vaultAddress, {
+      vaultBalance: ethers.formatUnits(newBase, baseDec),
+      riskBalance: ethers.formatUnits(newRisk, riskDec),
+      totalValue: ethers.formatUnits(newTvl, baseDec),
+      highWaterMark: ethers.formatUnits(newHwm, baseDec),
       lastAction: decision.action,
       lastActionTime: Date.now(),
       totalExecutions: Number(newLogCount),
@@ -264,7 +327,14 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
       marketPrice: market.ethUsd,
     });
 
-    log("Iteration complete.");
+    return {
+      status: "executed",
+      action: decision.action,
+      amountIn: formattedAmountIn,
+      amountOut: formattedAmountOut,
+      txHash: receipt.hash,
+      reasoning: decision.reasoning,
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const COOLDOWN = "0xa22b745e";
@@ -272,36 +342,50 @@ export async function executeOneIteration(ctx: AgentContext): Promise<void> {
     const DRAWDOWN = "0x4f3a5fbf";
     const STALE = "PriceStale";
     if (msg.includes("CooldownNotElapsed") || msg.includes(COOLDOWN)) {
-      log("Cooldown not elapsed. Skipping execution.");
+      return { status: "skipped", reason: "cooldown not elapsed" };
     } else if (msg.includes("AllocationExceeded") || msg.includes(ALLOCATION)) {
-      log("Allocation exceeded policy. Skipping.");
+      return { status: "skipped", reason: "allocation exceeded" };
     } else if (msg.includes("DrawdownBreached") || msg.includes(DRAWDOWN)) {
-      log("Drawdown breached policy. Skipping.");
+      return { status: "skipped", reason: "drawdown breached" };
     } else if (msg.includes(STALE)) {
-      log("Oracle reported stale price. Skipping.");
+      return { status: "skipped", reason: "oracle price stale" };
     } else if (msg.includes("InsufficientAmountOut")) {
-      log("Swap reverted on slippage guard. Skipping.");
-    } else {
-      throw err;
+      return { status: "skipped", reason: "swap reverted on slippage guard" };
+    } else if (msg.includes("VaultKilled")) {
+      return { status: "killed", reason: "vault killed mid-iteration" };
     }
+    throw err; // re-throw unknown errors so the server logs them
   }
 }
 
-// ── Standalone loop (for `pnpm agent` CLI) ────────────────────────────────
+// ── Multi-vault standalone loop (for `pnpm agent` CLI) ───────────────────
 
-export async function runStandaloneLoop(): Promise<void> {
-  const ctx = await setupAgent();
-  log("Starting loop.\n");
+export async function runMultiVaultLoop(): Promise<void> {
+  const ctx = await setupGlobalContext();
+  log("Starting multi-vault loop.\n");
 
   while (true) {
     try {
-      await executeOneIteration(ctx);
+      const market = await pushPrice(ctx);
+      const vaults = await discoverVaults(ctx);
+      log(`Cycle: ${vaults.length} vault(s) tracked`);
+
+      for (const vaultAddr of vaults) {
+        try {
+          const outcome = await executeOneIterationForVault(ctx, vaultAddr, market);
+          log(`  ${vaultAddr.slice(0, 10)}... → ${outcome.status}${
+            outcome.status === "executed" ? ` (${outcome.action})` : `: ${outcome.reason ?? ""}`
+          }`);
+        } catch (err) {
+          log(`  ${vaultAddr.slice(0, 10)}... → ERROR: ${err instanceof Error ? err.message : err}`);
+        }
+      }
     } catch (err) {
-      log(`ERROR in agent iteration: ${err instanceof Error ? err.message : err}`);
+      log(`Cycle error: ${err instanceof Error ? err.message : err}`);
     }
 
-    log(`Sleeping ${AGENT.loopIntervalMs / 1000}s until next iteration...\n`);
-    await new Promise((r) => setTimeout(r, AGENT.loopIntervalMs));
+    log(`Sleeping ${AGENT.cycleIntervalMs / 1000}s until next cycle...\n`);
+    await new Promise((r) => setTimeout(r, AGENT.cycleIntervalMs));
   }
 }
 
@@ -319,20 +403,16 @@ function buildMarketPrompt(input: {
     cooldownPeriod: number;
   };
 }): string {
-  // Pre-compute every metric deterministically. Small TEE-served LLMs
-  // (Qwen 2.5 7B class) are unreliable at float arithmetic — feeding raw
-  // balances + asking them to compute weth_share gave hallucinated values
-  // (e.g. claiming 42.78% when the real share was 99.99%). Compute here,
-  // let the LLM only pattern-match against the rule branches in its
-  // system prompt and emit the JSON decision.
-  const baseN = Number(input.baseBalance); // USDC, human units
-  const riskN = Number(input.riskBalance); // WETH, human units
-  const tvlN = Number(input.tvl); // USDC, human units
+  // Pre-compute every metric in TS so the LLM never does float math.
+  // Stables-first doctrine: target band = 20-30% WETH, max 30%.
+  const baseN = Number(input.baseBalance);
+  const riskN = Number(input.riskBalance);
+  const tvlN = Number(input.tvl);
   const hwmN = Number(input.hwm);
   const wethValueUsd = riskN * input.market.ethUsd;
-  const wethShare = tvlN > 0 ? wethValueUsd / tvlN : 0;
-  const deviationFromTarget = wethShare - 0.5;
-  const drawdownPct = hwmN > 0 ? ((tvlN - hwmN) / hwmN) * 100 : 0;
+  const wethSharePct = tvlN > 0 ? (wethValueUsd / tvlN) * 100 : 0;
+  const deviationFromTargetPct = wethSharePct - 25; // target = 25% mid-band
+  const drawdownPct = hwmN > 0 ? ((hwmN - tvlN) / hwmN) * 100 : 0;
 
   return `Treasury state (computed):
 - USDC balance: ${baseN.toFixed(2)} USDC
@@ -341,8 +421,8 @@ function buildMarketPrompt(input: {
 - TVL: ${tvlN.toFixed(2)} USDC
 - HWM: ${hwmN.toFixed(2)} USDC
 - Drawdown from HWM: ${drawdownPct.toFixed(2)}%
-- WETH share of TVL: ${(wethShare * 100).toFixed(2)}%
-- Deviation from 50% target: ${(deviationFromTarget * 100).toFixed(2)} percentage points
+- WETH share of TVL: ${wethSharePct.toFixed(2)}%
+- Deviation from 25% target: ${deviationFromTargetPct.toFixed(2)} percentage points
 
 Market (${input.market.source}):
 - ETH/USD: $${input.market.ethUsd.toFixed(2)}
