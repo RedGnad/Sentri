@@ -36,10 +36,10 @@ The agent has **no authority to override its constraints**. Max allocation, max 
 | Component | Usage |
 |---|---|
 | **Chain** | `TreasuryVault.sol` deployed on Galileo (chain ID 16602) — funds, policy engine, execution gate, kill-switch. |
-| **Sealed Inference** | Every strategy decision is computed inside a TEE via the 0G compute broker. Attestation bytes are stored on-chain with each execution. |
-| **Storage KV** | Live portfolio state, market snapshots, and agent heartbeat — readable by the dashboard. |
-| **Storage Log** | Immutable audit trail. Every decision written with reasoning, proof hash, TX hash. |
-| **Agent ID (INFT)** | `AgentINFT.sol` gates `executeStrategy()` — only an address holding an active agent NFT with a valid enclave measurement can execute. Soft kill via revocation. |
+| **Sealed Inference** | Every strategy decision is computed inside a TEE via the 0G compute broker. The keccak256 hash of the chat ID + provider + verification status (the **TEE attestation hash**) and the keccak256 of the prompt + response (the **proof hash**) are both written into the on-chain `executionLogs[]` for every execution. The raw attestation payload is stored alongside in 0G Storage. |
+| **Storage KV** | Live portfolio snapshot (TVL, balances, last action, total executions, P&L) — written after every successful execution. The dashboard reads it via the agent server's `/state` endpoint. |
+| **Storage Log** | Immutable audit trail. Every decision written with reasoning, confidence, market context, proof hash, on-chain TX hash and 0G Storage TX hash. |
+| **Agent ID (INFT)** | `AgentINFT.sol` gates `executeStrategy()`. The vault checks **both** that `msg.sender` is the registered `agent` address **and** that this address holds an active (non-revoked) Agent INFT with a valid enclave measurement. Owner can revoke the INFT to halt the agent without burning the token (soft kill). |
 
 The 6th component (Persistent Memory) is intentionally not used — it would exceed scope for a 3-minute demo.
 
@@ -76,16 +76,17 @@ apps/web/                 Next.js 14 dashboard (App Router, wagmi v2, viem)
     api/                  Server routes for agent-status and audit enrichment
 ```
 
-### Agent loop
+### Agent loop (`packages/sdk/src/agent.ts`, `executeOneIteration`)
 
-1. Fetch ETH/USD spot from Binance (fallback CoinGecko).
-2. Push the price to `SentriPriceFeed` (the agent is the sole keeper).
-3. Pull current vault state (balances, high-water mark, policy).
-4. Call Sealed Inference with a signed prompt containing market + portfolio snapshot. The TEE returns a JSON decision + attestation.
-5. Hash the reasoning → `proofHash`. Store the full object in 0G Storage Log under that hash.
-6. Call `TreasuryVault.executeStrategy(action, amountIn, proofHash, teeAttestation)`. The contract enforces: active agent INFT, policy compliance, cooldown, drawdown, slippage.
-7. On success, the vault emits `StrategyExecuted` and appends to `executionLogs[]`.
-8. Write agent heartbeat to 0G Storage KV. Cooldown. Repeat.
+1. **Fetch market** — ETH/USD spot from Binance (CoinGecko as fallback).
+2. **Push price on-chain** — agent is the sole keeper of `SentriPriceFeed`. The push doubles as a freshness signal: the vault rejects swaps if the oracle is older than `maxPriceStaleness`.
+3. **Read vault state** — balances, high-water mark, policy parameters, execution log count.
+4. **Build prompt** — structured market + portfolio + policy snapshot.
+5. **Sealed Inference** — request analysis through the 0G compute broker; the response is signed by the TEE. We compute `proofHash = keccak256(prompt + response + chatID + ts)` and `teeAttestation = keccak256(chatID + provider + verified)`.
+6. **Size the order** — apply `amount_bps` to the relevant balance (USDC for Rebalance/YieldFarm, WETH for EmergencyDeleverage), capped locally to `maxAllocationBps × TVL`.
+7. **Execute on-chain** — `vault.executeStrategy(action, amountIn, proofHash, teeAttestation)`. The contract enforces dual INFT gate, cooldown, allocation, drawdown, oracle freshness and per-swap slippage. Skips emit a log line and continue.
+8. **Append audit entry to 0G Storage Log** — full reasoning, confidence, proof hashes, TX hash, market context. Cached locally and mirrored to 0G Storage.
+9. **Write portfolio snapshot to 0G Storage KV** — for the dashboard's live view. Cooldown, then repeat.
 
 ### Risk policy (enforced on-chain)
 
@@ -145,19 +146,30 @@ NEXT_PUBLIC_PRICE_FEED_ADDRESS=0x...
 ### Dashboard
 
 ```bash
-pnpm --filter @sentri/web dev
+pnpm dev               # alias for `pnpm --filter web dev`
 ```
 
-Open http://localhost:3000. Connect a wallet on Galileo, mint testnet USDC from the vault page, deposit, and watch the agent operate.
+Open http://localhost:3000. Connect a wallet on Galileo, mint testnet USDC from the vault page, deposit, and watch the agent operate. Set `AGENT_URL` in `apps/web/.env.local` to point at the running agent server (defaults to local cache fallback for dev).
 
 ### Agent runtime
 
+The agent reads its config from `packages/sdk/.env` (see `.env.example`). Required: `PRIVATE_KEY` (a wallet with at least 3 OG on Galileo + held by an active Agent INFT and registered as keeper on `SentriPriceFeed`).
+
 ```bash
-pnpm --filter @sentri/sdk setup-broker   # one-time: register with the 0G compute broker
-pnpm --filter @sentri/sdk agent          # start the autonomous loop
+# One-time: register the wallet with the 0G compute broker, create a 3 OG ledger,
+# and discover available inference services. Idempotent.
+pnpm --filter @steward/sdk setup-broker
+
+# Standalone CLI loop — runs forever in the foreground.
+pnpm agent             # alias for `pnpm --filter @steward/sdk agent`
+
+# Long-running HTTP server — same loop driven by setInterval, plus
+# /healthz, /state, /audit endpoints for the dashboard. This is what
+# render.yaml deploys.
+pnpm --filter @steward/sdk run server
 ```
 
-The agent will fetch market data, run TEE inference, execute on-chain, and stream heartbeats to the dashboard.
+The agent will fetch market data, push the price on-chain, run TEE inference, execute through the swap router, and write the audit trail + portfolio state to 0G Storage on every iteration.
 
 ---
 
