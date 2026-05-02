@@ -230,6 +230,13 @@ contract TreasuryVault is
 
         _enforceCooldown();
 
+        // Checks-effects-interactions: bump cooldown timestamp BEFORE the
+        // external swap call. Prevents any same-block re-entry (in addition
+        // to nonReentrant) and silences Slither's cross-function reentrancy
+        // detector. If the swap reverts, this whole TX reverts and the
+        // timestamp update is undone.
+        lastExecutionTime = block.timestamp;
+
         uint256 price = _fetchPrice();
         uint8 feedDec = priceFeed.decimals();
 
@@ -252,7 +259,6 @@ contract TreasuryVault is
         uint256 tvlAfter = _tvl(price, feedDec);
         _enforceDrawdown(tvlAfter);
 
-        lastExecutionTime = block.timestamp;
         if (tvlAfter > highWaterMark) highWaterMark = tvlAfter;
 
         uint256 logIndex = executionLogs.length;
@@ -304,6 +310,14 @@ contract TreasuryVault is
         emit PolicyUpdated(_policy);
     }
 
+    /// @notice Replace the agent address authorised to call executeStrategy.
+    ///         Available to the owner so that, if the off-chain agent is
+    ///         compromised, retired, or migrated to a new operator, the vault
+    ///         can be re-pointed at a new identity in a single transaction —
+    ///         without burning the AgentINFT or pausing the vault.
+    /// @dev    The new agent must still hold an active (non-revoked) AgentINFT
+    ///         for executeStrategy to succeed; this function only swaps the
+    ///         allowed caller, the INFT gating still applies.
     function setAgent(address _agent) external onlyOwner {
         if (_agent == address(0)) revert ZeroAddress();
         agent = _agent;
@@ -316,7 +330,8 @@ contract TreasuryVault is
         return executionLogs.length;
     }
 
-    /// @notice Legacy view: base token balance only
+    /// @notice Base (USDC) token balance held directly by the vault. Excludes
+    ///         the value of risk asset positions; use `totalValue()` for full TVL.
     function vaultBalance() external view returns (uint256) {
         return base.balanceOf(address(this));
     }
@@ -332,7 +347,18 @@ contract TreasuryVault is
 
     // ── Internal — pricing ───────────────────────────────────────────────
 
+    /// @dev Fetch the current oracle price and reject if it is older than the
+    ///      vault's policy.maxPriceStaleness. The agent is the sole keeper of
+    ///      SentriPriceFeed and pushes a fresh value at the start of each
+    ///      cycle, so a stale price here means the agent has stopped, the
+    ///      oracle keeper changed, or the cycle is taking too long. In all
+    ///      three cases refusing to swap is the safe default — better to skip
+    ///      an iteration than execute against a stale price.
     function _fetchPrice() internal view returns (uint256) {
+        // We intentionally ignore roundId, startedAt, answeredInRound — for
+        // a single-feed AggregatorV3 keeper-pushed oracle the only fields
+        // that matter are `ans` (price) and `updatedAt` (freshness).
+        // slither-disable-next-line unused-return
         (, int256 ans,, uint256 updatedAt,) = priceFeed.latestRoundData();
         if (ans <= 0) revert PriceStale();
         if (block.timestamp - updatedAt > policy.maxPriceStaleness) revert PriceStale();
@@ -367,6 +393,9 @@ contract TreasuryVault is
     }
 
     function _fetchPriceOrZero() internal view returns (uint256) {
+        // Same as _fetchPrice but never reverts — used during deposits where
+        // a missing oracle should not block the user (HWM bumps to balance only).
+        // slither-disable-next-line unused-return
         try priceFeed.latestRoundData() returns (uint80, int256 ans, uint256, uint256, uint80) {
             if (ans <= 0) return 0;
             return uint256(ans);
