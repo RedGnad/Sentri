@@ -89,10 +89,10 @@ export async function selectProvider(): Promise<ProviderInfo> {
   const service = candidates[0];
   const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider);
   const additionalInfo = JSON.parse(service.additionalInfo) as Record<string, unknown>;
-  const teeSignerAddress =
-    additionalInfo.TargetSeparated === true && typeof additionalInfo.TargetTeeAddress === "string"
-      ? additionalInfo.TargetTeeAddress
-      : service.teeSignerAddress;
+  const teeSignerAddress = resolveTeeSignerAddress(service.teeSignerAddress, additionalInfo);
+  if (!teeSignerAddress || teeSignerAddress === ethers.ZeroAddress) {
+    throw new Error(`Provider ${service.provider} resolved to an empty TEE signer.`);
+  }
 
   _providerInfo = {
     address: service.provider,
@@ -214,7 +214,7 @@ export async function requestInference(
   })));
 
   return {
-    content: signaturePayload.text,
+    content,
     signedResponse: signaturePayload.text,
     teeSignature: signaturePayload.signature,
     responseHash,
@@ -240,10 +240,10 @@ async function getProviderInfo(addr: string, endpoint: string, model: string): P
     throw new Error(`Provider ${addr} is not an acknowledged verifiable service.`);
   }
   const additionalInfo = JSON.parse(service.additionalInfo) as Record<string, unknown>;
-  const teeSignerAddress =
-    additionalInfo.TargetSeparated === true && typeof additionalInfo.TargetTeeAddress === "string"
-      ? additionalInfo.TargetTeeAddress
-      : service.teeSignerAddress;
+  const teeSignerAddress = resolveTeeSignerAddress(service.teeSignerAddress, additionalInfo);
+  if (!teeSignerAddress || teeSignerAddress === ethers.ZeroAddress) {
+    throw new Error(`Provider ${addr} resolved to an empty TEE signer.`);
+  }
   return {
     address: service.provider,
     model,
@@ -257,6 +257,14 @@ async function getProviderInfo(addr: string, endpoint: string, model: string): P
 function isVerifiableService(verifiability: string): boolean {
   const normalized = verifiability.trim().toLowerCase();
   return normalized.length > 0 && normalized !== "none" && normalized !== "false" && normalized !== "0";
+}
+
+function resolveTeeSignerAddress(serviceSigner: string, additionalInfo: Record<string, unknown>): string {
+  const targetSigner =
+    additionalInfo.TargetSeparated === true && typeof additionalInfo.TargetTeeAddress === "string"
+      ? additionalInfo.TargetTeeAddress.trim()
+      : "";
+  return targetSigner || serviceSigner;
 }
 
 /**

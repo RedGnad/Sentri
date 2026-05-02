@@ -1,37 +1,37 @@
 import { type Abi } from "viem";
 
-// Phase 1 multi-tenant deployment on Galileo testnet (May 2026).
+// Replay-protected multi-tenant deployment on Galileo testnet (May 2026).
 // VaultFactory is the public entry point; users create their own vaults via it.
 // Set NEXT_PUBLIC_SENTRI_NETWORK=mainnet and override addresses after the
 // required 0G mainnet deployment for HackQuest review.
 
 export const VAULT_FACTORY_ADDRESS =
   (process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS as `0x${string}`) ??
-  "0xE3cfFc08a8327b7464168a4C17D5AE609bE75153";
+  "0x3DBc323A0540EB104df2C73f30a12CE2881a98aa";
 
 export const AGENT_INFT_ADDRESS =
   (process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS as `0x${string}`) ??
-  "0x3E74C5820e3DF83C331AC058328Dd18C037E151F";
+  "0x1181A8670d5CA9597D60fEf2A571a14C58F33020";
 
 export const SWAP_ROUTER_ADDRESS =
   (process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS as `0x${string}`) ??
-  "0x13173a0F2BB4687F8b601374566649559511D512";
+  "0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C";
 
 export const PRICE_FEED_ADDRESS =
   (process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS as `0x${string}`) ??
-  "0xaDb52a49d0398cA048f4027Fe81748Dd666BAfF8";
+  "0x0e75243d34E904Ab925064c8297b36484Ce2aB5E";
 
 export const MOCK_USDC_ADDRESS =
   (process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as `0x${string}`) ??
-  "0x93cA5b6fEA5328FAa0ed4B6Cb6a2E82339558792";
+  "0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3";
 
 export const MOCK_WETH_ADDRESS =
   (process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS as `0x${string}`) ??
-  "0xF25A225562808a00776aAAD4DFC98c6B48Ad5790";
+  "0x246e6080D736A217C151C3b88890C08e2C249d5E";
 
 export const DEMO_VAULT_ADDRESS =
   (process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS as `0x${string}`) ??
-  "0x435946204b818e82C97362F21Ca8B967F5266F83";
+  "0xB6539EC33a360726ac7E8f053327022AC891E86D";
 
 // Preset tier enum mirrors VaultFactory.PresetTier solidity enum.
 export const PresetTier = {

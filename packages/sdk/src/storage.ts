@@ -87,6 +87,7 @@ export interface PortfolioState {
   totalExecutions: number;
   pnlBps: number;
   marketPrice?: number;
+  storageError?: string;
 }
 
 /**
@@ -96,12 +97,19 @@ export async function savePortfolioState(
   vaultAddr: string,
   state: PortfolioState,
 ): Promise<{ txHash: string; rootHash: string } | null> {
-  const result = await _writeKv(stateStreamId(vaultAddr), "portfolio:current", state);
+  let result: { txHash: string; rootHash: string } | null = null;
+  let storageError: string | undefined;
+  try {
+    result = await _writeKv(stateStreamId(vaultAddr), "portfolio:current", state);
+  } catch (err) {
+    storageError = err instanceof Error ? err.message : String(err);
+  }
   writeCacheFile(path.join("vaults", vaultAddr.toLowerCase(), "state.json"), {
     ...state,
     updatedAt: Date.now(),
     storageTxHash: result?.txHash,
     storageRootHash: result?.rootHash,
+    storageError,
   });
   return result;
 }
@@ -123,6 +131,7 @@ export interface AuditEntry {
   intent: unknown;
   intentHash: string;
   responseHash: string;
+  modelResponse?: string;
   signedResponse: string;
   teeSignature: string;
   teeSigner: string;
@@ -142,6 +151,7 @@ export interface AuditEntry {
   marketSourceCount?: number;
   marketRawSources?: Array<{ source: string; ethUsd: number }>;
   priceAttestationPayload?: unknown;
+  storageError?: string;
 }
 
 export function auditKey(
@@ -160,13 +170,20 @@ export async function appendAuditLog(
   entry: AuditEntry,
 ): Promise<{ txHash: string; rootHash: string } | null> {
   const logKey = auditKey(vaultAddr, entry);
-  const result = await _writeKv(auditStreamId(vaultAddr), logKey, entry);
+  let result: { txHash: string; rootHash: string } | null = null;
+  let storageError: string | undefined;
+  try {
+    result = await _writeKv(auditStreamId(vaultAddr), logKey, entry);
+  } catch (err) {
+    storageError = err instanceof Error ? err.message : String(err);
+  }
   writeCacheFile(
     path.join("vaults", vaultAddr.toLowerCase(), "audit", `${entry.timestamp}.json`),
     {
       ...entry,
       storageTxHash: result?.txHash,
       storageRootHash: result?.rootHash,
+      storageError,
     },
   );
   return result;

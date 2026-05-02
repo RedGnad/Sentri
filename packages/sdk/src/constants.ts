@@ -37,20 +37,20 @@ export const STORAGE = {
   flowContract: process.env.STORAGE_FLOW_CONTRACT ?? selectedNetwork.flowContract,
 } as const;
 
-// Contract addresses — Phase 1 multi-tenant deployment on Galileo (May 2026).
+// Contract addresses — replay-protected multi-tenant deployment on Galileo (May 2026).
 // The VaultFactory is the public entry point; users create vaults via it.
 // All other addresses are immutable dependencies the factory wires into each
 // new clone.
 export const CONTRACTS = {
-  vaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS ?? "0xE3cfFc08a8327b7464168a4C17D5AE609bE75153",
-  vaultImplementation: process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS ?? "0x7fDfbee09665fffEB150F500C2CC8326c87B6304",
-  agentINFT: process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS ?? "0x3E74C5820e3DF83C331AC058328Dd18C037E151F",
-  swapRouter: process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS ?? "0x13173a0F2BB4687F8b601374566649559511D512",
-  swapPair: process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS ?? "0x1C8040c84344641cA4ab3CAE44c2B99c9ec1f137",
-  priceFeed: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS ?? "0xaDb52a49d0398cA048f4027Fe81748Dd666BAfF8",
-  mockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ?? "0x93cA5b6fEA5328FAa0ed4B6Cb6a2E82339558792",
-  mockWETH: process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS ?? "0xF25A225562808a00776aAAD4DFC98c6B48Ad5790",
-  demoVault: process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS ?? "0x435946204b818e82C97362F21Ca8B967F5266F83",
+  vaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS ?? "0x3DBc323A0540EB104df2C73f30a12CE2881a98aa",
+  vaultImplementation: process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS ?? "0xf4bE6A5ead857F5927490418F2903F8Cc88533d6",
+  agentINFT: process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS ?? "0x1181A8670d5CA9597D60fEf2A571a14C58F33020",
+  swapRouter: process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS ?? "0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C",
+  swapPair: process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS ?? "0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f",
+  priceFeed: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS ?? "0x0e75243d34E904Ab925064c8297b36484Ce2aB5E",
+  mockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ?? "0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3",
+  mockWETH: process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS ?? "0x246e6080D736A217C151C3b88890C08e2C249d5E",
+  demoVault: process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS ?? "0xB6539EC33a360726ac7E8f053327022AC891E86D",
 } as const;
 
 // Agent loop timing

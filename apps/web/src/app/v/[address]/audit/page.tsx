@@ -260,6 +260,12 @@ function AuditEntry({
                   </Field>
                 )}
               </div>
+              {detail.storageError && (
+                <div className="border-t border-hairline pt-4">
+                  <div className="font-mono text-[9px] uppercase tracking-kicker text-alert mb-1.5">0G Storage write warning</div>
+                  <p className="font-mono text-[11px] text-alert/80 break-all">{detail.storageError}</p>
+                </div>
+              )}
             </div>
           ) : (
             <p className="font-mono text-[11px] text-ink-faint leading-relaxed">

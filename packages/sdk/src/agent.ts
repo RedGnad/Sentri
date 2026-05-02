@@ -367,6 +367,7 @@ export async function executeOneIterationForVault(
       intent,
       intentHash,
       responseHash: inference.responseHash,
+      modelResponse: inference.content,
       signedResponse: inference.signedResponse,
       teeSignature: inference.teeSignature,
       teeSigner: inference.teeSignerAddress,

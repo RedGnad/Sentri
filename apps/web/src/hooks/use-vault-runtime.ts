@@ -21,6 +21,7 @@ export interface VaultPortfolio {
   marketPrice?: number;
   storageTxHash?: string;
   storageRootHash?: string;
+  storageError?: string;
   updatedAt?: number;
 }
 
@@ -38,6 +39,7 @@ export interface VaultAuditEntry {
   intent?: unknown;
   intentHash: string;
   responseHash: string;
+  modelResponse?: string;
   signedResponse?: string;
   teeSignature?: string;
   teeSigner: string;
@@ -53,6 +55,7 @@ export interface VaultAuditEntry {
   txHash?: string;
   storageTxHash?: string;
   storageRootHash?: string;
+  storageError?: string;
   marketSpreadPct?: number;
   marketSourceCount?: number;
   marketRawSources?: Array<{ source: string; ethUsd: number }>;

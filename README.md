@@ -47,9 +47,9 @@ A treasury infrastructure where:
 | Component | Usage |
 |---|---|
 | **Chain** | `VaultFactory.sol` deploys per-user `TreasuryVault` clones (EIP-1167 minimal proxies). Every vault enforces its own policy on-chain and emits `StrategyExecuted` events with an execution intent hash, TEE response hash, recovered TEE signer, TEE attestation hash, and deadline for every action. Used intent/response hashes cannot be replayed. |
-| **Sealed Inference** | Each strategy decision is computed through a verifiable 0G inference provider. The agent fail-closes unless `processResponse(provider, chatID, content)` returns `true`, then the vault checks the TEE signer's EIP-191 signature over the compact JSON response before any swap. |
+| **Sealed Inference** | Each strategy decision is computed through a verifiable 0G inference provider. The agent fail-closes unless `processResponse(provider, chatID, content)` returns `true`, then the vault checks the TEE signer's EIP-191 signature over the provider signed chat payload before any swap. |
 | **Storage KV** | Per-vault portfolio snapshot (TVL, balances, last action, total executions, P&L) keyed by `keccak256("sentri:portfolio-state:" + vault_address)`. The dashboard reads it via the agent server's `/vault/:address/state` endpoint. |
-| **Storage-backed audit** | Per-vault audit entries are written to 0G Storage under keys derived from vault + tx hash + log index + intent hash. Each entry includes the full execution intent, compact signed response, TEE signature, provider metadata, on-chain TX hash, 0G Storage TX hash, and root hash. |
+| **Storage-backed audit** | Per-vault audit entries are written to 0G Storage under keys derived from vault + tx hash + log index + intent hash. Each entry includes the full execution intent, verified model response, signed chat payload, TEE signature, provider metadata, on-chain TX hash, 0G Storage TX hash, and root hash. |
 | **Agent ID (INFT)** | `AgentINFT.sol` gates `executeStrategy()` on **every** vault. The vault checks both that `msg.sender` is the registered `agent` address and that the agent holds an active INFT bound to the recovered TEE signer. Owner can revoke the INFT to halt the agent across **all** vaults at once. |
 
 The 6th component (Persistent Memory) is intentionally not used — every strategy decision is stateless and replayable from on-chain + storage data.
@@ -113,13 +113,13 @@ apps/web/                        Next.js 14 dashboard (App Router, wagmi v2, vie
 
 Every 5 minutes the agent:
 
-1. **Push price on-chain** — fetch ETH/USD spot (Binance, CoinGecko fallback) and push to `SentriPriceFeed`. The agent is the sole keeper.
+1. **Push price on-chain** — fetch ETH/USD spot from Binance, CoinGecko, Coinbase, and Kraken, then push the median to `SentriPriceFeed`. The agent is the sole keeper.
 2. **Discover vaults** — call `factory.allVaults()` to pick up any newly-created vaults this cycle.
 3. **For each vault** (with per-vault failure isolation):
    - Read state (balances, HWM, policy, execution count).
    - Build a prompt with **deterministically pre-computed metrics** (WETH share, deviation from target, drawdown). The LLM never does float math — it pattern-matches against the rule branches in its system prompt.
    - **Sealed Inference**: send to a verifiable TEE provider, require `processResponse(...) === true`, fetch the chat signature, and recover the TEE signer.
-   - **Size + execute**: build a canonical `ExecutionIntent`, pass `intentHash`, compact signed response, TEE signature, and attestation hash to `vault.executeStrategy(...)`. Skips emit a structured outcome and continue to next vault.
+   - **Size + execute**: build a canonical `ExecutionIntent`, pass `intentHash`, provider signed chat payload, TEE signature, and attestation hash to `vault.executeStrategy(...)`. Skips emit a structured outcome and continue to next vault.
    - **Audit + state** to 0G Storage, namespaced by vault address. Audit keys include vault + tx hash + log index + intent hash so entries do not collide.
 
 ### Strategy doctrine (`packages/sdk/src/inference.ts`)
@@ -151,21 +151,27 @@ Custom policies are validated on-chain at vault creation. Out-of-range values re
 
 ## Deployed addresses
 
-All contracts live on **0G Galileo Testnet** (chain ID `16602`). Phase 1 multi-tenant deployment, May 2026.
+All contracts live on **0G Galileo Testnet** (chain ID `16602`). Replay-protected multi-tenant deployment, May 2026.
 
 Deployer / Agent: [`0x7531…dbd8`](https://chainscan-galileo.0g.ai/address/0x7531d467f19d1055accf6b0d22286184f87adbd8)
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0xE3cfFc08a8327b7464168a4C17D5AE609bE75153`](https://chainscan-galileo.0g.ai/address/0xE3cfFc08a8327b7464168a4C17D5AE609bE75153) |
-| `TreasuryVault` (impl) | [`0x7fDfbee09665fffEB150F500C2CC8326c87B6304`](https://chainscan-galileo.0g.ai/address/0x7fDfbee09665fffEB150F500C2CC8326c87B6304) |
-| `AgentINFT` | [`0x3E74C5820e3DF83C331AC058328Dd18C037E151F`](https://chainscan-galileo.0g.ai/address/0x3E74C5820e3DF83C331AC058328Dd18C037E151F) |
-| `SentriSwapRouter` | [`0x13173a0F2BB4687F8b601374566649559511D512`](https://chainscan-galileo.0g.ai/address/0x13173a0F2BB4687F8b601374566649559511D512) |
-| `SentriPair` | [`0x1C8040c84344641cA4ab3CAE44c2B99c9ec1f137`](https://chainscan-galileo.0g.ai/address/0x1C8040c84344641cA4ab3CAE44c2B99c9ec1f137) |
-| `SentriPriceFeed` | [`0xaDb52a49d0398cA048f4027Fe81748Dd666BAfF8`](https://chainscan-galileo.0g.ai/address/0xaDb52a49d0398cA048f4027Fe81748Dd666BAfF8) |
-| `MockUSDC` | [`0x93cA5b6fEA5328FAa0ed4B6Cb6a2E82339558792`](https://chainscan-galileo.0g.ai/address/0x93cA5b6fEA5328FAa0ed4B6Cb6a2E82339558792) |
-| `MockWETH` | [`0xF25A225562808a00776aAAD4DFC98c6B48Ad5790`](https://chainscan-galileo.0g.ai/address/0xF25A225562808a00776aAAD4DFC98c6B48Ad5790) |
-| Demo vault (Balanced preset, deployer-owned) | [`0x435946204b818e82C97362F21Ca8B967F5266F83`](https://chainscan-galileo.0g.ai/address/0x435946204b818e82C97362F21Ca8B967F5266F83) |
+| `VaultFactory` (entry point) | [`0x3DBc323A0540EB104df2C73f30a12CE2881a98aa`](https://chainscan-galileo.0g.ai/address/0x3DBc323A0540EB104df2C73f30a12CE2881a98aa) |
+| `TreasuryVault` (impl) | [`0xf4bE6A5ead857F5927490418F2903F8Cc88533d6`](https://chainscan-galileo.0g.ai/address/0xf4bE6A5ead857F5927490418F2903F8Cc88533d6) |
+| `AgentINFT` | [`0x1181A8670d5CA9597D60fEf2A571a14C58F33020`](https://chainscan-galileo.0g.ai/address/0x1181A8670d5CA9597D60fEf2A571a14C58F33020) |
+| `SentriSwapRouter` | [`0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C`](https://chainscan-galileo.0g.ai/address/0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C) |
+| `SentriPair` | [`0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f`](https://chainscan-galileo.0g.ai/address/0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f) |
+| `SentriPriceFeed` | [`0x0e75243d34E904Ab925064c8297b36484Ce2aB5E`](https://chainscan-galileo.0g.ai/address/0x0e75243d34E904Ab925064c8297b36484Ce2aB5E) |
+| `MockUSDC` | [`0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3`](https://chainscan-galileo.0g.ai/address/0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3) |
+| `MockWETH` | [`0x246e6080D736A217C151C3b88890C08e2C249d5E`](https://chainscan-galileo.0g.ai/address/0x246e6080D736A217C151C3b88890C08e2C249d5E) |
+| Demo vault (Balanced preset, deployer-owned) | [`0xB6539EC33a360726ac7E8f053327022AC891E86D`](https://chainscan-galileo.0g.ai/address/0xB6539EC33a360726ac7E8f053327022AC891E86D) |
+
+Live Galileo proof:
+
+- Demo vault seeded with 1,000 MockUSDC.
+- First replay-protected execution is visible in the demo vault explorer activity.
+- The execution log exposes `intentHash`, `responseHash`, recovered TEE signer `0x83df4B8EbA7c0B3B740019b8c9a77ffF77D508cF`, TEE attestation hash, and deadline.
 
 ---
 
@@ -237,7 +243,7 @@ The deploy script outputs every address. Update `packages/sdk/src/constants.ts` 
 cd contracts && forge test
 ```
 
-Output: **77 tests passing across 5 suites** (TreasuryVault: 23, AgentINFT: 12, SentriPair: 8, VaultFactory: 21, MultiVault: 13).
+Output: **81 tests passing across 5 suites** (TreasuryVault: 27, AgentINFT: 12, SentriPair: 8, VaultFactory: 21, MultiVault: 13).
 
 Notable coverage:
 - Init pattern guard (impl disabled, double-init revert, zero-address)
@@ -271,8 +277,8 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 ### What the chain verifies (on every executeStrategy)
 
 - **Caller is the registered agent** — `msg.sender == agent` (set at vault creation, owner-mutable).
-- **Caller holds an active Agent INFT bound to the recovered TEE signer** — the vault recovers the signer from the compact signed response and checks `agentNFT.isActiveAgentWithSigner(msg.sender, teeSigner)`. Owner can revoke any time.
-- **TEE signer signature over the response** — the vault verifies the EIP-191 signature over the compact public JSON response before swapping.
+- **Caller holds an active Agent INFT bound to the recovered TEE signer** — the vault recovers the signer from the provider signed chat payload and checks `agentNFT.isActiveAgentWithSigner(msg.sender, teeSigner)`. Owner can revoke any time.
+- **TEE signer signature over the chat payload** — the vault verifies the EIP-191 signature over the provider signed payload before swapping.
 - **Intent freshness and replay protection** — each execution includes a deadline checked on-chain, and both the `intentHash` and signed `responseHash` are single-use.
 - **Cooldown elapsed** — `block.timestamp ≥ lastExecutionTime + cooldownPeriod`.
 - **Post-trade WETH exposure within policy** — risk-on actions revert if WETH value after the swap exceeds `maxAllocationBps` of TVL. Emergency deleverage is never blocked by the exposure cap.
@@ -284,8 +290,8 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 
 ### What the chain DOES NOT verify (and why this is honest)
 
-- **The full TEE attestation report is NOT cryptographically verified on-chain.** The agent verifies the 0G response off-chain with `broker.inference.processResponse(provider, chatID, content)` and the vault verifies the TEE signer signature over the compact JSON response on-chain. The on-chain check proves the response came from the INFT-bound TEE signer; the broader provider attestation and service verification remain off-chain and auditable.
-- **The contract does not parse the signed JSON response.** The vault verifies the TEE signer, deadline, and single-use hashes on-chain, then stores the intent/response hashes for audit. The enriched audit page binds the signed response, reconstructed execution intent, transaction hash, and 0G Storage proof for human verification.
+- **The full TEE attestation report is NOT cryptographically verified on-chain.** The agent verifies the 0G response off-chain with `broker.inference.processResponse(provider, chatID, content)` and the vault verifies the TEE signer signature over the provider signed chat payload on-chain. The on-chain check proves the payload came from the INFT-bound TEE signer; the broader provider attestation and service verification remain off-chain and auditable.
+- **The contract does not parse the model JSON response.** The vault verifies the TEE signer, deadline, and single-use hashes on-chain, then stores the intent/response hashes for audit. The enriched audit page binds the verified model response, signed chat payload, reconstructed execution intent, transaction hash, and 0G Storage proof for human verification.
 - **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed WETH exposure, drawdown, slippage, or cooldown.
 - **The market price comes from centralised exchanges** (Binance, CoinGecko, Coinbase, Kraken — median of 4 sources, 2-of-4 quorum required). This is more robust than a single source but it is not a fully decentralised oracle. A coordinated manipulation across all four CEX feeds would be required to push a bad price.
 - **The swap routes through `SentriPair`**, an in-protocol AMM seeded with `MockUSDC`/`MockWETH` for testnet reproducibility. v2 mainnet would integrate a real DEX (Jaine on 0G mainnet, or equivalent) with real liquidity.
