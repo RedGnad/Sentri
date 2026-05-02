@@ -1,27 +1,28 @@
 # Sentri
 
-**Verifiable financial logic for autonomous treasury allocation.**
+**Verifiable autonomous treasury for stablecoin reserves.**
 Private strategy, verifiable results.
 
-Sentri is an autonomous, risk-managed **treasury allocator**. The vault holds two assets — a base asset (USDC) and a risk asset (WETH) — and the agent maintains a target allocation between them according to a strategy that it plans privately inside a TEE via **0G Sealed Inference**, executes through an on-chain policy engine it cannot override, and audits via **0G Storage** — without revealing the strategy itself.
+Sentri is a verifiable autonomous treasury agent. The vault holds **USDC as the home asset**; the agent has bounded discretion (max 30% of TVL) to deploy WETH for productive risk exposure when market conditions are constructive — privately analyzed in a TEE via **0G Sealed Inference**, executed under on-chain policy it cannot override, and audited via **0G Storage**.
 
-Built for the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*. Sentri implements the track's core thesis — *fully autonomous, verifiable financial logic* — applied to the treasury / risk-management end of the spectrum, with **Sealed Inference and TEE-based execution** as the privacy primitive that makes proprietary strategies safe to run on-chain.
+Built for **DAOs, protocol reserves, and foundations** that hold stablecoin reserves but want intelligent — and verifiable — productive deployment, without trusting a black-box trader. Submitted to the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*. Sentri implements the track's core thesis — *fully autonomous, verifiable financial logic* — applied to the **autonomous treasury** category, with **Sealed Inference and TEE-based execution** as the privacy primitive that makes proprietary risk policies safe to run on-chain.
 
-> Sentri is **not** an active trading bot. It is a *verifiable risk-managed allocator* — closer in spirit to a foundation treasury or a protocol reserve than to a perp strategy. The job is to keep the portfolio inside a declared risk envelope while remaining transparently provable. The agent does not chase alpha; it enforces discipline.
+> Sentri is **not** a trading bot. It is a *stables-first verifiable treasury* with a kill-switch that returns 100% to USDC instantly. The agent's job is to keep reserves productive within a declared envelope, not to chase alpha.
 
 ---
 
 ## The problem
 
-On-chain treasuries that hold a mix of stable and risk assets need someone (or something) to keep the allocation in shape. The two existing options are bad:
-- **Manual** — slow, emotional, expensive in attention.
-- **Bot-driven** — public strategy, frontrunnable, no accountability when it misbehaves.
+DAOs, protocols, and foundations hold **$26B+ in on-chain stablecoin reserves** that mostly sit idle. Putting that capital to work has two existing options, both bad:
 
-Neither works for a DAO treasury, a protocol reserve, or a foundation fund that needs **both autonomy and auditability**.
+- **Manual deployment** — slow, emotional, expensive in attention; treasurers freeze on volatility.
+- **Bot-driven yield farming** — public strategies, frontrunnable, opaque about how decisions are made, no recourse when they misbehave.
+
+Neither is acceptable for a treasury that needs **both autonomy and auditability** — capital preservation as the floor, productivity as the upside, transparency as the contract.
 
 ## The answer
 
-A treasurer agent whose **reasoning runs inside a TEE**, whose **execution is gated by on-chain policy**, and whose **audit trail is cryptographically verifiable** — all without leaking the strategy.
+A treasury agent whose **reasoning runs inside a TEE**, whose **execution is gated by on-chain policy**, and whose **audit trail is cryptographically verifiable** — all without leaking the strategy.
 
 ```
 ┌──────────────┐   ┌───────────────────┐   ┌──────────────┐   ┌────────────┐   ┌──────────────┐
