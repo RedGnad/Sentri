@@ -32,10 +32,21 @@ export interface VaultStateFromAgent {
 
 export interface VaultAuditEntry {
   timestamp: number;
+  logIndex: number;
   action: string;
   amount: string;
-  proofHash: string;
+  intent?: unknown;
+  intentHash: string;
+  responseHash: string;
+  signedResponse?: string;
+  teeSignature?: string;
+  teeSigner: string;
   teeAttestation: string;
+  verified: true;
+  provider: string;
+  model: string;
+  verifiability: string;
+  chatID: string;
   reasoning: string;
   confidence: number;
   txHash?: string;

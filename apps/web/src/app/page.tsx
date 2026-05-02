@@ -16,13 +16,13 @@ const PRINCIPLES = [
     num: "ii",
     title: "Verifiable by default",
     body:
-      "Every decision is sealed with a TEE attestation hash and a cryptographic proof hash, anchored on-chain and mirrored to 0G Storage. Auditors can replay the trail without the secret.",
+      "Every execution commits an intent hash, TEE response hash, recovered signer, and 0G Storage proof. The vault checks the TEE signer signature before it swaps.",
   },
   {
     num: "iii",
     title: "Bounded by policy",
     body:
-      "Each vault has its own on-chain policy: max allocation, drawdown, cooldown, slippage. The agent proposes; the contract disposes. No override path. Owner kill-switch returns 100% to USDC instantly.",
+      "Each vault has its own on-chain policy: max WETH exposure, drawdown, cooldown, slippage. The agent proposes; the contract disposes. No override path. Owner kill-switch returns 100% to USDC instantly.",
   },
 ];
 

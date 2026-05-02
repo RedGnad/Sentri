@@ -1,6 +1,6 @@
 // Server-side probes for the landing page (public observatory).
 // Reads protocol-wide live data from:
-//   - 0G Galileo RPC (latest block, factory state, aggregate vault TVL)
+//   - selected 0G RPC (latest block, factory state, aggregate vault TVL)
 //   - The agent server (/healthz endpoint with cycle counters)
 //
 // Returns "unavailable" markers when a probe fails, never throws — so the
@@ -13,10 +13,11 @@ import {
   TREASURY_VAULT_ABI,
 } from "@/config/contracts";
 
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://evmrpc-testnet.0g.ai";
-const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? 16602);
+const IS_MAINNET = process.env.NEXT_PUBLIC_SENTRI_NETWORK === "mainnet";
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? (IS_MAINNET ? "https://evmrpc.0g.ai" : "https://evmrpc-testnet.0g.ai");
+const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? (IS_MAINNET ? 16661 : 16602));
 const AGENT_URL = process.env.AGENT_URL ?? process.env.NEXT_PUBLIC_AGENT_URL;
-const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://chainscan-galileo.0g.ai";
+const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_URL ?? (IS_MAINNET ? "https://chainscan.0g.ai" : "https://chainscan-galileo.0g.ai");
 
 export interface LiveSnapshot {
   chain: {

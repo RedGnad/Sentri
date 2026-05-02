@@ -13,6 +13,7 @@ contract AgentINFT is ERC721, Ownable {
         bytes32 enclaveHash;       // TEE enclave measurement hash
         bytes32 attestationHash;   // Initial TEE attestation
         string  provider;          // TEE provider (e.g. "0G Sealed Inference")
+        address teeSignerAddress;  // TEE signer that signs per-chat responses
         uint256 issuedAt;          // Timestamp of minting
         bool    revoked;           // Revocation flag (soft kill)
     }
@@ -25,13 +26,14 @@ contract AgentINFT is ERC721, Ownable {
     ///      address (typically 1), not O(n) over the entire supply.
     mapping(address => uint256[]) private _holderTokens;
 
-    event AgentMinted(uint256 indexed tokenId, address indexed agent, bytes32 enclaveHash);
+    event AgentMinted(uint256 indexed tokenId, address indexed agent, bytes32 enclaveHash, address indexed teeSigner);
     event AgentRevoked(uint256 indexed tokenId);
     event AgentReinstated(uint256 indexed tokenId);
 
     error AlreadyRevoked();
     error NotRevoked();
     error AgentTokenRevoked();
+    error ZeroAddress();
 
     constructor() ERC721("Sentri Agent", "SAGENT") Ownable(msg.sender) {}
 
@@ -40,13 +42,16 @@ contract AgentINFT is ERC721, Ownable {
     /// @param enclaveHash TEE enclave measurement (identifies the code running in TEE)
     /// @param attestationHash TEE attestation hash (proves enclave integrity)
     /// @param provider TEE provider name
+    /// @param teeSignerAddress TEE signer expected to sign per-chat responses
     /// @return tokenId The minted token ID
     function mint(
         address to,
         bytes32 enclaveHash,
         bytes32 attestationHash,
-        string calldata provider
+        string calldata provider,
+        address teeSignerAddress
     ) external onlyOwner returns (uint256 tokenId) {
+        if (to == address(0) || teeSignerAddress == address(0)) revert ZeroAddress();
         tokenId = _nextTokenId++;
         _mint(to, tokenId);
 
@@ -54,11 +59,12 @@ contract AgentINFT is ERC721, Ownable {
             enclaveHash: enclaveHash,
             attestationHash: attestationHash,
             provider: provider,
+            teeSignerAddress: teeSignerAddress,
             issuedAt: block.timestamp,
             revoked: false
         });
 
-        emit AgentMinted(tokenId, to, enclaveHash);
+        emit AgentMinted(tokenId, to, enclaveHash, teeSignerAddress);
     }
 
     /// @notice Revoke an agent's INFT — blocks execution without burning
@@ -87,6 +93,27 @@ contract AgentINFT is ERC721, Ownable {
         for (uint256 i = 0; i < len; i++) {
             uint256 id = tokens[i];
             if (_ownerOf(id) == agent && !agentMetadata[id].revoked) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// @notice Check that `agent` holds an active INFT bound to `teeSigner`.
+    ///         The vault uses this to bind each signed response to the live
+    ///         0G TEE signer recorded in the agent identity token.
+    function isActiveAgentWithSigner(address agent, address teeSigner) external view returns (bool) {
+        if (teeSigner == address(0)) return false;
+        uint256[] storage tokens = _holderTokens[agent];
+        uint256 len = tokens.length;
+        for (uint256 i = 0; i < len; i++) {
+            uint256 id = tokens[i];
+            AgentMetadata storage meta = agentMetadata[id];
+            if (
+                _ownerOf(id) == agent &&
+                !meta.revoked &&
+                meta.teeSignerAddress == teeSigner
+            ) {
                 return true;
             }
         }

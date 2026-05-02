@@ -138,7 +138,7 @@ export default function VaultOverviewPage() {
           </header>
           <div className="px-5 py-5 space-y-3">
             <p className="text-[13px] text-ink-dim leading-relaxed">
-              Mint testnet USDC to fund this vault. Deposits are pooled into the vault's TVL — the agent will operate on them on its next cycle.
+              Mint testnet USDC to fund this vault. Deposits are pooled into the vault&apos;s TVL — the agent will operate on them on its next cycle.
             </p>
             {!connected ? (
               <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">

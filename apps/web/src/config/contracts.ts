@@ -2,6 +2,8 @@ import { type Abi } from "viem";
 
 // Phase 1 multi-tenant deployment on Galileo testnet (May 2026).
 // VaultFactory is the public entry point; users create their own vaults via it.
+// Set NEXT_PUBLIC_SENTRI_NETWORK=mainnet and override addresses after the
+// required 0G mainnet deployment for HackQuest review.
 
 export const VAULT_FACTORY_ADDRESS =
   (process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS as `0x${string}`) ??
@@ -212,7 +214,9 @@ export const TREASURY_VAULT_ABI = [
     inputs: [
       { name: "action", type: "uint8" },
       { name: "amountIn", type: "uint256" },
-      { name: "proofHash", type: "bytes32" },
+      { name: "intentHash", type: "bytes32" },
+      { name: "signedResponse", type: "string" },
+      { name: "teeSignature", type: "bytes" },
       { name: "teeAttestation", type: "bytes32" },
     ],
     outputs: [],
@@ -257,7 +261,9 @@ export const TREASURY_VAULT_ABI = [
       { name: "amountIn", type: "uint256" },
       { name: "amountOut", type: "uint256" },
       { name: "tvlAfter", type: "uint256" },
-      { name: "proofHash", type: "bytes32" },
+      { name: "intentHash", type: "bytes32" },
+      { name: "responseHash", type: "bytes32" },
+      { name: "teeSigner", type: "address" },
       { name: "teeAttestation", type: "bytes32" },
     ],
     stateMutability: "view",

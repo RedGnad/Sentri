@@ -19,6 +19,7 @@ contract Deploy is Script {
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address agent = vm.envAddress("AGENT_ADDRESS");
+        address teeSigner = vm.envAddress("TEE_SIGNER_ADDRESS");
         address deployer = vm.addr(deployerKey);
 
         vm.startBroadcast(deployerKey);
@@ -62,7 +63,8 @@ contract Deploy is Script {
             agent,
             keccak256("sentri-enclave-v1"),
             keccak256("0g-sealed-inference-attestation"),
-            "0G Sealed Inference"
+            "0G Sealed Inference",
+            teeSigner
         );
 
         // ── Vault implementation (master, never used directly) ───────────

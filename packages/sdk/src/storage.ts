@@ -117,10 +117,21 @@ export async function loadPortfolioState(
 
 export interface AuditEntry {
   timestamp: number;
+  logIndex: number;
   action: string;
   amount: string;
-  proofHash: string;
+  intent: unknown;
+  intentHash: string;
+  responseHash: string;
+  signedResponse: string;
+  teeSignature: string;
+  teeSigner: string;
   teeAttestation: string;
+  verified: true;
+  provider: string;
+  model: string;
+  verifiability: string;
+  chatID: string;
   reasoning: string;
   confidence: number;
   txHash?: string;
@@ -129,13 +140,14 @@ export interface AuditEntry {
 }
 
 /**
- * Append an entry to a vault's immutable audit log on 0G Storage.
+ * Append a collision-resistant, storage-backed audit entry for a vault.
  */
 export async function appendAuditLog(
   vaultAddr: string,
   entry: AuditEntry,
 ): Promise<{ txHash: string; rootHash: string } | null> {
-  const logKey = `audit:${entry.timestamp}`;
+  const safeTx = entry.txHash ?? "pending";
+  const logKey = `audit:${vaultAddr.toLowerCase()}:${safeTx}:${entry.logIndex}:${entry.intentHash}`;
   const result = await _writeKv(auditStreamId(vaultAddr), logKey, entry);
   writeCacheFile(
     path.join("vaults", vaultAddr.toLowerCase(), "audit", `${entry.timestamp}.json`),

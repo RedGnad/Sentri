@@ -11,14 +11,30 @@ const { createZGComputeNetworkBroker } = require(
 
 export interface InferenceResult {
   content: string;
-  proofHash: string;
+  signedResponse: string;
+  teeSignature: string;
+  responseHash: string;
   teeAttestation: string;
   chatID: string;
-  verified: boolean | null;
+  verified: true;
+  provider: string;
+  model: string;
+  endpoint: string;
+  verifiability: string;
+  teeSignerAddress: string;
 }
 
 let _broker: ZGComputeNetworkBroker | null = null;
-let _providerAddress: string | null = null;
+let _providerInfo: ProviderInfo | null = null;
+
+export interface ProviderInfo {
+  address: string;
+  model: string;
+  endpoint: string;
+  verifiability: string;
+  teeSignerAddress: string;
+  additionalInfo: Record<string, unknown>;
+}
 
 /**
  * Initialize the 0G Compute Network broker with a wallet.
@@ -43,7 +59,7 @@ export function getBroker(): ZGComputeNetworkBroker {
  * List available inference services and pick the first chatbot provider.
  * Caches the provider address for subsequent calls.
  */
-export async function selectProvider(): Promise<{ address: string; model: string; endpoint: string }> {
+export async function selectProvider(): Promise<ProviderInfo> {
   const broker = getBroker();
   const services = await broker.inference.listService();
 
@@ -51,13 +67,43 @@ export async function selectProvider(): Promise<{ address: string; model: string
     throw new Error("No inference services available on the network.");
   }
 
-  // Pick the first available service
-  const service = services[0];
-  _providerAddress = service.provider;
+  const candidates = services
+    .filter((service) => {
+      if (service.serviceType !== "chatbot") return false;
+      if (!service.teeSignerAcknowledged) return false;
+      if (!service.teeSignerAddress || service.teeSignerAddress === ethers.ZeroAddress) return false;
+      if (!isVerifiableService(service.verifiability)) return false;
+      try {
+        JSON.parse(service.additionalInfo);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .sort((a, b) => Number(b.updatedAt - a.updatedAt));
 
+  if (candidates.length === 0) {
+    throw new Error("No acknowledged verifiable chatbot provider available; refusing to run Sentri strategy.");
+  }
+
+  const service = candidates[0];
   const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider);
+  const additionalInfo = JSON.parse(service.additionalInfo) as Record<string, unknown>;
+  const teeSignerAddress =
+    additionalInfo.TargetSeparated === true && typeof additionalInfo.TargetTeeAddress === "string"
+      ? additionalInfo.TargetTeeAddress
+      : service.teeSignerAddress;
 
-  return { address: service.provider, model, endpoint };
+  _providerInfo = {
+    address: service.provider,
+    model,
+    endpoint,
+    verifiability: service.verifiability,
+    teeSignerAddress,
+    additionalInfo,
+  };
+
+  return _providerInfo;
 }
 
 /**
@@ -65,7 +111,7 @@ export async function selectProvider(): Promise<{ address: string; model: string
  */
 export async function acknowledgeProvider(providerAddress?: string): Promise<void> {
   const broker = getBroker();
-  const addr = providerAddress ?? _providerAddress;
+  const addr = providerAddress ?? _providerInfo?.address;
   if (!addr) throw new Error("No provider address. Call selectProvider() first.");
 
   // First call creates the sub-account; wrap so re-runs are idempotent.
@@ -85,7 +131,7 @@ export async function acknowledgeProvider(providerAddress?: string): Promise<voi
  * The request is processed inside a Trusted Execution Environment:
  * - Strategy reasoning stays private (encrypted in-enclave)
  * - Response is cryptographically signed by the TEE
- * - Signature can be verified on-chain via proofHash
+ * - Response signature is checked off-chain and then by the vault on-chain
  */
 export async function requestInference(
   prompt: string,
@@ -93,11 +139,12 @@ export async function requestInference(
   providerAddress?: string,
 ): Promise<InferenceResult> {
   const broker = getBroker();
-  const addr = providerAddress ?? _providerAddress;
+  const addr = providerAddress ?? _providerInfo?.address;
   if (!addr) throw new Error("No provider address. Call selectProvider() first.");
 
   // Get endpoint + model metadata
   const { endpoint, model } = await broker.inference.getServiceMetadata(addr);
+  const providerInfo = await getProviderInfo(addr, endpoint, model);
 
   // Generate billing/auth headers (single-use)
   const headers = await broker.inference.getRequestHeaders(addr, prompt);
@@ -130,33 +177,86 @@ export async function requestInference(
   // Extract chat ID for TEE verification
   const chatID = response.headers.get("ZG-Res-Key")
     ?? response.headers.get("zg-res-key")
-    ?? data.id
     ?? "";
+  if (!chatID) {
+    throw new Error("Missing ZG-Res-Key chatID; refusing to execute without TEE response verification.");
+  }
 
   // Verify TEE signature
   const verified = await broker.inference.processResponse(addr, chatID, content);
+  if (verified !== true) {
+    throw new Error(`TEE response verification failed or skipped (verified=${verified}).`);
+  }
 
-  // Generate proof hashes for on-chain logging
-  const proofHash = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify({
-    prompt,
-    response: content,
-    chatID,
-    timestamp: Date.now(),
-  })));
+  const signatureUrl = await broker.inference.getChatSignatureDownloadLink(addr, chatID);
+  const signatureResponse = await fetch(`${signatureUrl}?model=${encodeURIComponent(model)}`);
+  if (!signatureResponse.ok) {
+    throw new Error(`TEE chat signature fetch failed (${signatureResponse.status}).`);
+  }
+  const signaturePayload = await signatureResponse.json() as { text?: string; signature?: string };
+  if (!signaturePayload.text || !signaturePayload.signature) {
+    throw new Error("TEE chat signature payload missing text or signature.");
+  }
+  const recovered = ethers.verifyMessage(signaturePayload.text, signaturePayload.signature);
+  if (recovered.toLowerCase() !== providerInfo.teeSignerAddress.toLowerCase()) {
+    throw new Error(`TEE chat signature recovered ${recovered}, expected ${providerInfo.teeSignerAddress}.`);
+  }
+
+  const responseHash = ethers.keccak256(ethers.toUtf8Bytes(signaturePayload.text));
 
   const teeAttestation = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify({
     chatID,
     provider: addr,
+    model,
+    verifiability: providerInfo.verifiability,
+    teeSignerAddress: providerInfo.teeSignerAddress,
     verified,
   })));
 
   return {
-    content,
-    proofHash,
+    content: signaturePayload.text,
+    signedResponse: signaturePayload.text,
+    teeSignature: signaturePayload.signature,
+    responseHash,
     teeAttestation,
     chatID,
-    verified,
+    verified: true,
+    provider: addr,
+    model,
+    endpoint,
+    verifiability: providerInfo.verifiability,
+    teeSignerAddress: providerInfo.teeSignerAddress,
   };
+}
+
+async function getProviderInfo(addr: string, endpoint: string, model: string): Promise<ProviderInfo> {
+  if (_providerInfo?.address.toLowerCase() === addr.toLowerCase()) return _providerInfo;
+
+  const broker = getBroker();
+  const services = await broker.inference.listService(0, 50, true);
+  const service = services.find((s) => s.provider.toLowerCase() === addr.toLowerCase());
+  if (!service) throw new Error(`Provider ${addr} not found in 0G inference registry.`);
+  if (!isVerifiableService(service.verifiability) || !service.teeSignerAcknowledged) {
+    throw new Error(`Provider ${addr} is not an acknowledged verifiable service.`);
+  }
+  const additionalInfo = JSON.parse(service.additionalInfo) as Record<string, unknown>;
+  const teeSignerAddress =
+    additionalInfo.TargetSeparated === true && typeof additionalInfo.TargetTeeAddress === "string"
+      ? additionalInfo.TargetTeeAddress
+      : service.teeSignerAddress;
+  return {
+    address: service.provider,
+    model,
+    endpoint,
+    verifiability: service.verifiability,
+    teeSignerAddress,
+    additionalInfo,
+  };
+}
+
+function isVerifiableService(verifiability: string): boolean {
+  const normalized = verifiability.trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "none" && normalized !== "false" && normalized !== "0";
 }
 
 /**
@@ -214,7 +314,8 @@ Respond with ONLY a valid JSON object (no markdown, no prose):
 {
   "action": "Rebalance" | "YieldFarm" | "EmergencyDeleverage",
   "amount_bps": <integer 0–10000>,
-  "reasoning": "<one sentence: state current_weth_share %, market signal, drawdown, chosen rule, action taken>",
-  "confidence": <integer 0–100>
+  "rule_id": "R1" | "R2" | "R3" | "R4" | "R5",
+  "confidence": <integer 0–100>,
+  "short_reason": "<one short public sentence: current_weth_share %, market signal, drawdown, chosen rule>"
 }
 `;

@@ -1,16 +1,40 @@
-// 0G Galileo Testnet Configuration
+// 0G network configuration. HackQuest asks for mainnet proof, while Galileo
+// remains useful for rehearsals. Set SENTRI_NETWORK=mainnet to target 16661.
+
+const NETWORK = process.env.SENTRI_NETWORK ?? process.env.NEXT_PUBLIC_SENTRI_NETWORK ?? "galileo";
+
+const NETWORKS = {
+  galileo: {
+    id: 16602,
+    name: "0G Galileo Testnet",
+    rpcUrl: "https://evmrpc-testnet.0g.ai",
+    explorerUrl: "https://chainscan-galileo.0g.ai",
+    indexerUrl: "https://indexer-storage-testnet-turbo.0g.ai",
+    flowContract: "0x22E03a6A89B950F1c82ec5e74F8eCa321a105296",
+  },
+  mainnet: {
+    id: 16661,
+    name: "0G Mainnet",
+    rpcUrl: "https://evmrpc.0g.ai",
+    explorerUrl: "https://chainscan.0g.ai",
+    indexerUrl: "https://indexer-storage-turbo.0g.ai",
+    flowContract: "0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526",
+  },
+} as const;
+
+const selectedNetwork = NETWORK === "mainnet" ? NETWORKS.mainnet : NETWORKS.galileo;
 
 export const CHAIN = {
-  id: 16602,
-  name: "0G Galileo Testnet",
-  rpcUrl: "https://evmrpc-testnet.0g.ai",
-  explorerUrl: "https://chainscan-galileo.0g.ai",
+  id: selectedNetwork.id,
+  name: selectedNetwork.name,
+  rpcUrl: process.env.RPC_URL ?? selectedNetwork.rpcUrl,
+  explorerUrl: process.env.EXPLORER_URL ?? selectedNetwork.explorerUrl,
   currency: { name: "OG", symbol: "OG", decimals: 18 },
 } as const;
 
 export const STORAGE = {
-  indexerUrl: "https://indexer-storage-testnet-turbo.0g.ai",
-  flowContract: "0x22E03a6A89B950F1c82ec5e74F8eCa321a105296",
+  indexerUrl: process.env.STORAGE_INDEXER_URL ?? selectedNetwork.indexerUrl,
+  flowContract: process.env.STORAGE_FLOW_CONTRACT ?? selectedNetwork.flowContract,
 } as const;
 
 // Contract addresses — Phase 1 multi-tenant deployment on Galileo (May 2026).
@@ -64,7 +88,7 @@ export const TREASURY_VAULT_ABI = [
   "function deposit(uint256 amount) external",
   "function depositFrom(address payer, uint256 amount) external",
   "function withdraw(address to, uint256 amount) external",
-  "function executeStrategy(uint8 action, uint256 amountIn, bytes32 proofHash, bytes32 teeAttestation) external",
+  "function executeStrategy(uint8 action, uint256 amountIn, bytes32 intentHash, string signedResponse, bytes teeSignature, bytes32 teeAttestation) external",
   "function emergencyWithdraw() external",
   "function pause() external",
   "function unpause() external",
@@ -77,7 +101,7 @@ export const TREASURY_VAULT_ABI = [
   "function totalValue() external view returns (uint256)",
   "function highWaterMark() external view returns (uint256)",
   "function executionLogCount() external view returns (uint256)",
-  "function executionLogs(uint256 index) external view returns (uint256 timestamp, uint8 action, uint256 amountIn, uint256 amountOut, uint256 tvlAfter, bytes32 proofHash, bytes32 teeAttestation)",
+  "function executionLogs(uint256 index) external view returns (uint256 timestamp, uint8 action, uint256 amountIn, uint256 amountOut, uint256 tvlAfter, bytes32 intentHash, bytes32 responseHash, address teeSigner, bytes32 teeAttestation)",
   "function policy() external view returns (uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint16 maxSlippageBps, uint32 cooldownPeriod, uint32 maxPriceStaleness)",
   "function agent() external view returns (address)",
   "function killed() external view returns (bool)",

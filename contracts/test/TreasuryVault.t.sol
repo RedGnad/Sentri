@@ -10,6 +10,7 @@ import {AgentINFT} from "../src/AgentINFT.sol";
 import {SentriPair} from "../src/SentriPair.sol";
 import {SentriSwapRouter} from "../src/SentriSwapRouter.sol";
 import {SentriPriceFeed} from "../src/SentriPriceFeed.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract TreasuryVaultTest is Test {
     MockUSDC usdc;
@@ -22,6 +23,8 @@ contract TreasuryVaultTest is Test {
 
     address owner = address(this);
     address agent = makeAddr("agent");
+    uint256 teeSignerKey = 0xA11CE;
+    address teeSigner;
     address alice = makeAddr("alice");
     address lper = makeAddr("lper");
 
@@ -31,6 +34,7 @@ contract TreasuryVaultTest is Test {
     int256 constant PRICE = 2000 * 1e8;
 
     function setUp() public {
+        teeSigner = vm.addr(teeSignerKey);
         usdc = new MockUSDC();
         weth = new MockWETH();
         agentNFT = new AgentINFT();
@@ -64,7 +68,7 @@ contract TreasuryVaultTest is Test {
             rebalanceThresholdBps: 500,    // 5%
             maxSlippageBps: 300,           // 3%
             cooldownPeriod: 60,
-            maxPriceStaleness: 3600
+            maxPriceStaleness: 600
         });
 
         // Deploy implementation, clone, initialize — same flow the factory uses.
@@ -81,7 +85,7 @@ contract TreasuryVaultTest is Test {
             policy: defaultPolicy
         }));
 
-        agentNFT.mint(agent, keccak256("enclave-v1"), keccak256("att-v1"), "0G Sealed Inference");
+        agentNFT.mint(agent, keccak256("enclave-v1"), keccak256("att-v1"), "0G Sealed Inference", teeSigner);
 
         usdc.mint(alice, 100_000e6);
     }
@@ -156,20 +160,20 @@ contract TreasuryVaultTest is Test {
         vm.stopPrank();
     }
 
-    function test_depositFrom_byProxy_creditsCorrectly() public {
-        address proxy = makeAddr("proxy");
-        // Alice approves proxy to spend her USDC, proxy approves vault.
-        // Realistically the factory does this. Here we simulate.
-        vm.prank(alice);
-        usdc.approve(proxy, 5_000e6);
-        // proxy pulls funds and deposits into vault on alice's behalf
-        vm.startPrank(proxy);
-        usdc.transferFrom(alice, proxy, 5_000e6);
+    function test_depositFrom_byFactory_creditsCorrectly() public {
+        address proxy = address(this);
+        usdc.mint(proxy, 5_000e6);
         usdc.approve(address(vault), 5_000e6);
         vault.depositFrom(proxy, 5_000e6);
-        vm.stopPrank();
         assertEq(vault.vaultBalance(), 5_000e6);
         assertEq(vault.highWaterMark(), 5_000e6);
+    }
+
+    function test_depositFrom_reverts_nonFactory() public {
+        address proxy = makeAddr("proxy");
+        vm.prank(proxy);
+        vm.expectRevert(TreasuryVault.NotFactory.selector);
+        vault.depositFrom(proxy, 5_000e6);
     }
 
     function test_depositFrom_reverts_zeroPayer() public {
@@ -209,7 +213,7 @@ contract TreasuryVaultTest is Test {
         uint256 wethBefore = vault.riskBalance();
 
         vm.prank(agent);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p"), keccak256("a"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 1_000e6, "p");
 
         assertEq(vault.vaultBalance(), usdcBefore - 1_000e6);
         assertGt(vault.riskBalance(), wethBefore);
@@ -220,26 +224,41 @@ contract TreasuryVaultTest is Test {
         _depositAs(alice, 10_000e6);
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.AllocationExceeded.selector);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 3_000e6, keccak256("p"), keccak256("a"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 3_000e6, "p");
     }
 
     function test_executeStrategy_reverts_cooldown() public {
         _depositAs(alice, 10_000e6);
         vm.prank(agent);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 500e6, keccak256("p1"), keccak256("a1"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "p1");
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.CooldownNotElapsed.selector);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 500e6, keccak256("p2"), keccak256("a2"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "p2");
     }
 
     function test_executeStrategy_succeeds_afterCooldown() public {
         _depositAs(alice, 10_000e6);
         vm.prank(agent);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 500e6, keccak256("p1"), keccak256("a1"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "p1");
         vm.warp(block.timestamp + 61);
         vm.prank(agent);
-        vault.executeStrategy(TreasuryVault.Action.YieldFarm, 500e6, keccak256("p2"), keccak256("a2"));
+        _execute(vault, TreasuryVault.Action.YieldFarm, 500e6, "p2");
         assertEq(vault.executionLogCount(), 2);
+    }
+
+    function test_executeStrategy_reverts_invalidTEESignature() public {
+        _depositAs(alice, 10_000e6);
+        bytes memory badSig = _signature(0xB0B, _response("bad"));
+        vm.prank(agent);
+        vm.expectRevert(TreasuryVault.InvalidTEESignature.selector);
+        vault.executeStrategy(
+            TreasuryVault.Action.Rebalance,
+            500e6,
+            keccak256("intent"),
+            _response("bad"),
+            badSig,
+            keccak256("att")
+        );
     }
 
     // ── Execute: risk → base (Deleverage) ────────────────────────────────
@@ -248,7 +267,7 @@ contract TreasuryVaultTest is Test {
         _depositAs(alice, 10_000e6);
         // Open a position first
         vm.prank(agent);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p"), keccak256("a"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 1_000e6, "p");
 
         vm.warp(block.timestamp + 61);
 
@@ -256,7 +275,18 @@ contract TreasuryVaultTest is Test {
         assertGt(wethBal, 0);
 
         vm.prank(agent);
-        vault.executeStrategy(TreasuryVault.Action.EmergencyDeleverage, wethBal / 2, keccak256("p2"), keccak256("a2"));
+        _execute(vault, TreasuryVault.Action.EmergencyDeleverage, wethBal / 2, "p2");
+        assertLt(vault.riskBalance(), wethBal);
+    }
+
+    function test_deleverage_notBlocked_whenExposureAboveCap() public {
+        _depositAs(alice, 10_000e6);
+        weth.mint(address(vault), 2e18); // 4,000 USDC of risk value, above 20% cap.
+        uint256 wethBal = vault.riskBalance();
+
+        vm.prank(agent);
+        _execute(vault, TreasuryVault.Action.EmergencyDeleverage, wethBal / 2, "deleverage");
+
         assertLt(vault.riskBalance(), wethBal);
     }
 
@@ -264,10 +294,10 @@ contract TreasuryVaultTest is Test {
 
     function test_executeStrategy_reverts_priceStale() public {
         _depositAs(alice, 10_000e6);
-        vm.warp(block.timestamp + 7200); // staleness = 3600
+        vm.warp(block.timestamp + 7200); // staleness = 600
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.PriceStale.selector);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 500e6, keccak256("p"), keccak256("a"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "p");
     }
 
     function test_executeStrategy_reverts_slippage_whenOracleTooFar() public {
@@ -278,7 +308,7 @@ contract TreasuryVaultTest is Test {
         feed.pushAnswer(100 * 1e8, keccak256("att-drift"));
         vm.prank(agent);
         vm.expectRevert(SentriSwapRouter.InsufficientAmountOut.selector);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p"), keccak256("a"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 1_000e6, "p");
     }
 
     // ── Kill-switch ──────────────────────────────────────────────────────
@@ -286,7 +316,7 @@ contract TreasuryVaultTest is Test {
     function test_emergencyWithdraw_drainsBoth() public {
         _depositAs(alice, 10_000e6);
         vm.prank(agent);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p"), keccak256("a"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 1_000e6, "p");
 
         uint256 usdcBefore = usdc.balanceOf(owner);
         uint256 wethBefore = weth.balanceOf(owner);
@@ -307,7 +337,7 @@ contract TreasuryVaultTest is Test {
             rebalanceThresholdBps: 300,
             maxSlippageBps: 200,
             cooldownPeriod: 120,
-            maxPriceStaleness: 1800
+            maxPriceStaleness: 600
         });
         vault.setPolicy(p);
         (uint16 alloc,,,,, ) = vault.policy();
@@ -334,7 +364,7 @@ contract TreasuryVaultTest is Test {
         agentNFT.revoke(0);
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.AgentNotVerified.selector);
-        vault.executeStrategy(TreasuryVault.Action.Rebalance, 500e6, keccak256("p"), keccak256("a"));
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "p");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -344,5 +374,27 @@ contract TreasuryVaultTest is Test {
         usdc.approve(address(vault), amount);
         vault.deposit(amount);
         vm.stopPrank();
+    }
+
+    function _execute(TreasuryVault target, TreasuryVault.Action action, uint256 amount, string memory tag) internal {
+        string memory response = _response(tag);
+        target.executeStrategy(
+            action,
+            amount,
+            keccak256(abi.encodePacked("intent:", tag)),
+            response,
+            _signature(teeSignerKey, response),
+            keccak256(abi.encodePacked("att:", tag))
+        );
+    }
+
+    function _response(string memory tag) internal pure returns (string memory) {
+        return string.concat('{"action":"Rebalance","amount_bps":1000,"rule_id":"', tag, '","confidence":90,"short_reason":"test"}');
+    }
+
+    function _signature(uint256 key, string memory response) internal returns (bytes memory) {
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(bytes(response));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
+        return abi.encodePacked(r, s, v);
     }
 }

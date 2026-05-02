@@ -11,6 +11,8 @@ contract AgentINFTTest is Test {
     address agentA = makeAddr("agentA");
     address agentB = makeAddr("agentB");
     address attacker = makeAddr("attacker");
+    address teeSignerA = makeAddr("teeSignerA");
+    address teeSignerB = makeAddr("teeSignerB");
 
     bytes32 constant ENCLAVE = keccak256("enclave-measurement-A");
     bytes32 constant ATTEST = keccak256("attestation-A");
@@ -20,16 +22,17 @@ contract AgentINFTTest is Test {
     }
 
     function test_mint_byOwner_setsMetadataAndOwnership() public {
-        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "0G Sealed Inference");
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "0G Sealed Inference", teeSignerA);
         assertEq(id, 0);
         assertEq(inft.ownerOf(id), agentA);
         assertEq(inft.totalSupply(), 1);
 
-        (bytes32 enclave, bytes32 att, string memory provider, uint256 issuedAt, bool revoked) =
+        (bytes32 enclave, bytes32 att, string memory provider, address teeSigner, uint256 issuedAt, bool revoked) =
             inft.agentMetadata(id);
         assertEq(enclave, ENCLAVE);
         assertEq(att, ATTEST);
         assertEq(provider, "0G Sealed Inference");
+        assertEq(teeSigner, teeSignerA);
         assertEq(issuedAt, block.timestamp);
         assertFalse(revoked);
     }
@@ -37,37 +40,40 @@ contract AgentINFTTest is Test {
     function test_mint_revertsIfNotOwner() public {
         vm.prank(attacker);
         vm.expectRevert();
-        inft.mint(agentA, ENCLAVE, ATTEST, "x");
+        inft.mint(agentA, ENCLAVE, ATTEST, "x", teeSignerA);
     }
 
     function test_isActiveAgent_trueAfterMint() public {
-        inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         assertTrue(inft.isActiveAgent(agentA));
+        assertTrue(inft.isActiveAgentWithSigner(agentA, teeSignerA));
+        assertFalse(inft.isActiveAgentWithSigner(agentA, teeSignerB));
         assertFalse(inft.isActiveAgent(agentB));
     }
 
     function test_revoke_disablesAgent() public {
-        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         inft.revoke(id);
         assertFalse(inft.isActiveAgent(agentA));
+        assertFalse(inft.isActiveAgentWithSigner(agentA, teeSignerA));
     }
 
     function test_revoke_revertsIfAlreadyRevoked() public {
-        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         inft.revoke(id);
         vm.expectRevert(AgentINFT.AlreadyRevoked.selector);
         inft.revoke(id);
     }
 
     function test_revoke_revertsIfNotOwner() public {
-        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         vm.prank(attacker);
         vm.expectRevert();
         inft.revoke(id);
     }
 
     function test_reinstate_restoresActive() public {
-        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         inft.revoke(id);
         assertFalse(inft.isActiveAgent(agentA));
         inft.reinstate(id);
@@ -75,25 +81,29 @@ contract AgentINFTTest is Test {
     }
 
     function test_reinstate_revertsIfNotRevoked() public {
-        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         vm.expectRevert(AgentINFT.NotRevoked.selector);
         inft.reinstate(id);
     }
 
     function test_isActiveAgent_holderWithMultipleTokens_returnsTrueIfAnyActive() public {
-        uint256 id1 = inft.mint(agentA, ENCLAVE, ATTEST, "p1");
-        uint256 id2 = inft.mint(agentA, keccak256("e2"), keccak256("a2"), "p2");
+        uint256 id1 = inft.mint(agentA, ENCLAVE, ATTEST, "p1", teeSignerA);
+        uint256 id2 = inft.mint(agentA, keccak256("e2"), keccak256("a2"), "p2", teeSignerB);
         assertTrue(inft.isActiveAgent(agentA));
+        assertTrue(inft.isActiveAgentWithSigner(agentA, teeSignerA));
+        assertTrue(inft.isActiveAgentWithSigner(agentA, teeSignerB));
         // Revoke only one — still active
         inft.revoke(id1);
         assertTrue(inft.isActiveAgent(agentA));
+        assertFalse(inft.isActiveAgentWithSigner(agentA, teeSignerA));
+        assertTrue(inft.isActiveAgentWithSigner(agentA, teeSignerB));
         // Revoke both — inactive
         inft.revoke(id2);
         assertFalse(inft.isActiveAgent(agentA));
     }
 
     function test_isActiveAgent_afterTransfer_oldHolderInactive() public {
-        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         assertTrue(inft.isActiveAgent(agentA));
 
         vm.prank(agentA);
@@ -101,16 +111,17 @@ contract AgentINFTTest is Test {
 
         assertFalse(inft.isActiveAgent(agentA));
         assertTrue(inft.isActiveAgent(agentB));
+        assertTrue(inft.isActiveAgentWithSigner(agentB, teeSignerA));
     }
 
     /// @dev Sanity: the O(k) lookup stays cheap even with many minted tokens for OTHER agents.
     function test_isActiveAgent_scalesPerHolderNotPerSupply() public {
         // Mint 50 tokens to agentB (noise we should NOT iterate when querying agentA)
         for (uint256 i = 0; i < 50; i++) {
-            inft.mint(agentB, bytes32(i), bytes32(i), "noise");
+            inft.mint(agentB, bytes32(i), bytes32(i), "noise", teeSignerB);
         }
         // agentA holds exactly 1
-        inft.mint(agentA, ENCLAVE, ATTEST, "real");
+        inft.mint(agentA, ENCLAVE, ATTEST, "real", teeSignerA);
 
         uint256 g0 = gasleft();
         bool active = inft.isActiveAgent(agentA);
@@ -124,9 +135,9 @@ contract AgentINFTTest is Test {
 
     function test_totalSupply_incrementsWithMints() public {
         assertEq(inft.totalSupply(), 0);
-        inft.mint(agentA, ENCLAVE, ATTEST, "p");
+        inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA);
         assertEq(inft.totalSupply(), 1);
-        inft.mint(agentB, keccak256("e2"), keccak256("a2"), "p2");
+        inft.mint(agentB, keccak256("e2"), keccak256("a2"), "p2", teeSignerB);
         assertEq(inft.totalSupply(), 2);
     }
 }

@@ -8,6 +8,8 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {AgentINFT} from "./AgentINFT.sol";
 import {SentriSwapRouter} from "./SentriSwapRouter.sol";
 import {SentriPriceFeed} from "./SentriPriceFeed.sol";
@@ -28,7 +30,7 @@ contract TreasuryVault is
     // ── Types ────────────────────────────────────────────────────────────
 
     struct Policy {
-        uint16 maxAllocationBps;      // max % of TVL allocated per action
+        uint16 maxAllocationBps;      // max post-trade risk exposure as % of TVL
         uint16 maxDrawdownBps;        // max drawdown from high-water mark
         uint16 rebalanceThresholdBps; // informational drift threshold
         uint16 maxSlippageBps;        // max acceptable slippage vs oracle
@@ -48,7 +50,9 @@ contract TreasuryVault is
         uint256 amountIn;
         uint256 amountOut;
         uint256 tvlAfter;
-        bytes32 proofHash;
+        bytes32 intentHash;
+        bytes32 responseHash;
+        address teeSigner;
         bytes32 teeAttestation;
     }
 
@@ -76,6 +80,7 @@ contract TreasuryVault is
     SentriPriceFeed public priceFeed;
 
     address public agent;
+    address public factory;
     Policy public policy;
 
     /// @notice High-water mark of TVL (in base units). Bumped on deposit and
@@ -99,7 +104,9 @@ contract TreasuryVault is
         uint256 amountIn,
         uint256 amountOut,
         uint256 tvlAfter,
-        bytes32 proofHash,
+        bytes32 intentHash,
+        bytes32 responseHash,
+        address teeSigner,
         bytes32 teeAttestation
     );
     event PolicyUpdated(Policy newPolicy);
@@ -119,12 +126,19 @@ contract TreasuryVault is
     error InvalidPolicy();
     error PriceStale();
     error InsufficientRiskBalance();
+    error NotFactory();
+    error InvalidTEESignature();
 
     // ── Modifiers ────────────────────────────────────────────────────────
 
     modifier onlyAgent() {
         if (msg.sender != agent) revert NotAgent();
         if (!agentNFT.isActiveAgent(msg.sender)) revert AgentNotVerified();
+        _;
+    }
+
+    modifier onlyFactory() {
+        if (msg.sender != factory) revert NotFactory();
         _;
     }
 
@@ -167,6 +181,7 @@ contract TreasuryVault is
         router = SentriSwapRouter(p.router);
         priceFeed = SentriPriceFeed(p.priceFeed);
         agent = p.agent;
+        factory = msg.sender;
         policy = p.policy;
     }
 
@@ -180,7 +195,7 @@ contract TreasuryVault is
     /// @notice Deposit base tokens from an explicit payer (e.g. the factory
     ///         performing an atomic create-and-deposit on the user's behalf).
     ///         The payer must have approved `address(this)` to spend `amount`.
-    function depositFrom(address payer, uint256 amount) external whenNotPaused notKilled nonReentrant {
+    function depositFrom(address payer, uint256 amount) external onlyFactory whenNotPaused notKilled nonReentrant {
         _depositFrom(payer, amount);
     }
 
@@ -218,15 +233,20 @@ contract TreasuryVault is
     /// @param action Action type (direction of swap)
     /// @param amountIn For Rebalance/YieldFarm: base amount to allocate. For
     ///                 EmergencyDeleverage: risk amount to unwind.
-    /// @param proofHash Hash of the inference proof from Sealed Inference
+    /// @param intentHash Hash of the canonical execution intent stored in 0G Storage
+    /// @param signedResponse Compact TEE-signed JSON response from the 0G provider
+    /// @param teeSignature EIP-191 signature over `signedResponse`
     /// @param teeAttestation TEE attestation hash
     function executeStrategy(
         Action action,
         uint256 amountIn,
-        bytes32 proofHash,
+        bytes32 intentHash,
+        string calldata signedResponse,
+        bytes calldata teeSignature,
         bytes32 teeAttestation
     ) external onlyAgent whenNotPaused notKilled nonReentrant {
         if (amountIn == 0) revert ZeroAmount();
+        (address teeSigner, bytes32 responseHash) = _verifyTEE(signedResponse, teeSignature);
 
         _enforceCooldown();
 
@@ -244,19 +264,20 @@ contract TreasuryVault is
         if (action == Action.EmergencyDeleverage) {
             if (risk.balanceOf(address(this)) < amountIn) revert InsufficientRiskBalance();
             uint256 expectedBase = _quoteRiskToBase(amountIn, price, feedDec);
-            _enforceAllocation(expectedBase); // sized vs TVL in base units
             uint256 minOut = (expectedBase * (10_000 - policy.maxSlippageBps)) / 10_000;
             amountOut = _doSwap(address(risk), amountIn, minOut);
         } else {
             // Base -> Risk
             if (base.balanceOf(address(this)) < amountIn) revert ZeroAmount();
-            _enforceAllocation(amountIn);
             uint256 expectedRisk = _quoteBaseToRisk(amountIn, price, feedDec);
             uint256 minOut = (expectedRisk * (10_000 - policy.maxSlippageBps)) / 10_000;
             amountOut = _doSwap(address(base), amountIn, minOut);
         }
 
         uint256 tvlAfter = _tvl(price, feedDec);
+        if (action != Action.EmergencyDeleverage) {
+            _enforceRiskExposure(tvlAfter, price, feedDec);
+        }
         _enforceDrawdown(tvlAfter);
 
         if (tvlAfter > highWaterMark) highWaterMark = tvlAfter;
@@ -268,11 +289,13 @@ contract TreasuryVault is
             amountIn: amountIn,
             amountOut: amountOut,
             tvlAfter: tvlAfter,
-            proofHash: proofHash,
+            intentHash: intentHash,
+            responseHash: responseHash,
+            teeSigner: teeSigner,
             teeAttestation: teeAttestation
         }));
 
-        emit StrategyExecuted(logIndex, action, amountIn, amountOut, tvlAfter, proofHash, teeAttestation);
+        emit StrategyExecuted(logIndex, action, amountIn, amountOut, tvlAfter, intentHash, responseHash, teeSigner, teeAttestation);
     }
 
     function _doSwap(address tokenIn, uint256 amountIn, uint256 minOut) internal returns (uint256) {
@@ -413,11 +436,21 @@ contract TreasuryVault is
         ) revert CooldownNotElapsed();
     }
 
-    function _enforceAllocation(uint256 baseEquivalent) internal view {
-        uint256 price = _fetchPrice();
-        uint256 tvl = _tvl(price, priceFeed.decimals());
-        uint256 maxAllocation = (tvl * policy.maxAllocationBps) / 10_000;
-        if (baseEquivalent > maxAllocation) revert AllocationExceeded();
+    function _verifyTEE(string calldata signedResponse, bytes calldata teeSignature)
+        internal
+        view
+        returns (address teeSigner, bytes32 responseHash)
+    {
+        responseHash = keccak256(bytes(signedResponse));
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(bytes(signedResponse));
+        teeSigner = ECDSA.recover(digest, teeSignature);
+        if (!agentNFT.isActiveAgentWithSigner(msg.sender, teeSigner)) revert InvalidTEESignature();
+    }
+
+    function _enforceRiskExposure(uint256 tvlAfter, uint256 price, uint8 feedDec) internal view {
+        uint256 riskValue = _quoteRiskToBase(risk.balanceOf(address(this)), price, feedDec);
+        uint256 maxRiskValue = (tvlAfter * policy.maxAllocationBps) / 10_000;
+        if (riskValue > maxRiskValue) revert AllocationExceeded();
     }
 
     function _enforceDrawdown(uint256 tvlAfter) internal view {
@@ -429,12 +462,15 @@ contract TreasuryVault is
     function _validatePolicy(Policy memory _policy) internal pure {
         if (
             _policy.maxAllocationBps == 0 ||
-            _policy.maxAllocationBps > 10_000 ||
+            _policy.maxAllocationBps > 5000 ||
             _policy.maxDrawdownBps == 0 ||
-            _policy.maxDrawdownBps > 10_000 ||
-            _policy.rebalanceThresholdBps > 10_000 ||
-            _policy.maxSlippageBps > 10_000 ||
-            _policy.maxPriceStaleness == 0
+            _policy.maxDrawdownBps > 2000 ||
+            _policy.rebalanceThresholdBps > 5000 ||
+            _policy.maxSlippageBps == 0 ||
+            _policy.maxSlippageBps > 500 ||
+            _policy.cooldownPeriod < 60 ||
+            _policy.maxPriceStaleness < 30 ||
+            _policy.maxPriceStaleness > 600
         ) revert InvalidPolicy();
     }
 }

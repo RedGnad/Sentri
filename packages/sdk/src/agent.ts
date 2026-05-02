@@ -24,7 +24,9 @@ import { getMarketSnapshot, type MarketSnapshot } from "./market.js";
 interface AgentDecision {
   action: "Rebalance" | "YieldFarm" | "EmergencyDeleverage";
   amount_bps: number;
-  reasoning: string;
+  rule_id?: string;
+  reasoning?: string;
+  short_reason?: string;
   confidence: number;
 }
 
@@ -45,7 +47,7 @@ export interface GlobalContext {
   factory: ethers.Contract;
   priceFeed: ethers.Contract;
   walletAddress: string;
-  providerInfo: { address: string; model: string; endpoint: string };
+  providerInfo: { address: string; model: string; endpoint: string; verifiability: string; teeSignerAddress: string };
 }
 
 /**
@@ -95,7 +97,10 @@ export async function setupGlobalContext(): Promise<GlobalContext> {
 
   log("Selecting inference provider...");
   const providerInfo = await selectProvider();
-  log(`Provider: ${providerInfo.address} | Model: ${providerInfo.model}`);
+  log(
+    `Provider: ${providerInfo.address} | Model: ${providerInfo.model} | ` +
+      `Verifiability: ${providerInfo.verifiability} | TEE signer: ${providerInfo.teeSignerAddress}`,
+  );
 
   log("Acknowledging provider TEE signer...");
   await acknowledgeProvider();
@@ -234,7 +239,10 @@ export async function executeOneIterationForVault(
 
   log("Requesting Sealed Inference (TEE)...");
   const inference = await requestInference(prompt, TREASURY_SYSTEM_PROMPT);
-  log(`TEE verified: ${inference.verified} | ChatID: ${inference.chatID}`);
+  log(
+    `TEE verified: ${inference.verified} | ChatID: ${inference.chatID} | ` +
+      `Signer: ${inference.teeSignerAddress}`,
+  );
 
   let decision: AgentDecision;
   try {
@@ -242,8 +250,11 @@ export async function executeOneIterationForVault(
   } catch {
     return { status: "skipped", reason: `invalid JSON from LLM: ${inference.content.slice(0, 120)}` };
   }
+  const validationError = validateDecision(decision);
+  if (validationError) return { status: "skipped", reason: validationError };
+  const reasoning = decision.short_reason ?? decision.reasoning ?? "";
   log(`Decision: ${decision.action} | ${decision.amount_bps}bps | conf ${decision.confidence}%`);
-  log(`Reasoning: ${decision.reasoning}`);
+  log(`Reasoning: ${reasoning}`);
 
   if (decision.amount_bps === 0) {
     return { status: "skipped", reason: "no action needed (amount_bps=0)" };
@@ -264,12 +275,42 @@ export async function executeOneIterationForVault(
     }
   }
 
+  const policySnapshot = {
+    maxAllocationBps: Number(policy[0]),
+    maxDrawdownBps: Number(policy[1]),
+    rebalanceThresholdBps: Number(policy[2]),
+    maxSlippageBps: Number(policy[3]),
+    cooldownPeriod: Number(policy[4]),
+    maxPriceStaleness: Number(policy[5]),
+  };
+  const deadline = Math.floor(Date.now() / 1000) + 300;
+  const intent = {
+    chainId: CHAIN.id,
+    vault: vaultAddress,
+    agent: ctx.walletAddress,
+    provider: inference.provider,
+    model: inference.model,
+    verifiability: inference.verifiability,
+    teeSigner: inference.teeSignerAddress,
+    chatID: inference.chatID,
+    responseHash: inference.responseHash,
+    action: decision.action,
+    amountIn: amountIn.toString(),
+    price: market.ethUsd,
+    priceSource: market.source,
+    policySnapshot,
+    deadline,
+  };
+  const intentHash = ethers.keccak256(ethers.toUtf8Bytes(canonicalJson(intent)));
+
   // Execute
   try {
     const tx = await vault.executeStrategy(
       ACTION_MAP[decision.action],
       amountIn,
-      inference.proofHash,
+      intentHash,
+      inference.signedResponse,
+      inference.teeSignature,
       inference.teeAttestation,
     );
     const receipt = await tx.wait();
@@ -298,11 +339,22 @@ export async function executeOneIterationForVault(
 
     await appendAuditLog(vaultAddress, {
       timestamp: chainTimestampMs,
+      logIndex: Number(idx),
       action: decision.action,
       amount: formattedAmountIn,
-      proofHash: inference.proofHash,
+      intent,
+      intentHash,
+      responseHash: inference.responseHash,
+      signedResponse: inference.signedResponse,
+      teeSignature: inference.teeSignature,
+      teeSigner: inference.teeSignerAddress,
       teeAttestation: inference.teeAttestation,
-      reasoning: decision.reasoning,
+      verified: inference.verified,
+      provider: inference.provider,
+      model: inference.model,
+      verifiability: inference.verifiability,
+      chatID: inference.chatID,
+      reasoning,
       confidence: decision.confidence,
       txHash: receipt.hash,
       marketPrice: market.ethUsd,
@@ -336,7 +388,7 @@ export async function executeOneIterationForVault(
       amountIn: formattedAmountIn,
       amountOut: formattedAmountOut,
       txHash: receipt.hash,
-      reasoning: decision.reasoning,
+      reasoning,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -359,6 +411,28 @@ export async function executeOneIterationForVault(
     }
     throw err; // re-throw unknown errors so the server logs them
   }
+}
+
+function validateDecision(decision: AgentDecision): string | null {
+  if (!Object.hasOwn(ACTION_MAP, decision.action)) return `invalid action from LLM: ${String(decision.action)}`;
+  if (!Number.isInteger(decision.amount_bps) || decision.amount_bps < 0 || decision.amount_bps > 10000) {
+    return `invalid amount_bps from LLM: ${String(decision.amount_bps)}`;
+  }
+  if (!Number.isInteger(decision.confidence) || decision.confidence < 0 || decision.confidence > 100) {
+    return `invalid confidence from LLM: ${String(decision.confidence)}`;
+  }
+  return null;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 // ── Multi-vault standalone loop (for `pnpm agent` CLI) ───────────────────
@@ -432,7 +506,7 @@ Market (${input.market.source}):
 - 24h change: ${input.market.change24h.toFixed(2)}%
 
 Policy bounds:
-- Max allocation per action: ${input.policy.maxAllocationBps / 100}% of TVL
+- Max post-trade WETH exposure: ${input.policy.maxAllocationBps / 100}% of TVL
 - Max drawdown from HWM: ${input.policy.maxDrawdownBps / 100}%
 - Max slippage: ${input.policy.maxSlippageBps / 100}%
 - Cooldown between actions: ${input.policy.cooldownPeriod}s

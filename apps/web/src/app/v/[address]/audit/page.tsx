@@ -14,7 +14,7 @@ import { galileo } from "@/config/wagmi";
 
 const ACTION_LABELS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"] as const;
 const ACTION_VARIANTS = ["default", "success", "destructive"] as const;
-const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_URL ?? "https://chainscan-galileo.0g.ai";
+const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_URL ?? galileo.blockExplorers.default.url;
 
 export default function VaultAuditPage() {
   const params = useParams<{ address: string }>();
@@ -63,8 +63,8 @@ export default function VaultAuditPage() {
       ) : (
         logs?.map((log, i) => {
           if (!log.result) return null;
-          const [timestamp, action, amountIn, amountOut, tvlAfter, proofHash, teeAttestation] =
-            log.result as [bigint, number, bigint, bigint, bigint, string, string];
+          const [timestamp, action, amountIn, amountOut, tvlAfter, intentHash, responseHash, teeSigner, teeAttestation] =
+            log.result as [bigint, number, bigint, bigint, bigint, string, string, string, string];
           return (
             <AuditEntry
               key={i}
@@ -76,7 +76,9 @@ export default function VaultAuditPage() {
               amountIn={amountIn}
               amountOut={amountOut}
               tvlAfter={tvlAfter}
-              proofHash={proofHash}
+              intentHash={intentHash}
+              responseHash={responseHash}
+              teeSigner={teeSigner}
               teeAttestation={teeAttestation}
             />
           );
@@ -95,7 +97,9 @@ function AuditEntry({
   amountIn,
   amountOut,
   tvlAfter,
-  proofHash,
+  intentHash,
+  responseHash,
+  teeSigner,
   teeAttestation,
 }: {
   vaultAddress: `0x${string}`;
@@ -106,7 +110,9 @@ function AuditEntry({
   amountIn: bigint;
   amountOut: bigint;
   tvlAfter: bigint;
-  proofHash: string;
+  intentHash: string;
+  responseHash: string;
+  teeSigner: string;
   teeAttestation: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -155,8 +161,18 @@ function AuditEntry({
 
       <div className="grid grid-cols-1 md:grid-cols-2 border-t border-hairline">
         <div className="px-5 py-4 md:border-r border-hairline">
-          <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">Proof hash</div>
-          <code className="font-mono text-[11px] text-ink-dim break-all">{proofHash}</code>
+          <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">Intent hash</div>
+          <code className="font-mono text-[11px] text-ink-dim break-all">{intentHash}</code>
+        </div>
+        <div className="px-5 py-4 border-t md:border-t-0 border-hairline">
+          <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">Response hash</div>
+          <code className="font-mono text-[11px] text-ink-dim break-all">{responseHash}</code>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 border-t border-hairline">
+        <div className="px-5 py-4 md:border-r border-hairline">
+          <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">TEE signer</div>
+          <code className="font-mono text-[11px] text-ink-dim break-all">{teeSigner}</code>
         </div>
         <div className="px-5 py-4 border-t md:border-t-0 border-hairline">
           <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">TEE attestation</div>
@@ -180,7 +196,7 @@ function AuditEntry({
             <div className="space-y-5">
               <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-phosphor">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
-                Sealed Inference · TEE Verified
+                Sealed Inference · TEE Signature Verified
               </div>
               <div>
                 <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-2">Agent reasoning</div>
@@ -190,6 +206,16 @@ function AuditEntry({
                 <Field label="Confidence">
                   <span className="font-serif text-2xl text-amber tabular">{detail.confidence}%</span>
                 </Field>
+                <Field label="Hash match">
+                  <span className={`font-mono text-[12px] tabular ${detail.intentHash === intentHash && detail.responseHash === responseHash ? "text-phosphor" : "text-alert"}`}>
+                    {detail.intentHash === intentHash && detail.responseHash === responseHash ? "MATCH" : "MISMATCH"}
+                  </span>
+                </Field>
+                <Field label="Provider">
+                  <span className="font-mono text-[11px] text-ink-dim tabular">{detail.provider ? `${detail.provider.slice(0, 10)}...` : "-"}</span>
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
                 {detail.txHash && (
                   <Field label="Vault TX">
                     <a href={`${EXPLORER}/tx/${detail.txHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[12px] text-amber hover:underline tabular flex items-center gap-1">
@@ -202,6 +228,11 @@ function AuditEntry({
                     <a href={`${EXPLORER}/tx/${detail.storageTxHash}`} target="_blank" rel="noopener noreferrer" className="font-mono text-[12px] text-amber hover:underline tabular flex items-center gap-1">
                       {detail.storageTxHash.slice(0, 10)}… <ExternalLink className="h-3 w-3" />
                     </a>
+                  </Field>
+                )}
+                {detail.storageRootHash && (
+                  <Field label="Storage root">
+                    <code className="font-mono text-[11px] text-ink-dim break-all">{detail.storageRootHash.slice(0, 18)}...</code>
                   </Field>
                 )}
               </div>

@@ -58,7 +58,7 @@ export function ConnectButton() {
   async function handleSwitchChain() {
     try {
       await switchChainAsync({ chainId: galileo.id });
-      toast.success("Switched to 0G Galileo");
+      toast.success(`Switched to ${galileo.name}`);
     } catch (err: unknown) {
       const eth = (window as unknown as { ethereum?: { request: (a: { method: string; params: unknown[] }) => Promise<unknown> } }).ethereum;
       if (eth) {
@@ -70,12 +70,12 @@ export function ConnectButton() {
                 chainId: `0x${galileo.id.toString(16)}`,
                 chainName: galileo.name,
                 nativeCurrency: galileo.nativeCurrency,
-                rpcUrls: ["https://evmrpc-testnet.0g.ai"],
-                blockExplorerUrls: ["https://chainscan-galileo.0g.ai"],
+                rpcUrls: [...galileo.rpcUrls.default.http],
+                blockExplorerUrls: [galileo.blockExplorers.default.url],
               },
             ],
           });
-          toast.success("0G Galileo added to wallet");
+          toast.success(`${galileo.name} added to wallet`);
           return;
         } catch (addErr: unknown) {
           const msg = addErr instanceof Error ? addErr.message : "Unknown error";
@@ -237,7 +237,7 @@ export function ConnectButton() {
           {wrongNetwork && (
             <div className="px-5 py-4 border-b border-hairline">
               <p className="font-mono text-[10px] text-alert leading-relaxed mb-3">
-                Wallet on chain {walletChainId}. Sentri requires Galileo (16602).
+                Wallet on chain {walletChainId}. Sentri requires {galileo.name} ({galileo.id}).
               </p>
               <Button
                 size="sm"
@@ -246,7 +246,7 @@ export function ConnectButton() {
                 onClick={handleSwitchChain}
                 disabled={isSwitching}
               >
-                {isSwitching ? "Switching..." : "Switch → Galileo"}
+                {isSwitching ? "Switching..." : `Switch → ${galileo.name}`}
               </Button>
             </div>
           )}
@@ -255,7 +255,7 @@ export function ConnectButton() {
             <Row label="Wallet" value={connector?.name ?? "—"} />
             <Row
               label="Network"
-              value={wrongNetwork ? `Chain ${walletChainId}` : "Galileo 16602"}
+              value={wrongNetwork ? `Chain ${walletChainId}` : `${galileo.name} ${galileo.id}`}
               valueClass={wrongNetwork ? "text-alert" : "text-ink"}
             />
             <Row label="Balance" value={balanceFormatted} />
@@ -264,7 +264,7 @@ export function ConnectButton() {
           <div className="divide-y divide-hairline">
             {!wrongNetwork && (
               <a
-                href={`https://chainscan-galileo.0g.ai/address/${address}`}
+                href={`${galileo.blockExplorers.default.url}/address/${address}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full flex items-center justify-between px-5 h-11 font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber hover:bg-bg-elev/60 transition-colors"

@@ -3,12 +3,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { decodeEventLog, parseUnits } from "viem";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/page-header";
 import { useCreateVault } from "@/hooks/use-factory";
 import { useApproveUsdc, useUsdcBalance, useUsdcAllowance, useMintUsdc } from "@/hooks/use-vault";
@@ -20,7 +19,6 @@ type Step = 1 | 2 | 3 | 4;
 export default function DeployPage() {
   const router = useRouter();
   const { address } = useAccount();
-  const publicClient = usePublicClient();
 
   const [step, setStep] = useState<Step>(1);
   const [tier, setTier] = useState<number>(PresetTier.Balanced);

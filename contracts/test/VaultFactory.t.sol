@@ -22,6 +22,7 @@ contract VaultFactoryTest is Test {
     VaultFactory factory;
 
     address agent = makeAddr("agent");
+    address teeSigner = makeAddr("teeSigner");
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
     address lper = makeAddr("lper");
@@ -54,7 +55,7 @@ contract VaultFactoryTest is Test {
         router.addLiquidity(a0, a1, lper, block.timestamp + 1);
         vm.stopPrank();
 
-        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference");
+        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner);
 
         impl = new TreasuryVault();
         factory = new VaultFactory(

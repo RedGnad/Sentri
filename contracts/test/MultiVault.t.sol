@@ -10,6 +10,7 @@ import {SentriSwapRouter} from "../src/SentriSwapRouter.sol";
 import {SentriPriceFeed} from "../src/SentriPriceFeed.sol";
 import {TreasuryVault} from "../src/TreasuryVault.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /// @notice End-to-end integration test: spin up the full stack via the
 ///         factory, create five vaults across three users with different
@@ -26,6 +27,8 @@ contract MultiVaultTest is Test {
     VaultFactory factory;
 
     address agent = makeAddr("agent");
+    uint256 teeSignerKey = 0xBEEF;
+    address teeSigner;
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
     address carol = makeAddr("carol");
@@ -41,6 +44,7 @@ contract MultiVaultTest is Test {
     address vCarolBalanced;
 
     function setUp() public {
+        teeSigner = vm.addr(teeSignerKey);
         usdc = new MockUSDC();
         weth = new MockWETH();
         agentNFT = new AgentINFT();
@@ -67,7 +71,7 @@ contract MultiVaultTest is Test {
         router.addLiquidity(a0, a1, lper, block.timestamp + 1);
         vm.stopPrank();
 
-        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference");
+        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner);
 
         impl = new TreasuryVault();
         factory = new VaultFactory(
@@ -145,25 +149,15 @@ contract MultiVaultTest is Test {
         uint256 amt = 1_000e6;
 
         vm.prank(agent);
-        TreasuryVault(vAliceConservative).executeStrategy(
-            TreasuryVault.Action.Rebalance, amt, keccak256("p1"), keccak256("a1")
-        );
+        _execute(vAliceConservative, TreasuryVault.Action.Rebalance, amt, "p1");
         vm.prank(agent);
-        TreasuryVault(vAliceBalanced).executeStrategy(
-            TreasuryVault.Action.Rebalance, amt, keccak256("p2"), keccak256("a2")
-        );
+        _execute(vAliceBalanced, TreasuryVault.Action.Rebalance, amt, "p2");
         vm.prank(agent);
-        TreasuryVault(vBobAggressive).executeStrategy(
-            TreasuryVault.Action.Rebalance, amt, keccak256("p3"), keccak256("a3")
-        );
+        _execute(vBobAggressive, TreasuryVault.Action.Rebalance, amt, "p3");
         vm.prank(agent);
-        TreasuryVault(vBobCustom).executeStrategy(
-            TreasuryVault.Action.Rebalance, amt, keccak256("p4"), keccak256("a4")
-        );
+        _execute(vBobCustom, TreasuryVault.Action.Rebalance, amt, "p4");
         vm.prank(agent);
-        TreasuryVault(vCarolBalanced).executeStrategy(
-            TreasuryVault.Action.Rebalance, amt, keccak256("p5"), keccak256("a5")
-        );
+        _execute(vCarolBalanced, TreasuryVault.Action.Rebalance, amt, "p5");
 
         // Each vault has exactly 1 execution log
         assertEq(TreasuryVault(vAliceConservative).executionLogCount(), 1);
@@ -186,17 +180,13 @@ contract MultiVaultTest is Test {
         // 15% of $50k = $7.5k. Try $10k → should revert.
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.AllocationExceeded.selector);
-        TreasuryVault(vAliceConservative).executeStrategy(
-            TreasuryVault.Action.Rebalance, 10_000e6, keccak256("p"), keccak256("a")
-        );
+        _execute(vAliceConservative, TreasuryVault.Action.Rebalance, 10_000e6, "p");
     }
 
     function test_aggressiveVault_acceptsHigherAllocation() public {
         // Same $10k that would fail Conservative succeeds in Aggressive
         vm.prank(agent);
-        TreasuryVault(vBobAggressive).executeStrategy(
-            TreasuryVault.Action.Rebalance, 10_000e6, keccak256("p"), keccak256("a")
-        );
+        _execute(vBobAggressive, TreasuryVault.Action.Rebalance, 10_000e6, "p");
         assertEq(TreasuryVault(vBobAggressive).executionLogCount(), 1);
     }
 
@@ -205,20 +195,14 @@ contract MultiVaultTest is Test {
     function test_cooldown_isolatedPerVault() public {
         // Execute on Aggressive (cooldown 180s)
         vm.prank(agent);
-        TreasuryVault(vBobAggressive).executeStrategy(
-            TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p1"), keccak256("a1")
-        );
+        _execute(vBobAggressive, TreasuryVault.Action.Rebalance, 1_000e6, "p1");
         // Same agent, immediately executes on a DIFFERENT vault — must succeed
         vm.prank(agent);
-        TreasuryVault(vCarolBalanced).executeStrategy(
-            TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p2"), keccak256("a2")
-        );
+        _execute(vCarolBalanced, TreasuryVault.Action.Rebalance, 1_000e6, "p2");
         // But trying again on Aggressive within cooldown — must revert
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.CooldownNotElapsed.selector);
-        TreasuryVault(vBobAggressive).executeStrategy(
-            TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p3"), keccak256("a3")
-        );
+        _execute(vBobAggressive, TreasuryVault.Action.Rebalance, 1_000e6, "p3");
     }
 
     // ── Per-vault pause / kill isolation ─────────────────────────────────
@@ -233,9 +217,7 @@ contract MultiVaultTest is Test {
 
         // Other vaults still operate
         vm.prank(agent);
-        TreasuryVault(vAliceBalanced).executeStrategy(
-            TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p"), keccak256("a")
-        );
+        _execute(vAliceBalanced, TreasuryVault.Action.Rebalance, 1_000e6, "p");
         assertEq(TreasuryVault(vAliceBalanced).executionLogCount(), 1);
     }
 
@@ -251,9 +233,7 @@ contract MultiVaultTest is Test {
 
         // Bob still operates
         vm.prank(agent);
-        TreasuryVault(vBobAggressive).executeStrategy(
-            TreasuryVault.Action.Rebalance, 5_000e6, keccak256("p"), keccak256("a")
-        );
+        _execute(vBobAggressive, TreasuryVault.Action.Rebalance, 5_000e6, "p");
         assertEq(TreasuryVault(vBobAggressive).executionLogCount(), 1);
     }
 
@@ -288,14 +268,28 @@ contract MultiVaultTest is Test {
 
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.AgentNotVerified.selector);
-        TreasuryVault(vAliceConservative).executeStrategy(
-            TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p"), keccak256("a")
-        );
+        _execute(vAliceConservative, TreasuryVault.Action.Rebalance, 1_000e6, "p");
 
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.AgentNotVerified.selector);
-        TreasuryVault(vBobAggressive).executeStrategy(
-            TreasuryVault.Action.Rebalance, 1_000e6, keccak256("p"), keccak256("a")
+        _execute(vBobAggressive, TreasuryVault.Action.Rebalance, 1_000e6, "p");
+    }
+
+    function _execute(address vault, TreasuryVault.Action action, uint256 amount, string memory tag) internal {
+        string memory response = string.concat(
+            '{"action":"Rebalance","amount_bps":1000,"rule_id":"',
+            tag,
+            '","confidence":90,"short_reason":"test"}'
+        );
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(bytes(response));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(teeSignerKey, digest);
+        TreasuryVault(vault).executeStrategy(
+            action,
+            amount,
+            keccak256(abi.encodePacked("intent:", vault, tag)),
+            response,
+            abi.encodePacked(r, s, v),
+            keccak256(abi.encodePacked("att:", tag))
         );
     }
 }

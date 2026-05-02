@@ -46,11 +46,11 @@ A treasury infrastructure where:
 
 | Component | Usage |
 |---|---|
-| **Chain** | `VaultFactory.sol` deploys per-user `TreasuryVault` clones (EIP-1167 minimal proxies). Every vault enforces its own policy on-chain and emits `StrategyExecuted` events with proof hash + TEE attestation hash for every action. |
-| **Sealed Inference** | Each strategy decision is computed inside a TEE via the 0G compute broker. The keccak256 hash of `{chatID, provider, verified}` (the **TEE attestation hash**) and `keccak256(prompt + response + chatID + ts)` (the **proof hash**) are both written into the vault's on-chain `executionLogs[]` for every execution. The raw attestation payload + reasoning is mirrored to 0G Storage. |
+| **Chain** | `VaultFactory.sol` deploys per-user `TreasuryVault` clones (EIP-1167 minimal proxies). Every vault enforces its own policy on-chain and emits `StrategyExecuted` events with an execution intent hash, TEE response hash, recovered TEE signer, and TEE attestation hash for every action. |
+| **Sealed Inference** | Each strategy decision is computed through a verifiable 0G inference provider. The agent fail-closes unless `processResponse(provider, chatID, content)` returns `true`, then the vault checks the TEE signer's EIP-191 signature over the compact JSON response before any swap. |
 | **Storage KV** | Per-vault portfolio snapshot (TVL, balances, last action, total executions, P&L) keyed by `keccak256("sentri:portfolio-state:" + vault_address)`. The dashboard reads it via the agent server's `/vault/:address/state` endpoint. |
-| **Storage Log** | Per-vault immutable audit trail keyed by `keccak256("sentri:audit-log:" + vault_address)`. Each entry: action, amount, reasoning, confidence, market context, on-chain TX hash, 0G Storage TX hash. |
-| **Agent ID (INFT)** | `AgentINFT.sol` gates `executeStrategy()` on **every** vault. The vault checks both that `msg.sender` is the registered `agent` address **and** that this address holds an active (non-revoked) Agent INFT with a valid enclave measurement. Owner can revoke the INFT to halt the agent across **all** vaults at once (kill of the operator). |
+| **Storage-backed audit** | Per-vault audit entries are written to 0G Storage under keys derived from vault + tx hash + log index + intent hash. Each entry includes the full execution intent, compact signed response, TEE signature, provider metadata, on-chain TX hash, 0G Storage TX hash, and root hash. |
+| **Agent ID (INFT)** | `AgentINFT.sol` gates `executeStrategy()` on **every** vault. The vault checks both that `msg.sender` is the registered `agent` address and that the agent holds an active INFT bound to the recovered TEE signer. Owner can revoke the INFT to halt the agent across **all** vaults at once. |
 
 The 6th component (Persistent Memory) is intentionally not used — every strategy decision is stateless and replayable from on-chain + storage data.
 
@@ -118,9 +118,9 @@ Every 5 minutes the agent:
 3. **For each vault** (with per-vault failure isolation):
    - Read state (balances, HWM, policy, execution count).
    - Build a prompt with **deterministically pre-computed metrics** (WETH share, deviation from target, drawdown). The LLM never does float math — it pattern-matches against the rule branches in its system prompt.
-   - **Sealed Inference**: send to TEE provider, receive signed JSON decision. Compute `proofHash = keccak256(prompt+response+chatID+ts)` and `teeAttestation = keccak256(chatID+provider+verified)`.
-   - **Size + execute**: `vault.executeStrategy(action, amountIn, proofHash, teeAttestation)`. Skips emit a structured outcome (cooldown, allocation, drawdown, slippage) and continue to next vault.
-   - **Audit + state** to 0G Storage, namespaced by vault address. Cache key uses on-chain `block.timestamp × 1000` so the dashboard finds enriched entries deterministically.
+   - **Sealed Inference**: send to a verifiable TEE provider, require `processResponse(...) === true`, fetch the chat signature, and recover the TEE signer.
+   - **Size + execute**: build a canonical `ExecutionIntent`, pass `intentHash`, compact signed response, TEE signature, and attestation hash to `vault.executeStrategy(...)`. Skips emit a structured outcome and continue to next vault.
+   - **Audit + state** to 0G Storage, namespaced by vault address. Audit keys include vault + tx hash + log index + intent hash so entries do not collide.
 
 ### Strategy doctrine (`packages/sdk/src/inference.ts`)
 
@@ -233,11 +233,11 @@ The deploy script outputs every address. Update `packages/sdk/src/constants.ts` 
 cd contracts && forge test
 ```
 
-Output: **71 tests passing across 5 suites** (TreasuryVault: 20, AgentINFT: 12, SentriPair: 8, VaultFactory: 21, MultiVault: 10).
+Output: **77 tests passing across 5 suites** (TreasuryVault: 23, AgentINFT: 12, SentriPair: 8, VaultFactory: 21, MultiVault: 13).
 
 Notable coverage:
 - Init pattern guard (impl disabled, double-init revert, zero-address)
-- Per-vault policy enforcement (cooldown, allocation, drawdown, slippage, stale price)
+- Per-vault policy enforcement (cooldown, post-trade WETH exposure, drawdown, slippage, stale price)
 - Cross-vault isolation (one vault's pause doesn't affect others; one owner can't touch another's vault; shared INFT revocation freezes all vaults at once)
 - HWM proportional scaling on withdraw (a withdrawal shrinks the vault but does not register as strategy drawdown)
 - AMM K-invariant on swaps both directions
@@ -247,7 +247,7 @@ Notable coverage:
 
 ## Demo
 
-Three-minute video walkthrough: **TBD**
+Three-minute video walkthrough: record and submit a public Loom/YouTube link with the HackQuest entry.
 
 The demo covers one full lifecycle:
 
@@ -255,7 +255,7 @@ The demo covers one full lifecycle:
 2. Connects wallet, mints testnet USDC.
 3. Goes to **Deploy** → chooses Balanced → deposits 1,000 USDC → vault created in one TX.
 4. Watches the agent execute on the new vault on the next cycle (~5 min).
-5. Inspects `/v/[address]/audit` to see TEE attestation hash + on-chain proof hash + reasoning.
+5. Inspects `/v/[address]/audit` to see the on-chain intent hash, response hash, recovered TEE signer, provider metadata, storage tx/root hash, and hash-match status.
 6. Updates policy, then activates kill-switch — funds returned to owner instantly.
 
 ---
@@ -267,9 +267,10 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 ### What the chain verifies (on every executeStrategy)
 
 - **Caller is the registered agent** — `msg.sender == agent` (set at vault creation, owner-mutable).
-- **Caller holds an active Agent INFT** — `agentNFT.isActiveAgent(msg.sender)`. Owner can revoke any time.
+- **Caller holds an active Agent INFT bound to the recovered TEE signer** — the vault recovers the signer from the compact signed response and checks `agentNFT.isActiveAgentWithSigner(msg.sender, teeSigner)`. Owner can revoke any time.
+- **TEE signer signature over the response** — the vault verifies the EIP-191 signature over the compact public JSON response before swapping.
 - **Cooldown elapsed** — `block.timestamp ≥ lastExecutionTime + cooldownPeriod`.
-- **Allocation within policy** — the action is sized in base-equivalent units and rejected if it exceeds `maxAllocationBps` of TVL.
+- **Post-trade WETH exposure within policy** — risk-on actions revert if WETH value after the swap exceeds `maxAllocationBps` of TVL. Emergency deleverage is never blocked by the allocation cap.
 - **Drawdown within policy** — post-trade TVL must remain within `maxDrawdownBps` of the high-water mark.
 - **Oracle price is fresh** — `block.timestamp - oracleUpdatedAt ≤ maxPriceStaleness`.
 - **Swap respects oracle slippage bound** — `minOut = expected × (1 − maxSlippageBps)`. Router reverts otherwise.
@@ -278,7 +279,7 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 
 ### What the chain DOES NOT verify (and why this is honest)
 
-- **The TEE attestation is NOT cryptographically verified on-chain.** The contract stores `proofHash` and `teeAttestation` as `bytes32` in the execution log so anyone can reproduce them off-chain, but the EVM has no way today to validate an Intel SGX/TDX quote natively. The TEE verification happens **off-chain** inside the agent: `broker.inference.processResponse(provider, chatID, content)` from `@0glabs/0g-serving-broker` calls into the 0G compute network, which checks the provider's attestation and returns a boolean. We trust the broker's verification result and commit its hashes to the chain. **A reviewer who wants stronger guarantees should run their own TEE verification by replaying the chatID against the broker.**
+- **The full TEE attestation report is NOT cryptographically verified on-chain.** The agent verifies the 0G response off-chain with `broker.inference.processResponse(provider, chatID, content)` and the vault verifies the TEE signer signature over the compact JSON response on-chain. The on-chain check proves the response came from the INFT-bound TEE signer; the broader provider attestation and service verification remain off-chain and auditable.
 - **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed allocation, drawdown, slippage, or cooldown.
 - **The market price comes from centralised exchanges** (Binance, CoinGecko, Coinbase, Kraken — median of 4 sources, 2-of-4 quorum required). This is more robust than a single source but it is not a fully decentralised oracle. A coordinated manipulation across all four CEX feeds would be required to push a bad price.
 - **The swap routes through `SentriPair`**, an in-protocol AMM seeded with `MockUSDC`/`MockWETH` for testnet reproducibility. v2 mainnet would integrate a real DEX (Jaine on 0G mainnet, or equivalent) with real liquidity.
@@ -287,10 +288,10 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 
 A vault owner can reason about Sentri's safety along **two independent dimensions**:
 
-1. **Bound** — what's the worst the agent can do within policy? This is fully on-chain and tight: bounded allocation per action, bounded drawdown from peak, bounded slippage per swap, bounded cadence (cooldown). The owner sets the bounds at vault creation and can update them; the agent cannot.
+1. **Bound** — what's the worst the agent can do within policy? This is fully on-chain and tight: bounded post-trade WETH exposure, bounded drawdown from peak, bounded slippage per swap, bounded cadence (cooldown). The owner sets the bounds at vault creation and can update them; the agent cannot.
 2. **Recourse** — what happens if something goes wrong? `pause()` blocks all activity reversibly; `emergencyWithdraw()` returns 100% of base + risk to the owner irreversibly. Both are owner-only and not gated by the agent or the price feed.
 
-The TEE story is a transparency story (every decision has an auditable trail mirrored to 0G Storage) more than a cryptographic-validation story (the chain does not validate the inference itself). When 0G compute exposes raw TEE signatures from inference providers, an EIP-712 sealed-mode upgrade becomes possible — see Roadmap.
+The TEE story is now split honestly: 0G response verification and provider attestation happen off-chain in the agent, while the vault checks the recovered TEE signer signature on-chain and commits the intent hash for audit replay.
 
 ---
 
@@ -298,7 +299,7 @@ The TEE story is a transparency story (every decision has an auditable trail mir
 
 - **Active trading / perp strategies.** Sentri rebalances and risk-manages — it does not chase short-term alpha. The interesting privacy story is *which constraints the agent enforces in private*, not *which trades it places*.
 - **Multiple risk assets.** v1 supports USDC ↔ WETH only. Multi-asset (WBTC, etc.) is a v2 conversation.
-- **Multi-chain.** Same v1 — Galileo only. The factory pattern is portable but cross-chain coordination is out of scope.
+- **Multi-chain.** v1 targets 0G mainnet for review and Galileo for rehearsal. Cross-chain coordination is out of scope.
 - **Agent marketplace / operator competition.** Single shared agent (us). Aegis Vault occupies that lane; we differentiate on focus.
 - **Persistent memory across iterations.** Stateless by design — auditability first.
 - **Smart contract audit.** Slither static analysis runs on every PR; a formal third-party audit is roadmapped pre-mainnet.
@@ -307,7 +308,7 @@ The TEE story is a transparency story (every decision has an auditable trail mir
 
 ## Roadmap
 
-- **v1 (now)**: Public testnet on Galileo. Multi-tenant factory, presets, in-app deploy wizard, per-vault audit.
+- **v1 (now)**: Galileo rehearsal plus 0G mainnet review deployment. Multi-tenant factory, presets, in-app deploy wizard, per-vault audit.
 - **v1.1**: Custom policy in the deploy wizard UI. Subgraph for aggregate analytics. Persistent KV cache (Upstash) so the agent server's audit cache survives redeploys.
 - **v2**: Mainnet deployment. Multi-asset support. ERC-4626 vault shares for multi-LP support per vault. Operator pool with bonded stake (optional).
 - **v3**: Cross-chain (Arbitrum first). Insurance pool. Formal audit.
