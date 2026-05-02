@@ -3,11 +3,13 @@
 **Verifiable autonomous treasury for stablecoin reserves.**
 Private strategy, verifiable results.
 
-Sentri is a verifiable autonomous treasury agent. The vault holds **USDC as the home asset**; the agent has bounded discretion (max 30% of TVL) to deploy WETH for productive risk exposure when market conditions are constructive — privately analyzed in a TEE via **0G Sealed Inference**, executed under on-chain policy it cannot override, and audited via **0G Storage**.
+Sentri is a multi-tenant verifiable treasury protocol. Anyone can deploy their own treasury vault — owned by them, with their own risk policy — and a shared agent operates across all vaults: planning privately inside a TEE via **0G Sealed Inference**, executing under on-chain policy each vault enforces, and writing per-vault audit trails to **0G Storage**.
 
-Built for **DAOs, protocol reserves, and foundations** that hold stablecoin reserves but want intelligent — and verifiable — productive deployment, without trusting a black-box trader. Submitted to the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*. Sentri implements the track's core thesis — *fully autonomous, verifiable financial logic* — applied to the **autonomous treasury** category, with **Sealed Inference and TEE-based execution** as the privacy primitive that makes proprietary risk policies safe to run on-chain.
+The vault holds USDC as the home asset. The agent has bounded discretion (preset policies cap WETH allocation at 15% / 30% / 50% depending on the chosen risk tier) to deploy capital into productive risk exposure when conditions are constructive — and to deleverage automatically when they aren't.
 
-> Sentri is **not** a trading bot. It is a *stables-first verifiable treasury* with a kill-switch that returns 100% to USDC instantly. The agent's job is to keep reserves productive within a declared envelope, not to chase alpha.
+Built for **DAOs, protocol reserves, and foundations** that hold stablecoin reserves and want intelligent — and verifiable — productive deployment, without trusting a black-box trader. Submitted to the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*.
+
+> Sentri is **not** a trading bot. It is a *stables-first verifiable treasury* with a per-vault kill-switch that returns 100% to USDC instantly. Each vault's owner has unilateral pause and kill rights at any time.
 
 ---
 
@@ -22,17 +24,21 @@ Neither is acceptable for a treasury that needs **both autonomy and auditability
 
 ## The answer
 
-A treasury agent whose **reasoning runs inside a TEE**, whose **execution is gated by on-chain policy**, and whose **audit trail is cryptographically verifiable** — all without leaking the strategy.
+A treasury infrastructure where:
+- Every user owns their own vault contract (factory-deployed clone) with their own policy.
+- A shared agent operates across all vaults, with reasoning **inside a TEE** so the strategy is private even from us.
+- Execution is **gated by each vault's on-chain policy** — the agent literally cannot break the constraints.
+- Every decision is **cryptographically attested** and the audit trail is verifiable on 0G Storage.
+- The vault owner can **pause, reconfigure, or kill** their vault at any moment, returning 100% to USDC.
 
 ```
-┌──────────────┐   ┌───────────────────┐   ┌──────────────┐   ┌────────────┐   ┌──────────────┐
-│ Market data  │ → │ Sealed Inference  │ → │ Policy check │ → │ On-chain   │ → │ 0G Storage   │
-│ (ETH/USD)    │   │ TEE (0G Compute)  │   │ (on-chain)   │   │ swap       │   │ audit trail  │
-└──────────────┘   └───────────────────┘   └──────────────┘   └────────────┘   └──────────────┘
-                          private                public             real            verifiable
+┌──────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌──────────────┐
+│ Market data  │ → │ Sealed        │ → │ Per-vault     │ → │ On-chain      │ → │ 0G Storage   │
+│ (ETH/USD)    │   │ Inference TEE │   │ policy check  │   │ swap          │   │ per-vault    │
+└──────────────┘   └───────────────┘   └───────────────┘   └───────────────┘   │ audit trail  │
+                       private              public              real           └──────────────┘
+                                                                                  verifiable
 ```
-
-The agent has **no authority to override its constraints**. Max allocation, max drawdown, cooldowns, slippage bounds and the kill-switch all live in the vault contract. The agent proposes, the contract disposes.
 
 ---
 
@@ -40,69 +46,126 @@ The agent has **no authority to override its constraints**. Max allocation, max 
 
 | Component | Usage |
 |---|---|
-| **Chain** | `TreasuryVault.sol` deployed on Galileo (chain ID 16602) — funds, policy engine, execution gate, kill-switch. |
-| **Sealed Inference** | Every strategy decision is computed inside a TEE via the 0G compute broker. The keccak256 hash of the chat ID + provider + verification status (the **TEE attestation hash**) and the keccak256 of the prompt + response (the **proof hash**) are both written into the on-chain `executionLogs[]` for every execution. The raw attestation payload is stored alongside in 0G Storage. |
-| **Storage KV** | Live portfolio snapshot (TVL, balances, last action, total executions, P&L) — written after every successful execution. The dashboard reads it via the agent server's `/state` endpoint. |
-| **Storage Log** | Immutable audit trail. Every decision written with reasoning, confidence, market context, proof hash, on-chain TX hash and 0G Storage TX hash. |
-| **Agent ID (INFT)** | `AgentINFT.sol` gates `executeStrategy()`. The vault checks **both** that `msg.sender` is the registered `agent` address **and** that this address holds an active (non-revoked) Agent INFT with a valid enclave measurement. Owner can revoke the INFT to halt the agent without burning the token (soft kill). |
+| **Chain** | `VaultFactory.sol` deploys per-user `TreasuryVault` clones (EIP-1167 minimal proxies). Every vault enforces its own policy on-chain and emits `StrategyExecuted` events with proof hash + TEE attestation hash for every action. |
+| **Sealed Inference** | Each strategy decision is computed inside a TEE via the 0G compute broker. The keccak256 hash of `{chatID, provider, verified}` (the **TEE attestation hash**) and `keccak256(prompt + response + chatID + ts)` (the **proof hash**) are both written into the vault's on-chain `executionLogs[]` for every execution. The raw attestation payload + reasoning is mirrored to 0G Storage. |
+| **Storage KV** | Per-vault portfolio snapshot (TVL, balances, last action, total executions, P&L) keyed by `keccak256("sentri:portfolio-state:" + vault_address)`. The dashboard reads it via the agent server's `/vault/:address/state` endpoint. |
+| **Storage Log** | Per-vault immutable audit trail keyed by `keccak256("sentri:audit-log:" + vault_address)`. Each entry: action, amount, reasoning, confidence, market context, on-chain TX hash, 0G Storage TX hash. |
+| **Agent ID (INFT)** | `AgentINFT.sol` gates `executeStrategy()` on **every** vault. The vault checks both that `msg.sender` is the registered `agent` address **and** that this address holds an active (non-revoked) Agent INFT with a valid enclave measurement. Owner can revoke the INFT to halt the agent across **all** vaults at once (kill of the operator). |
 
-The 6th component (Persistent Memory) is intentionally not used — it would exceed scope for a 3-minute demo.
+The 6th component (Persistent Memory) is intentionally not used — every strategy decision is stateless and replayable from on-chain + storage data.
 
 ---
 
 ## Architecture
 
 ```
-contracts/                Foundry project (Solidity 0.8.24, OpenZeppelin v5)
+contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin v5)
   src/
-    TreasuryVault.sol     Core vault — funds, policy, execution, audit log
-    AgentINFT.sol         On-chain agent identity (enclave measurement + attestation)
-    SentriSwapRouter.sol  Uniswap v2-style router (single-pair, 0.3% fee)
-    SentriPair.sol        Constant-product AMM (USDC ↔ WETH)
-    SentriPriceFeed.sol   AggregatorV3-compatible oracle, pushed by the agent
-    MockUSDC.sol          6-dec stablecoin with public mint (testnet)
-    MockWETH.sol          18-dec risk asset with public mint (testnet)
+    VaultFactory.sol              EIP-1167 clone factory + presets + per-owner registry
+    TreasuryVault.sol             Per-user clone (init pattern). Funds, policy, execution, audit log
+    AgentINFT.sol                 Shared agent identity (enclave measurement + revocation)
+    SentriSwapRouter.sol          Uniswap v2-style router (single-pair, 0.3% fee)
+    SentriPair.sol                Constant-product AMM (USDC ↔ WETH)
+    SentriPriceFeed.sol           AggregatorV3-compatible oracle, pushed by the agent
+    MockUSDC.sol                  6-dec stablecoin with public mint (testnet)
+    MockWETH.sol                  18-dec risk asset with public mint (testnet)
+  test/
+    TreasuryVault.t.sol           20 tests (init pattern, deposit/withdraw, strategy, HWM)
+    VaultFactory.t.sol            21 tests (presets, custom policy, registry, atomic deposit)
+    MultiVault.t.sol              10 integration tests (5 vaults across 3 owners)
+    AgentINFT.t.sol               12 tests (mint, revoke, O(k) gas scaling)
+    SentriPair.t.sol              8 tests (swap, K invariant, slippage)
+                                  Total: 71 unit + integration tests, 0 failing
 
-packages/sdk/             TypeScript agent runtime
+packages/sdk/                    TypeScript multi-vault agent runtime
   src/
-    agent.ts              Main loop: fetch → infer → policy → execute → log
-    inference.ts          0G Sealed Inference client (TEE attestation)
-    market.ts             ETH/USD oracle (Binance / CoinGecko)
-    storage.ts            0G Storage KV + Log writer
-    setup-broker.ts       One-shot provider registration for the compute broker
+    agent.ts                      setupGlobalContext + discoverVaults + executeOneIterationForVault
+                                  + runMultiVaultLoop. Per-cycle: push price once, iterate every vault
+                                  with try/catch isolation.
+    server.ts                     Express HTTP wrapper. Endpoints:
+                                    GET /healthz                  global cycle counters + per-vault summary
+                                    GET /vaults                   all known vaults + cached state
+                                    GET /vault/:addr/state        per-vault portfolio snapshot
+                                    GET /vault/:addr/audit        per-vault recent audit entries
+                                    GET /vault/:addr/audit/:ts    single entry with ±5s tolerant lookup
+    storage.ts                    0G Storage KV + Log writers, namespaced per vault address.
+                                  Local cache mirror at /tmp/sentri-cache/vaults/{addr}/
+    inference.ts                  0G Sealed Inference client with TEE attestation
+    market.ts                     ETH/USD oracle (Binance / CoinGecko fallback)
+    setup-broker.ts               One-shot 0G compute broker registration + ledger creation
+    cli.ts                        Standalone CLI loop entry (`pnpm agent`)
 
-apps/web/                 Next.js 14 dashboard (App Router, wagmi v2, viem)
+apps/web/                        Next.js 14 dashboard (App Router, wagmi v2, viem)
   src/app/
-    page.tsx              Landing
-    vault/                TVL, allocation, P&L, deposit/withdraw, agent status
-    audit/                Full execution trail with proof hash + TEE attestation
-    policy/               Risk parameter display and update (owner only)
-    emergency/            Kill-switch and pause/unpause
-    api/                  Server routes for agent-status and audit enrichment
+    page.tsx                      Landing — public observatory with live protocol stats
+    vaults/                       Public vault directory
+    v/[address]/                  Per-vault hub with tabs:
+      page.tsx                      Overview (stats, agent runtime, deposit/withdraw)
+      audit/page.tsx                Audit trail with TEE reasoning enrichment
+      policy/page.tsx               Read + update on-chain policy (owner only)
+      emergency/page.tsx            Pause/unpause + kill-switch (owner only)
+    my/page.tsx                   Vaults owned by the connected wallet
+    deploy/page.tsx               4-step onboarding wizard (preset / deposit / confirm / submit)
+    api/                          Server-side proxies to the agent server (/vault-state, /vault-audit)
 ```
 
-### Agent loop (`packages/sdk/src/agent.ts`, `executeOneIteration`)
+### Agent cycle (`packages/sdk/src/agent.ts`, `runMultiVaultLoop`)
 
-1. **Fetch market** — ETH/USD spot from Binance (CoinGecko as fallback).
-2. **Push price on-chain** — agent is the sole keeper of `SentriPriceFeed`. The push doubles as a freshness signal: the vault rejects swaps if the oracle is older than `maxPriceStaleness`.
-3. **Read vault state** — balances, high-water mark, policy parameters, execution log count.
-4. **Build prompt** — structured market + portfolio + policy snapshot.
-5. **Sealed Inference** — request analysis through the 0G compute broker; the response is signed by the TEE. We compute `proofHash = keccak256(prompt + response + chatID + ts)` and `teeAttestation = keccak256(chatID + provider + verified)`.
-6. **Size the order** — apply `amount_bps` to the relevant balance (USDC for Rebalance/YieldFarm, WETH for EmergencyDeleverage), capped locally to `maxAllocationBps × TVL`.
-7. **Execute on-chain** — `vault.executeStrategy(action, amountIn, proofHash, teeAttestation)`. The contract enforces dual INFT gate, cooldown, allocation, drawdown, oracle freshness and per-swap slippage. Skips emit a log line and continue.
-8. **Append audit entry to 0G Storage Log** — full reasoning, confidence, proof hashes, TX hash, market context. Cached locally and mirrored to 0G Storage.
-9. **Write portfolio snapshot to 0G Storage KV** — for the dashboard's live view. Cooldown, then repeat.
+Every 5 minutes the agent:
 
-### Risk policy (enforced on-chain)
+1. **Push price on-chain** — fetch ETH/USD spot (Binance, CoinGecko fallback) and push to `SentriPriceFeed`. The agent is the sole keeper.
+2. **Discover vaults** — call `factory.allVaults()` to pick up any newly-created vaults this cycle.
+3. **For each vault** (with per-vault failure isolation):
+   - Read state (balances, HWM, policy, execution count).
+   - Build a prompt with **deterministically pre-computed metrics** (WETH share, deviation from target, drawdown). The LLM never does float math — it pattern-matches against the rule branches in its system prompt.
+   - **Sealed Inference**: send to TEE provider, receive signed JSON decision. Compute `proofHash = keccak256(prompt+response+chatID+ts)` and `teeAttestation = keccak256(chatID+provider+verified)`.
+   - **Size + execute**: `vault.executeStrategy(action, amountIn, proofHash, teeAttestation)`. Skips emit a structured outcome (cooldown, allocation, drawdown, slippage) and continue to next vault.
+   - **Audit + state** to 0G Storage, namespaced by vault address. Cache key uses on-chain `block.timestamp × 1000` so the dashboard finds enriched entries deterministically.
 
-- `maxAllocationBps` — max % of TVL allocated to the risk asset
-- `maxDrawdownBps` — max drawdown from the high-water mark before strategy is frozen
-- `rebalanceThresholdBps` — minimum deviation before a rebalance is allowed
-- `maxSlippageBps` — slippage ceiling on swaps (checked against `SentriPriceFeed`)
-- `cooldownPeriod` — minimum seconds between two executions
-- `maxPriceStaleness` — oracle price must be fresher than this
+### Strategy doctrine (`packages/sdk/src/inference.ts`)
 
-The contract owner (not the agent) sets the policy. The kill-switch lives on the owner. The agent can read, propose and execute, never override.
+System prompt is a deterministic decision tree, applied in order:
+
+1. 24h change ≤ −3% **or** drawdown ≥ 1.5% → EmergencyDeleverage all WETH back to USDC.
+2. WETH share > 30% → EmergencyDeleverage trim back toward 25% target.
+3. 20% ≤ WETH share ≤ 30% → hold (no action).
+4. WETH share < 20% **and** 24h ≥ +1% **and** drawdown < 1% → deploy USDC toward 25% target.
+5. Otherwise → hold (cautious default).
+
+Default state is 100% USDC. Maximum WETH allocation is 30% of TVL — never exceeded by the agent. Each vault's on-chain `policy` independently caps `maxAllocationBps` per action (15% / 30% / 50% depending on preset).
+
+---
+
+## Risk presets (set at vault creation, mutable later by owner)
+
+| Preset | Max alloc | Max drawdown | Max slippage | Cooldown | Use case |
+|---|---|---|---|---|---|
+| **Conservative** | 15% | 2% | 0.5% | 10 min | Foundation / endowment reserves |
+| **Balanced** | 30% | 5% | 1% | 5 min | Standard DAO treasury |
+| **Aggressive** | 50% | 10% | 2% | 3 min | Protocol with appetite for productive risk |
+| **Custom** | ≤ 50% | ≤ 20% | ≤ 5% | ≥ 60s | Bounded by factory validation |
+
+Custom policies are validated on-chain at vault creation. Out-of-range values revert with `CustomPolicyOutOfRange`.
+
+---
+
+## Deployed addresses
+
+All contracts live on **0G Galileo Testnet** (chain ID `16602`). Phase 1 multi-tenant deployment, May 2026.
+
+Deployer / Agent: [`0x7531…dbd8`](https://chainscan-galileo.0g.ai/address/0x7531d467f19d1055accf6b0d22286184f87adbd8)
+
+| Contract | Address |
+|---|---|
+| `VaultFactory` (entry point) | [`0xE3cfFc08a8327b7464168a4C17D5AE609bE75153`](https://chainscan-galileo.0g.ai/address/0xE3cfFc08a8327b7464168a4C17D5AE609bE75153) |
+| `TreasuryVault` (impl) | [`0x7fDfbee09665fffEB150F500C2CC8326c87B6304`](https://chainscan-galileo.0g.ai/address/0x7fDfbee09665fffEB150F500C2CC8326c87B6304) |
+| `AgentINFT` | [`0x3E74C5820e3DF83C331AC058328Dd18C037E151F`](https://chainscan-galileo.0g.ai/address/0x3E74C5820e3DF83C331AC058328Dd18C037E151F) |
+| `SentriSwapRouter` | [`0x13173a0F2BB4687F8b601374566649559511D512`](https://chainscan-galileo.0g.ai/address/0x13173a0F2BB4687F8b601374566649559511D512) |
+| `SentriPair` | [`0x1C8040c84344641cA4ab3CAE44c2B99c9ec1f137`](https://chainscan-galileo.0g.ai/address/0x1C8040c84344641cA4ab3CAE44c2B99c9ec1f137) |
+| `SentriPriceFeed` | [`0xaDb52a49d0398cA048f4027Fe81748Dd666BAfF8`](https://chainscan-galileo.0g.ai/address/0xaDb52a49d0398cA048f4027Fe81748Dd666BAfF8) |
+| `MockUSDC` | [`0x93cA5b6fEA5328FAa0ed4B6Cb6a2E82339558792`](https://chainscan-galileo.0g.ai/address/0x93cA5b6fEA5328FAa0ed4B6Cb6a2E82339558792) |
+| `MockWETH` | [`0xF25A225562808a00776aAAD4DFC98c6B48Ad5790`](https://chainscan-galileo.0g.ai/address/0xF25A225562808a00776aAAD4DFC98c6B48Ad5790) |
+| Demo vault (Balanced preset, deployer-owned) | [`0x435946204b818e82C97362F21Ca8B967F5266F83`](https://chainscan-galileo.0g.ai/address/0x435946204b818e82C97362F21Ca8B967F5266F83) |
 
 ---
 
@@ -111,7 +174,7 @@ The contract owner (not the agent) sets the policy. The kill-switch lives on the
 ### Prerequisites
 - Node ≥ 20, pnpm ≥ 9
 - Foundry (for contracts)
-- A wallet with a tiny bit of Galileo testnet OG (faucet: https://faucet.0g.ai)
+- A wallet with a small amount of Galileo testnet OG (faucet: https://faucet.0g.ai)
 
 ### Install
 
@@ -119,78 +182,66 @@ The contract owner (not the agent) sets the policy. The kill-switch lives on the
 pnpm install
 ```
 
-### Contracts
+### Use the live deployment (no local setup needed)
+
+1. Open the dashboard at `http://localhost:3000` (or your hosted URL).
+2. Connect a wallet on 0G Galileo (chain 16602).
+3. Click **Deploy a vault** → choose a preset → optionally seed with USDC → submit.
+4. Your vault is now live. The agent will pick it up on its next cycle (≤ 5 min) and start operating.
+5. Inspect `/v/[your-vault]` for live state, audit, policy, emergency.
+
+### Run the dashboard locally
+
+```bash
+cp apps/web/.env.example apps/web/.env.local   # set AGENT_URL to your agent server URL
+pnpm dev
+```
+
+Visit http://localhost:3000.
+
+### Run the agent yourself
+
+The agent is a Node.js HTTP service that operates on every vault deployed via the factory. To run your own:
+
+```bash
+cp packages/sdk/.env.example packages/sdk/.env  # fill PRIVATE_KEY
+pnpm --filter @steward/sdk run setup-broker     # one-shot 0G compute broker registration
+pnpm --filter @steward/sdk run server           # long-running HTTP server with /healthz, /state, /audit
+# OR
+pnpm agent                                       # standalone CLI loop (no HTTP wrapper)
+```
+
+The agent wallet must (1) be registered as `agent` on the VaultFactory (immutable, set at factory deploy), (2) hold an active Agent INFT, and (3) be a registered keeper on `SentriPriceFeed`. The official deployer wallet at the addresses above is configured for all three.
+
+### Re-deploy contracts (only if you fork)
 
 ```bash
 cd contracts
+cp .env.example .env                             # fill PRIVATE_KEY + AGENT_ADDRESS
 forge build
 forge test
+forge script script/Deploy.s.sol --rpc-url galileo --broadcast --priority-gas-price 2000000000
 ```
 
-### Deploy to Galileo
-
-```bash
-cp .env.example .env          # fill PRIVATE_KEY
-forge script script/Deploy.s.sol \
-  --rpc-url https://evmrpc-testnet.0g.ai \
-  --broadcast
-```
-
-Copy the deployed addresses into `apps/web/.env.local`:
-
-```env
-NEXT_PUBLIC_CHAIN_ID=16602
-NEXT_PUBLIC_RPC_URL=https://evmrpc-testnet.0g.ai
-NEXT_PUBLIC_EXPLORER_URL=https://chainscan-galileo.0g.ai
-NEXT_PUBLIC_TREASURY_VAULT_ADDRESS=0x...
-NEXT_PUBLIC_MOCK_USDC_ADDRESS=0x...
-NEXT_PUBLIC_MOCK_WETH_ADDRESS=0x...
-NEXT_PUBLIC_PRICE_FEED_ADDRESS=0x...
-```
-
-### Dashboard
-
-```bash
-pnpm dev               # alias for `pnpm --filter web dev`
-```
-
-Open http://localhost:3000. Connect a wallet on Galileo, mint testnet USDC from the vault page, deposit, and watch the agent operate. Set `AGENT_URL` in `apps/web/.env.local` to point at the running agent server (defaults to local cache fallback for dev).
-
-### Agent runtime
-
-The agent reads its config from `packages/sdk/.env` (see `.env.example`). Required: `PRIVATE_KEY` (a wallet with at least 3 OG on Galileo + held by an active Agent INFT and registered as keeper on `SentriPriceFeed`).
-
-```bash
-# One-time: register the wallet with the 0G compute broker, create a 3 OG ledger,
-# and discover available inference services. Idempotent.
-pnpm --filter @steward/sdk setup-broker
-
-# Standalone CLI loop — runs forever in the foreground.
-pnpm agent             # alias for `pnpm --filter @steward/sdk agent`
-
-# Long-running HTTP server — same loop driven by setInterval, plus
-# /healthz, /state, /audit endpoints for the dashboard. This is what
-# render.yaml deploys.
-pnpm --filter @steward/sdk run server
-```
-
-The agent will fetch market data, push the price on-chain, run TEE inference, execute through the swap router, and write the audit trail + portfolio state to 0G Storage on every iteration.
+The deploy script outputs every address. Update `packages/sdk/src/constants.ts` and `apps/web/src/config/contracts.ts` with the new factory address.
 
 ---
 
-## Deployed addresses
+## Test suite
 
-All contracts live on **0G Galileo Testnet** (chain ID `16602`). Deployer: [`0x7531…dbd8`](https://chainscan-galileo.0g.ai/address/0x7531d467f19d1055accf6b0d22286184f87adbd8).
+```bash
+cd contracts && forge test
+```
 
-| Contract | Address |
-|---|---|
-| `TreasuryVault` | [`0x286dc3f6b3223053e49665333e11f21cfffb4a5e`](https://chainscan-galileo.0g.ai/address/0x286dc3f6b3223053e49665333e11f21cfffb4a5e) |
-| `AgentINFT` | [`0x0e7e5f1d1b76727428352669c469d6e55d47fc81`](https://chainscan-galileo.0g.ai/address/0x0e7e5f1d1b76727428352669c469d6e55d47fc81) |
-| `SentriSwapRouter` | [`0x93fd20a13dfcfc129f49d9d04ff8d4fb0a808c17`](https://chainscan-galileo.0g.ai/address/0x93fd20a13dfcfc129f49d9d04ff8d4fb0a808c17) |
-| `SentriPair` | [`0x325afae53695798f6110305e998742687e636e9a`](https://chainscan-galileo.0g.ai/address/0x325afae53695798f6110305e998742687e636e9a) |
-| `SentriPriceFeed` | [`0xc9d99f3c3de46d3fd816f0b08dd48b4fba41a711`](https://chainscan-galileo.0g.ai/address/0xc9d99f3c3de46d3fd816f0b08dd48b4fba41a711) |
-| `MockUSDC` | [`0xd23cd7730595486d234e50bb7c97e351860a9add`](https://chainscan-galileo.0g.ai/address/0xd23cd7730595486d234e50bb7c97e351860a9add) |
-| `MockWETH` | [`0xad67a837b2662118f077ff404827cc82f61d5ccb`](https://chainscan-galileo.0g.ai/address/0xad67a837b2662118f077ff404827cc82f61d5ccb) |
+Output: **71 tests passing across 5 suites** (TreasuryVault: 20, AgentINFT: 12, SentriPair: 8, VaultFactory: 21, MultiVault: 10).
+
+Notable coverage:
+- Init pattern guard (impl disabled, double-init revert, zero-address)
+- Per-vault policy enforcement (cooldown, allocation, drawdown, slippage, stale price)
+- Cross-vault isolation (one vault's pause doesn't affect others; one owner can't touch another's vault; shared INFT revocation freezes all vaults at once)
+- HWM proportional scaling on withdraw (a withdrawal shrinks the vault but does not register as strategy drawdown)
+- AMM K-invariant on swaps both directions
+- Custom policy bound enforcement (out-of-range reverts)
 
 ---
 
@@ -198,23 +249,34 @@ All contracts live on **0G Galileo Testnet** (chain ID `16602`). Deployer: [`0x7
 
 Three-minute video walkthrough: **TBD**
 
-The demo covers one full closed loop:
+The demo covers one full lifecycle:
 
-1. Connect wallet, mint testnet USDC, deposit into the vault.
-2. Agent fetches market data and runs Sealed Inference.
-3. Policy check on-chain; swap executes through the router.
-4. Audit page shows the decision with proof hash and TEE attestation.
-5. Kill-switch pulls all funds back to the owner.
+1. Visitor lands on the public observatory, sees live protocol stats.
+2. Connects wallet, mints testnet USDC.
+3. Goes to **Deploy** → chooses Balanced → deposits 1,000 USDC → vault created in one TX.
+4. Watches the agent execute on the new vault on the next cycle (~5 min).
+5. Inspects `/v/[address]/audit` to see TEE attestation hash + on-chain proof hash + reasoning.
+6. Updates policy, then activates kill-switch — funds returned to owner instantly.
 
 ---
 
 ## What is intentionally out of scope
 
 - **Active trading / perp strategies.** Sentri rebalances and risk-manages — it does not chase short-term alpha. The interesting privacy story is *which constraints the agent enforces in private*, not *which trades it places*.
-- **Multiple strategies.** One closed loop, done well, beats a marketplace of half-finished bots.
-- **Persistent memory.** Every iteration is stateless by design — auditability first.
-- **Mainnet liquidity.** The mini-DEX (`SentriPair` / `SentriSwapRouter`) exists to make execution *real*, not to compete with Uniswap. It lets the vault actually move value so slippage, TVL impact, and drawdown are measurable on-chain.
-- **Agent marketplace / INFT trading.** The INFT is a functional identity gate, not a collectible.
+- **Multiple risk assets.** v1 supports USDC ↔ WETH only. Multi-asset (WBTC, etc.) is a v2 conversation.
+- **Multi-chain.** Same v1 — Galileo only. The factory pattern is portable but cross-chain coordination is out of scope.
+- **Agent marketplace / operator competition.** Single shared agent (us). Aegis Vault occupies that lane; we differentiate on focus.
+- **Persistent memory across iterations.** Stateless by design — auditability first.
+- **Smart contract audit.** Slither static analysis runs on every PR; a formal third-party audit is roadmapped pre-mainnet.
+
+---
+
+## Roadmap
+
+- **v1 (now)**: Public testnet on Galileo. Multi-tenant factory, presets, in-app deploy wizard, per-vault audit.
+- **v1.1**: Custom policy in the deploy wizard UI. Subgraph for aggregate analytics. Persistent KV cache (Upstash) so the agent server's audit cache survives redeploys.
+- **v2**: Mainnet deployment. Multi-asset support. ERC-4626 vault shares for multi-LP support per vault. Operator pool with bonded stake (optional).
+- **v3**: Cross-chain (Arbitrum first). Insurance pool. Formal audit.
 
 ---
 
