@@ -61,6 +61,9 @@ contract SentriPair is ERC20, ReentrancyGuard {
             liquidity = Math.sqrt(a0 * a1) - MINIMUM_LIQUIDITY;
             _mint(address(1), MINIMUM_LIQUIDITY); // lock
         } else {
+            // Guard: if either reserve is empty (e.g. one side fully drained by
+            // an exotic state), the proportional formula divides by zero.
+            if (r0 == 0 || r1 == 0) revert InsufficientLiquidity();
             liquidity = Math.min((a0 * _total) / r0, (a1 * _total) / r1);
         }
         if (liquidity == 0) revert InsufficientLiquidity();

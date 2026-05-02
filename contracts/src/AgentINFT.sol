@@ -20,6 +20,11 @@ contract AgentINFT is ERC721, Ownable {
     uint256 private _nextTokenId;
     mapping(uint256 => AgentMetadata) public agentMetadata;
 
+    /// @dev Reverse index: holder address → list of owned token IDs. Maintained on
+    ///      mint/transfer so `isActiveAgent` is O(k) where k = tokens held by the
+    ///      address (typically 1), not O(n) over the entire supply.
+    mapping(address => uint256[]) private _holderTokens;
+
     event AgentMinted(uint256 indexed tokenId, address indexed agent, bytes32 enclaveHash);
     event AgentRevoked(uint256 indexed tokenId);
     event AgentReinstated(uint256 indexed tokenId);
@@ -72,17 +77,36 @@ contract AgentINFT is ERC721, Ownable {
         emit AgentReinstated(tokenId);
     }
 
-    /// @notice Check if an address holds an active (non-revoked) Agent INFT
+    /// @notice Check if an address holds an active (non-revoked) Agent INFT.
+    ///         O(k) over the holder's owned tokens (typically 1), not O(n) over supply.
     /// @param agent Address to check
-    /// @return True if agent holds at least one active INFT
+    /// @return True if agent holds at least one non-revoked INFT
     function isActiveAgent(address agent) external view returns (bool) {
-        uint256 total = _nextTokenId;
-        for (uint256 i = 0; i < total; i++) {
-            if (_ownerOf(i) == agent && !agentMetadata[i].revoked) {
+        uint256[] storage tokens = _holderTokens[agent];
+        uint256 len = tokens.length;
+        for (uint256 i = 0; i < len; i++) {
+            uint256 id = tokens[i];
+            if (_ownerOf(id) == agent && !agentMetadata[id].revoked) {
                 return true;
             }
         }
         return false;
+    }
+
+    /// @dev Maintain the reverse holder→tokens index on every transfer/mint/burn.
+    ///      Old entries become stale (owner may have moved on) but `isActiveAgent`
+    ///      re-validates ownership via `_ownerOf` so staleness is harmless — at
+    ///      worst we waste a bit of gas iterating over old IDs.
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override
+        returns (address)
+    {
+        address from = super._update(to, tokenId, auth);
+        if (to != address(0) && to != from) {
+            _holderTokens[to].push(tokenId);
+        }
+        return from;
     }
 
     /// @notice Total supply of minted INFTs
