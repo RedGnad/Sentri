@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { formatUSDC, shortenAddress } from "@/lib/utils";
 import { useParsedVaultData, useEmergencyWithdraw, useEmergencyDeleverageAndWithdraw, usePause, useUnpause } from "@/hooks/use-vault";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BASE_SYMBOL, RISK_SYMBOL } from "@/config/contracts";
 
 export default function VaultEmergencyPage() {
   const params = useParams<{ address: string }>();
@@ -40,7 +41,7 @@ export default function VaultEmergencyPage() {
   useEffect(() => { if (killError) toast.error(`Kill-switch failed: ${killError.message}`); }, [killError]);
   useEffect(() => {
     if (deleverageKillSuccess) {
-      toast.error("Vault permanently killed. WETH deleveraged before withdrawal.");
+      toast.error(`Vault permanently killed. ${RISK_SYMBOL} deleveraged before withdrawal.`);
       setConfirmKill(false);
     }
   }, [deleverageKillSuccess]);
@@ -62,7 +63,7 @@ export default function VaultEmergencyPage() {
           <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">vault.state</span>
           <StatusPill status={status} />
         </div>
-        <Row label="Vault Balance" value={`$${formatUSDC(vault.balance)} USDC`} />
+        <Row label="Vault Balance" value={`$${formatUSDC(vault.balance)} ${BASE_SYMBOL}`} />
         <Row label="Owner" value={shortenAddress(vault.owner)} mono />
         <Row label="You are" value={isOwner ? "Owner" : "Visitor"} valueClass={isOwner ? "text-amber" : "text-ink-dim"} />
       </section>
@@ -97,12 +98,12 @@ export default function VaultEmergencyPage() {
         </header>
         <div className="px-5 py-5 space-y-4">
           <p className="font-serif italic text-lg text-ink leading-snug">
-            Withdraw <span className="text-amber tabular">${formatUSDC(vault.balance)}</span> USDC
-            {vault.riskBalance > 0n ? ` plus ${(Number(vault.riskBalance) / 1e18).toFixed(4)} WETH` : ""}
+            Withdraw <span className="text-amber tabular">${formatUSDC(vault.balance)}</span> {BASE_SYMBOL}
+            {vault.riskBalance > 0n ? ` plus ${(Number(vault.riskBalance) / 1e18).toFixed(4)} ${RISK_SYMBOL}` : ""}
             {" "}to the owner and disable the vault forever.
           </p>
           <p className="text-[13px] text-ink-dim leading-relaxed">
-            The hard kill never relies on a swap. The USDC-exit kill first attempts to convert all WETH through the router, then withdraws.
+            The hard kill never relies on a swap. The base-exit kill first attempts to convert all {RISK_SYMBOL} through the router, then withdraws.
           </p>
 
           {vault.isKilled ? (
@@ -116,12 +117,12 @@ export default function VaultEmergencyPage() {
           ) : (
             <div className="space-y-3">
               <div className="border border-alert/40 px-4 py-3 bg-alert/[0.04] font-mono text-[11px] text-alert leading-relaxed">
-                {"> "}This permanently disables the vault. Hard kill returns USDC plus residual WETH. USDC-exit kill tries to swap WETH first and may revert on liquidity or slippage.
+                {"> "}This permanently disables the vault. Hard kill returns {BASE_SYMBOL} plus residual {RISK_SYMBOL}. Base-exit kill tries to swap {RISK_SYMBOL} first and may revert on liquidity or slippage.
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <Button variant="outline" onClick={() => setConfirmKill(false)}>Cancel</Button>
                 <Button variant="outline" onClick={() => emergencyDeleverageAndWithdraw(address, 0n)} disabled={isDeleveragingKill}>
-                  {isDeleveragingKill ? "Swapping..." : "USDC Exit"}
+                  {isDeleveragingKill ? "Swapping..." : `${BASE_SYMBOL} Exit`}
                 </Button>
                 <Button variant="destructive" onClick={() => emergencyWithdraw(address)} disabled={isKilling}>
                   {isKilling ? "Executing..." : "Hard Kill"}

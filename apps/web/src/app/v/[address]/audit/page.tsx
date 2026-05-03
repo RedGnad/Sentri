@@ -6,6 +6,7 @@ import { useReadContracts } from "wagmi";
 import { Badge } from "@/components/ui/badge";
 import { TREASURY_VAULT_ABI } from "@/config/contracts";
 import { formatUSDC } from "@/lib/utils";
+import { BASE_SYMBOL, RISK_SYMBOL } from "@/config/contracts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useParsedVaultData } from "@/hooks/use-vault";
 import { useVaultAuditDetail } from "@/hooks/use-vault-runtime";
@@ -145,7 +146,7 @@ function AuditEntry({
             {action === 2 ? `${(Number(amountIn) / 1e18).toFixed(4)}` : `$${formatUSDC(amountIn)}`}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint ml-1.5">
-            {action === 2 ? "WETH" : "USDC"}
+            {action === 2 ? RISK_SYMBOL : BASE_SYMBOL}
           </span>
         </Field>
         <Field label="Amount out">
@@ -153,12 +154,12 @@ function AuditEntry({
             {action === 2 ? `$${formatUSDC(amountOut)}` : `${(Number(amountOut) / 1e18).toFixed(4)}`}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint ml-1.5">
-            {action === 2 ? "USDC" : "WETH"}
+            {action === 2 ? BASE_SYMBOL : RISK_SYMBOL}
           </span>
         </Field>
         <Field label="TVL after">
           <span className="font-serif text-2xl text-ink tabular">${formatUSDC(tvlAfter)}</span>
-          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint ml-1.5">USDC</span>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint ml-1.5">{BASE_SYMBOL}</span>
         </Field>
       </div>
 

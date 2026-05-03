@@ -18,7 +18,7 @@ import {
   useMintUsdc,
 } from "@/hooks/use-vault";
 import { useVaultStateFromAgent } from "@/hooks/use-vault-runtime";
-import { MOCK_USDC_ADDRESS } from "@/config/contracts";
+import { BASE_SYMBOL, IS_MAINNET, MOCK_USDC_ADDRESS, RISK_SYMBOL } from "@/config/contracts";
 
 export default function VaultOverviewPage() {
   const params = useParams<{ address: string }>();
@@ -40,16 +40,16 @@ export default function VaultOverviewPage() {
   const depositRef = useRef(depositAmount); depositRef.current = depositAmount;
   const withdrawRef = useRef(withdrawAmount); withdrawRef.current = withdrawAmount;
 
-  useEffect(() => { if (mintSuccess) toast.success("10,000 USDC minted"); }, [mintSuccess]);
+  useEffect(() => { if (mintSuccess) toast.success(`10,000 ${BASE_SYMBOL} minted`); }, [mintSuccess]);
   useEffect(() => { if (mintError) toast.error(`Mint failed: ${mintError.message}`); }, [mintError]);
-  useEffect(() => { if (approveSuccess) toast.success("USDC approved for deposit"); }, [approveSuccess]);
+  useEffect(() => { if (approveSuccess) toast.success(`${BASE_SYMBOL} approved for deposit`); }, [approveSuccess]);
   useEffect(() => { if (approveError) toast.error(`Approve failed: ${approveError.message}`); }, [approveError]);
   useEffect(() => {
-    if (depositSuccess) { toast.success(`Deposited ${depositRef.current} USDC`); setDepositAmount(""); }
+    if (depositSuccess) { toast.success(`Deposited ${depositRef.current} ${BASE_SYMBOL}`); setDepositAmount(""); }
   }, [depositSuccess]);
   useEffect(() => { if (depositError) toast.error(`Deposit failed: ${depositError.message}`); }, [depositError]);
   useEffect(() => {
-    if (withdrawSuccess) { toast.success(`Withdrew ${withdrawRef.current} USDC`); setWithdrawAmount(""); }
+    if (withdrawSuccess) { toast.success(`Withdrew ${withdrawRef.current} ${BASE_SYMBOL}`); setWithdrawAmount(""); }
   }, [withdrawSuccess]);
   useEffect(() => { if (withdrawError) toast.error(`Withdraw failed: ${withdrawError.message}`); }, [withdrawError]);
 
@@ -83,7 +83,7 @@ export default function VaultOverviewPage() {
     <div className="space-y-8">
       {/* Stats */}
       <section className="grid grid-cols-2 lg:grid-cols-4 border border-hairline divide-x divide-hairline">
-        <Stat label="Total Value" value={`$${formatUSDC(vault.totalValue)}`} sub={`${formatUSDC(vault.balance)} USDC + ${(Number(vault.riskBalance) / 1e18).toFixed(4)} WETH`} />
+        <Stat label="Total Value" value={`$${formatUSDC(vault.totalValue)}`} sub={`${formatUSDC(vault.balance)} ${BASE_SYMBOL} + ${(Number(vault.riskBalance) / 1e18).toFixed(4)} ${RISK_SYMBOL}`} />
         <Stat label="High Water Mark" value={`$${formatUSDC(vault.highWaterMark)}`} sub="Peak TVL" />
         <Stat label="P&L from HWM" value={`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`} sub={pnl >= 0 ? "Above peak" : "Drawdown"} valueClass={pnl >= 0 ? "text-phosphor" : "text-alert"} />
         <Stat label="Executions" value={vault.logCount.toString()} sub="On-chain" />
@@ -123,7 +123,7 @@ export default function VaultOverviewPage() {
             <DataRow label="Agent" value={shortenAddress(vault.agent)} mono />
             {vault.policy && (
               <>
-                <DataRow label="Max WETH exposure" value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} accent />
+                <DataRow label={`Max ${RISK_SYMBOL} exposure`} value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} accent />
                 <DataRow label="Max drawdown" value={`${bpsToPercent(vault.policy.maxDrawdownBps)} %`} accent />
                 <DataRow label="Cooldown" value={`${vault.policy.cooldownPeriod} s`} accent />
               </>
@@ -133,20 +133,26 @@ export default function VaultOverviewPage() {
 
         <div className="border border-hairline">
           <header className="px-5 h-9 border-b border-hairline flex items-center justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">Your USDC</span>
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">Your {BASE_SYMBOL}</span>
             <span className="font-mono text-[11px] text-ink tabular">${formatUSDC(userUsdc)}</span>
           </header>
           <div className="px-5 py-5 space-y-3">
             <p className="text-[13px] text-ink-dim leading-relaxed">
-              Mint testnet USDC to fund this vault. Deposits are pooled into the vault&apos;s TVL — the agent will operate on them on its next cycle.
+              {IS_MAINNET
+                ? `Deposit ${BASE_SYMBOL} to fund this vault. Deposits are pooled into the vault's TVL — the agent will operate on them on its next cycle.`
+                : `Mint testnet ${BASE_SYMBOL} to fund this vault. Deposits are pooled into the vault's TVL — the agent will operate on them on its next cycle.`}
             </p>
             {!connected ? (
               <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
                 Connect a wallet to mint or interact.
               </p>
+            ) : IS_MAINNET ? (
+              <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+                Mainnet mode: acquire {BASE_SYMBOL} externally, then deposit below.
+              </p>
             ) : (
               <Button variant="outline" size="sm" className="w-full" onClick={() => mint(connected, "10000")} disabled={isMinting || isMintConfirming}>
-                {isMinting ? "Confirm in wallet..." : isMintConfirming ? "Minting..." : "Mint 10,000 USDC"}
+                {isMinting ? "Confirm in wallet..." : isMintConfirming ? "Minting..." : `Mint 10,000 ${BASE_SYMBOL}`}
               </Button>
             )}
           </div>
@@ -189,7 +195,7 @@ export default function VaultOverviewPage() {
               <Button className="w-full" disabled>Connect wallet to deposit</Button>
             ) : needsApproval ? (
               <Button className="w-full" onClick={() => approve(address, depositAmount)} disabled={isApproving || isApproveConfirming || !depositAmount || depositNum <= 0 || depositInsufficient}>
-                {isApproving ? "Confirm in wallet..." : isApproveConfirming ? "Approving..." : "Approve USDC →"}
+                {isApproving ? "Confirm in wallet..." : isApproveConfirming ? "Approving..." : `Approve ${BASE_SYMBOL} →`}
               </Button>
             ) : (
               <Button className="w-full" onClick={() => deposit(address, depositAmount)} disabled={isDepositing || isDepositConfirming || !depositAmount || depositNum <= 0 || depositInsufficient}>

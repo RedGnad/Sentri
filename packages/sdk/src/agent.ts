@@ -137,20 +137,20 @@ export async function discoverVaults(ctx: GlobalContext): Promise<string[]> {
 // ── Price feed (pushed once per cycle) ───────────────────────────────────
 
 /**
- * Push the latest ETH/USD spot to the on-chain oracle. Done once at the
+ * Push the latest risk/base price to the on-chain oracle. Done once at the
  * start of each cycle so all vault iterations use the same fresh price.
  */
 export async function pushPrice(ctx: GlobalContext): Promise<MarketSnapshot> {
   const market = await getMarketSnapshot();
   log(
-    `Market: ETH=$${market.ethUsd.toFixed(2)} · 24h ${market.change24h.toFixed(2)}% · ` +
-      `${market.sourceCount}/4 sources · spread ${market.spreadPct.toFixed(3)}% · ${market.source}`,
+    `Market: ${market.riskSymbol}=$${market.priceUsd.toFixed(4)} · 24h ${market.change24h.toFixed(2)}% · ` +
+      `${market.sourceCount} sources · spread ${market.spreadPct.toFixed(3)}% · ${market.source}`,
   );
 
   const feedDecimals: bigint = await ctx.priceFeed.decimals();
-  const answer = BigInt(Math.floor(market.ethUsd * 10 ** Number(feedDecimals)));
+  const answer = BigInt(Math.floor(market.priceUsd * 10 ** Number(feedDecimals)));
   const priceAttestationPayload = {
-    medianPrice: market.ethUsd,
+    medianPrice: market.priceUsd,
     sourceCount: market.sourceCount,
     spreadPct: market.spreadPct,
     sources: market.rawSources,
@@ -220,9 +220,12 @@ export async function executeOneIterationForVault(
   const riskStr = ethers.formatUnits(riskBalance, riskDec);
   const tvlStr = ethers.formatUnits(tvl, baseDec);
   const hwmStr = ethers.formatUnits(hwm, baseDec);
+  const baseSymbol = market.baseSymbol ?? "USDC";
+  const riskSymbol = market.riskSymbol ?? "ETH";
 
   log(
-    `Vault ${vaultAddress.slice(0, 10)}...: ${baseStr} USDC + ${riskStr} WETH | TVL ${tvlStr} | HWM ${hwmStr} | logs ${logCount}`,
+    `Vault ${vaultAddress.slice(0, 10)}...: ${baseStr} ${baseSymbol} + ${riskStr} ${riskSymbol} | ` +
+      `TVL ${tvlStr} | HWM ${hwmStr} | logs ${logCount}`,
   );
 
   if (tvl === 0n) {
@@ -275,15 +278,15 @@ export async function executeOneIterationForVault(
   } else {
     amountIn = (BigInt(baseBalance) * BigInt(decision.amount_bps)) / 10000n;
     if (amountIn === 0n) return { status: "skipped", reason: "no base balance to allocate" };
-    const currentRiskValue = Number(riskStr) * market.ethUsd;
+    const currentRiskValue = Number(riskStr) * market.priceUsd;
     const maxRiskValue = Number(tvlStr) * Number(policy[0]) / 10000;
     const remainingRiskHeadroom = Math.max(0, maxRiskValue - currentRiskValue);
     const maxBaseIn = ethers.parseUnits(remainingRiskHeadroom.toFixed(Number(baseDec)), baseDec);
-    if (maxBaseIn === 0n) return { status: "skipped", reason: "no remaining WETH exposure headroom" };
+    if (maxBaseIn === 0n) return { status: "skipped", reason: `no remaining ${riskSymbol} exposure headroom` };
     if (amountIn > maxBaseIn) {
       log(
         `Capping amount from ${ethers.formatUnits(amountIn, baseDec)} to ` +
-          `${ethers.formatUnits(maxBaseIn, baseDec)} based on remaining WETH exposure headroom`,
+          `${ethers.formatUnits(maxBaseIn, baseDec)} based on remaining ${riskSymbol} exposure headroom`,
       );
       amountIn = maxBaseIn;
     }
@@ -310,14 +313,14 @@ export async function executeOneIterationForVault(
     responseHash: inference.responseHash,
     action: decision.action,
     amountIn: amountIn.toString(),
-    price: market.ethUsd,
+    price: market.priceUsd,
     priceSource: market.source,
     policySnapshot,
     deadline,
   };
   const intentHash = ethers.keccak256(ethers.toUtf8Bytes(canonicalJson(intent)));
   const priceAttestationPayload = {
-    medianPrice: market.ethUsd,
+    medianPrice: market.priceUsd,
     sourceCount: market.sourceCount,
     spreadPct: market.spreadPct,
     sources: market.rawSources,
@@ -381,7 +384,7 @@ export async function executeOneIterationForVault(
       reasoning,
       confidence: decision.confidence,
       txHash: receipt.hash,
-      marketPrice: market.ethUsd,
+      marketPrice: market.priceUsd,
       marketSource: market.source,
       marketSpreadPct: market.spreadPct,
       marketSourceCount: market.sourceCount,
@@ -407,7 +410,7 @@ export async function executeOneIterationForVault(
       lastActionTime: Date.now(),
       totalExecutions: Number(newLogCount),
       pnlBps: newHwm > 0n ? Number(((BigInt(newTvl) - BigInt(newHwm)) * 10000n) / BigInt(newHwm)) : 0,
-      marketPrice: market.ethUsd,
+      marketPrice: market.priceUsd,
     });
 
     return {
@@ -499,7 +502,7 @@ function buildMarketPrompt(input: {
   riskBalance: string;
   tvl: string;
   hwm: string;
-  market: { ethUsd: number; change24h: number; source: string };
+  market: { priceUsd: number; riskSymbol: string; baseSymbol: string; change24h: number; source: string };
   policy: {
     maxAllocationBps: number;
     maxDrawdownBps: number;
@@ -509,32 +512,34 @@ function buildMarketPrompt(input: {
   };
 }): string {
   // Pre-compute every metric in TS so the LLM never does float math.
-  // Stables-first doctrine: target band = 20-30% WETH, max 30%.
+  // Stables-first doctrine: target band = 20-30% risk asset, max 30%.
   const baseN = Number(input.baseBalance);
   const riskN = Number(input.riskBalance);
   const tvlN = Number(input.tvl);
   const hwmN = Number(input.hwm);
-  const wethValueUsd = riskN * input.market.ethUsd;
-  const wethSharePct = tvlN > 0 ? (wethValueUsd / tvlN) * 100 : 0;
-  const deviationFromTargetPct = wethSharePct - 25; // target = 25% mid-band
+  const riskSymbol = input.market.riskSymbol ?? "ETH";
+  const baseSymbol = input.market.baseSymbol ?? "USDC";
+  const riskValueUsd = riskN * input.market.priceUsd;
+  const riskSharePct = tvlN > 0 ? (riskValueUsd / tvlN) * 100 : 0;
+  const deviationFromTargetPct = riskSharePct - 25; // target = 25% mid-band
   const drawdownPct = hwmN > 0 ? ((hwmN - tvlN) / hwmN) * 100 : 0;
 
   return `Treasury state (computed):
-- USDC balance: ${baseN.toFixed(2)} USDC
-- WETH balance: ${riskN.toFixed(6)} WETH
-- WETH value at market: ${wethValueUsd.toFixed(2)} USDC
-- TVL: ${tvlN.toFixed(2)} USDC
-- HWM: ${hwmN.toFixed(2)} USDC
+- ${baseSymbol} balance: ${baseN.toFixed(2)} ${baseSymbol}
+- ${riskSymbol} balance: ${riskN.toFixed(6)} ${riskSymbol}
+- ${riskSymbol} value at market: ${riskValueUsd.toFixed(2)} ${baseSymbol}
+- TVL: ${tvlN.toFixed(2)} ${baseSymbol}
+- HWM: ${hwmN.toFixed(2)} ${baseSymbol}
 - Drawdown from HWM: ${drawdownPct.toFixed(2)}%
-- WETH share of TVL: ${wethSharePct.toFixed(2)}%
+- ${riskSymbol} share of TVL: ${riskSharePct.toFixed(2)}%
 - Deviation from 25% target: ${deviationFromTargetPct.toFixed(2)} percentage points
 
 Market (${input.market.source}):
-- ETH/USD: $${input.market.ethUsd.toFixed(2)}
+- ${riskSymbol}/USD: $${input.market.priceUsd.toFixed(4)}
 - 24h change: ${input.market.change24h.toFixed(2)}%
 
 Policy bounds:
-- Max post-trade WETH exposure: ${input.policy.maxAllocationBps / 100}% of TVL
+- Max post-trade ${riskSymbol} exposure: ${input.policy.maxAllocationBps / 100}% of TVL
 - Max drawdown from HWM: ${input.policy.maxDrawdownBps / 100}%
 - Max slippage: ${input.policy.maxSlippageBps / 100}%
 - Cooldown between actions: ${input.policy.cooldownPeriod}s

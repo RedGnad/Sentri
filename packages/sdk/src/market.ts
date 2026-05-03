@@ -1,28 +1,32 @@
 // Real-time market data source for the treasury agent.
-// Pulls ETH/USD spot from FOUR independent sources (Binance, CoinGecko,
-// Coinbase, Kraken) in parallel and returns the median, with a 2-of-4
-// quorum required. Single-source dependency is unsafe for capital
-// allocation — a hijacked or hallucinating exchange feed could push the
-// vault toward bad swap decisions even with the on-chain slippage guard.
+// Galileo defaults to ETH/USD for MockWETH. 0G mainnet can set
+// MARKET_ASSET=W0G to price W0G/USD for the USDC.E/W0G real-asset stack.
 
 export interface MarketSnapshot {
-  ethUsd: number;          // median across reachable sources
-  change24h: number;       // 24h percent change (Binance preferred, CoinGecko fallback)
+  priceUsd: number;        // median across reachable sources
+  ethUsd: number;          // backward-compatible alias for priceUsd
+  riskSymbol: string;      // ETH or W0G
+  baseSymbol: string;      // USDC, USDC.E, etc.
+  change24h: number;       // 24h percent change
   source: string;          // "median:binance,coingecko,kraken,coinbase"
   timestamp: number;
   sourceCount: number;     // how many sources contributed (>= 2 required)
   spreadPct: number;       // (max - min) / median × 100, for monitoring
-  rawSources: Array<{ source: string; ethUsd: number }>;
+  rawSources: Array<{ source: string; priceUsd: number; ethUsd: number }>;
 }
 
 interface SourceResult {
   source: string;
-  ethUsd: number;
+  priceUsd: number;
   change24h?: number;
 }
 
 const FETCH_TIMEOUT_MS = 3_500;
 const MIN_QUORUM = 2;
+const MARKET_ASSET = (process.env.MARKET_ASSET ?? process.env.SENTRI_MARKET_ASSET ?? "ETH").toUpperCase();
+const BASE_SYMBOL = process.env.SENTRI_BASE_SYMBOL ?? (MARKET_ASSET === "W0G" ? "USDC.E" : "USDC");
+const RISK_SYMBOL = process.env.SENTRI_RISK_SYMBOL ?? MARKET_ASSET;
+const MAX_MARKET_SPREAD_BPS = Number(process.env.MAX_MARKET_SPREAD_BPS ?? "500");
 
 async function fetchBinance(): Promise<SourceResult> {
   const res = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", {
@@ -32,7 +36,7 @@ async function fetchBinance(): Promise<SourceResult> {
   const data = (await res.json()) as { lastPrice: string; priceChangePercent: string };
   return {
     source: "binance",
-    ethUsd: Number(data.lastPrice),
+    priceUsd: Number(data.lastPrice),
     change24h: Number(data.priceChangePercent),
   };
 }
@@ -46,7 +50,7 @@ async function fetchCoinGecko(): Promise<SourceResult> {
   const data = (await res.json()) as { ethereum: { usd: number; usd_24h_change: number } };
   return {
     source: "coingecko",
-    ethUsd: data.ethereum.usd,
+    priceUsd: data.ethereum.usd,
     change24h: data.ethereum.usd_24h_change,
   };
 }
@@ -57,7 +61,7 @@ async function fetchCoinbase(): Promise<SourceResult> {
   });
   if (!res.ok) throw new Error(`Coinbase ${res.status}`);
   const data = (await res.json()) as { data: { amount: string } };
-  return { source: "coinbase", ethUsd: Number(data.data.amount) };
+  return { source: "coinbase", priceUsd: Number(data.data.amount) };
 }
 
 async function fetchKraken(): Promise<SourceResult> {
@@ -68,7 +72,43 @@ async function fetchKraken(): Promise<SourceResult> {
   const data = (await res.json()) as { result: Record<string, { c: string[] }> };
   const tickers = Object.values(data.result);
   if (tickers.length === 0) throw new Error("Kraken empty result");
-  return { source: "kraken", ethUsd: Number(tickers[0].c[0]) };
+  return { source: "kraken", priceUsd: Number(tickers[0].c[0]) };
+}
+
+async function fetchW0GCoinGecko(): Promise<SourceResult> {
+  const res = await fetch(
+    "https://api.coingecko.com/api/v3/simple/price?ids=wrapped-0g&vs_currencies=usd&include_24hr_change=true",
+    { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+  );
+  if (!res.ok) throw new Error(`CoinGecko W0G ${res.status}`);
+  const data = (await res.json()) as { "wrapped-0g": { usd: number; usd_24h_change: number } };
+  return {
+    source: "coingecko:wrapped-0g",
+    priceUsd: data["wrapped-0g"].usd,
+    change24h: data["wrapped-0g"].usd_24h_change,
+  };
+}
+
+async function fetchW0GGeckoTerminal(): Promise<SourceResult> {
+  const pool = process.env.ZERO_G_MAINNET_JAINE_USDCE_W0G_POOL_ADDRESS ??
+    "0xa9e824EDDb9677fB2189aB9C439238a83695c091";
+  const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/0g/pools/${pool}`, {
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`GeckoTerminal W0G ${res.status}`);
+  const data = (await res.json()) as {
+    data?: { attributes?: { quote_token_price_usd?: string; base_token_price_usd?: string; price_change_percentage?: { h24?: string } } };
+  };
+  const attrs = data.data?.attributes;
+  // GeckoTerminal names this pool "USDC.e / W0G": base token is USDC.e and
+  // quote token is W0G. We need the W0G/USD price for the vault's risk feed.
+  const price = Number(attrs?.quote_token_price_usd);
+  if (!Number.isFinite(price) || price <= 0) throw new Error("GeckoTerminal W0G missing price");
+  return {
+    source: "geckoterminal:jaine-usdce-w0g",
+    priceUsd: price,
+    change24h: attrs?.price_change_percentage?.h24 ? Number(attrs.price_change_percentage.h24) : undefined,
+  };
 }
 
 function median(values: number[]): number {
@@ -80,12 +120,12 @@ function median(values: number[]): number {
 }
 
 export async function getMarketSnapshot(): Promise<MarketSnapshot> {
-  const settled = await Promise.allSettled([
-    fetchBinance(),
-    fetchCoinGecko(),
-    fetchCoinbase(),
-    fetchKraken(),
-  ]);
+  const providers =
+    MARKET_ASSET === "W0G"
+      ? [fetchW0GCoinGecko(), fetchW0GGeckoTerminal()]
+      : [fetchBinance(), fetchCoinGecko(), fetchCoinbase(), fetchKraken()];
+
+  const settled = await Promise.allSettled(providers);
 
   const successes: SourceResult[] = [];
   const failures: string[] = [];
@@ -97,27 +137,35 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   if (successes.length < MIN_QUORUM) {
     throw new Error(
       `Insufficient market quorum: ${successes.length}/4 sources succeeded ` +
-        `(need ≥ ${MIN_QUORUM}). Failures: ${failures.join(" | ")}`,
+        `(need ≥ ${MIN_QUORUM}). Asset: ${MARKET_ASSET}. Failures: ${failures.join(" | ")}`,
     );
   }
 
-  const prices = successes.map((s) => s.ethUsd);
+  const prices = successes.map((s) => s.priceUsd);
   const med = median(prices);
   const spreadPct = prices.length > 1 ? ((Math.max(...prices) - Math.min(...prices)) / med) * 100 : 0;
+  if (spreadPct * 100 > MAX_MARKET_SPREAD_BPS) {
+    throw new Error(
+      `Market spread too wide for ${MARKET_ASSET}: ${spreadPct.toFixed(3)}% ` +
+        `(max ${(MAX_MARKET_SPREAD_BPS / 100).toFixed(2)}%). Sources: ` +
+        successes.map((s) => `${s.source}=${s.priceUsd}`).join(" | "),
+    );
+  }
 
-  // 24h change: prefer Binance, fallback to CoinGecko, otherwise 0.
-  const changeSource =
-    successes.find((s) => s.source === "binance" && s.change24h !== undefined) ??
-    successes.find((s) => s.source === "coingecko" && s.change24h !== undefined);
+  // 24h change: prefer the first source that exposes it, otherwise 0.
+  const changeSource = successes.find((s) => s.change24h !== undefined);
   const change24h = changeSource?.change24h ?? 0;
 
   return {
+    priceUsd: med,
     ethUsd: med,
+    riskSymbol: RISK_SYMBOL,
+    baseSymbol: BASE_SYMBOL,
     change24h,
     source: `median:${successes.map((s) => s.source).join(",")}`,
     timestamp: Date.now(),
     sourceCount: successes.length,
     spreadPct,
-    rawSources: successes.map((s) => ({ source: s.source, ethUsd: s.ethUsd })),
+    rawSources: successes.map((s) => ({ source: s.source, priceUsd: s.priceUsd, ethUsd: s.priceUsd })),
   };
 }

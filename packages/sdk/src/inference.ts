@@ -287,8 +287,8 @@ compromise the stables-first nature.
 
 POSITION ENVELOPE
 - Default state: 100% base stable asset
-- Maximum WETH exposure: 30% of TVL. Never exceed.
-- Target band when deployed: 20–30% WETH
+- Maximum risk-asset exposure: 30% of TVL. Never exceed.
+- Target band when deployed: 20–30% risk asset
 
 DECISION RULES (apply in order, stop at first match)
 
@@ -298,7 +298,7 @@ Use the pre-computed metrics in the user prompt:
 - drawdown_from_HWM (capital preservation signal)
 
 1. If 24h change ≤ −3% OR drawdown_from_HWM ≥ 1.5%
-   → EmergencyDeleverage. Exit all (or near all) WETH back to the base stable asset.
+   → EmergencyDeleverage. Exit all (or near all) risk asset back to the base stable asset.
    Reason: capital preservation, return to stables.
 
 2. If current_weth_share > 30%

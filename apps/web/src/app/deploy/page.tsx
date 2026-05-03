@@ -11,7 +11,15 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import { useCreateVault } from "@/hooks/use-factory";
 import { useApproveUsdc, useUsdcBalance, useUsdcAllowance, useMintUsdc } from "@/hooks/use-vault";
-import { PRESET_LABELS, PresetTier, VAULT_FACTORY_ADDRESS, VAULT_FACTORY_ABI } from "@/config/contracts";
+import {
+  BASE_SYMBOL,
+  IS_MAINNET,
+  PRESET_LABELS,
+  PresetTier,
+  RISK_SYMBOL,
+  VAULT_FACTORY_ADDRESS,
+  VAULT_FACTORY_ABI,
+} from "@/config/contracts";
 import { formatUSDC, cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
@@ -37,8 +45,8 @@ export default function DeployPage() {
     receipt,
   } = useCreateVault();
 
-  useEffect(() => { if (mintSuccess) toast.success("10,000 USDC minted"); }, [mintSuccess]);
-  useEffect(() => { if (approveSuccess) toast.success("USDC approved for factory"); }, [approveSuccess]);
+  useEffect(() => { if (mintSuccess) toast.success(`10,000 ${BASE_SYMBOL} minted`); }, [mintSuccess]);
+  useEffect(() => { if (approveSuccess) toast.success(`${BASE_SYMBOL} approved for factory`); }, [approveSuccess]);
 
   // Once vault is created, parse the VaultCreated event from the receipt and
   // redirect to the new vault's page.
@@ -167,7 +175,7 @@ function PresetStep({ tier, setTier, onNext }: { tier: number; setTier: (t: numb
     <div className="space-y-6">
       <h2 className="font-serif text-3xl text-ink">Choose a risk preset</h2>
       <p className="font-serif italic text-base text-ink-dim">
-        Each preset bakes a vetted policy: max WETH exposure, drawdown freeze, slippage cap, cooldown.
+        Each preset bakes a vetted policy: max {RISK_SYMBOL} exposure, drawdown freeze, slippage cap, cooldown.
         You can change the policy later as the vault owner.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -244,7 +252,7 @@ function DepositStep({
       <div className="border border-hairline p-5 space-y-4">
         <div>
           <label className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint block mb-2">
-            Amount (USDC)
+            Amount ({BASE_SYMBOL})
           </label>
           <div className="relative">
             <Input
@@ -271,13 +279,13 @@ function DepositStep({
           </div>
         </div>
 
-        {connected && userUsdc < parseUnits("1000", 6) && (
+        {!IS_MAINNET && connected && userUsdc < parseUnits("1000", 6) && (
           <div className="border border-hairline-strong p-3 space-y-2">
             <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
-              Need testnet USDC?
+              Need testnet {BASE_SYMBOL}?
             </p>
             <Button variant="outline" size="sm" onClick={onMint} disabled={isMinting} className="w-full">
-              {isMinting ? "Minting..." : "Mint 10,000 USDC (testnet, free)"}
+              {isMinting ? "Minting..." : `Mint 10,000 ${BASE_SYMBOL} (testnet, free)`}
             </Button>
           </div>
         )}
@@ -318,10 +326,10 @@ function ConfirmStep({
         {preset.bullets.map((b) => (
           <ConfirmRow key={b} label="" value={`· ${b}`} valueClass="text-ink-dim" />
         ))}
-        <ConfirmRow label="Initial deposit" value={depositNum > 0 ? `$${depositNum.toLocaleString()} USDC` : "None (deploy empty)"} accent />
+        <ConfirmRow label="Initial deposit" value={depositNum > 0 ? `$${depositNum.toLocaleString()} ${BASE_SYMBOL}` : "None (deploy empty)"} accent />
         <ConfirmRow label="Owner" value="You (the connected wallet)" />
         <ConfirmRow label="Agent" value="0G Sealed Inference (shared)" />
-        <ConfirmRow label="Strategy" value="Stables-first · max 30% WETH · auto-deleverage on drawdown" />
+        <ConfirmRow label="Strategy" value={`Stables-first · max 30% ${RISK_SYMBOL} · auto-deleverage on drawdown`} />
       </ul>
 
       <div className="flex justify-between">
@@ -373,20 +381,20 @@ function SubmitStep({
       <h2 className="font-serif text-3xl text-ink">Submit</h2>
       <p className="font-serif italic text-base text-ink-dim">
         {depositNum > 0
-          ? `Two transactions: approve the factory to spend ${depositNum} USDC, then create your vault and deposit atomically.`
+          ? `Two transactions: approve the factory to spend ${depositNum} ${BASE_SYMBOL}, then create your vault and deposit atomically.`
           : "One transaction: create your vault. You can deposit later."}
       </p>
 
       {insufficient && (
         <div className="border border-alert/40 bg-alert/[0.04] px-4 py-3 font-mono text-[11px] text-alert">
-          Insufficient USDC balance for this deposit.
+          Insufficient {BASE_SYMBOL} balance for this deposit.
         </div>
       )}
 
       <div className="space-y-3">
         {needsApproval && (
           <Button className="w-full" onClick={onApprove} disabled={isApproving || isApproveConfirming || insufficient}>
-            {isApproving ? "Confirm in wallet..." : isApproveConfirming ? "Approving..." : `Step 1 / 2 — Approve ${depositNum} USDC →`}
+            {isApproving ? "Confirm in wallet..." : isApproveConfirming ? "Approving..." : `Step 1 / 2 — Approve ${depositNum} ${BASE_SYMBOL} →`}
           </Button>
         )}
         <Button

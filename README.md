@@ -65,6 +65,7 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     TreasuryVault.sol             Per-user clone (init pattern). Funds, policy, execution, audit log
     AgentINFT.sol                 Shared agent identity (enclave measurement + revocation)
     SentriSwapRouter.sol          Uniswap v2-style router (single-pair, 0.3% fee)
+    JaineV3PoolAdapter.sol        Mainnet adapter for Jaine USDC.E/W0G V3 pool
     SentriPair.sol                Constant-product AMM (MockUSDC ↔ MockWETH on Galileo)
     SentriPriceFeed.sol           AggregatorV3-compatible oracle, pushed by the agent
     MockUSDC.sol                  6-dec stablecoin with public mint (testnet)
@@ -91,7 +92,7 @@ packages/sdk/                    TypeScript multi-vault agent runtime
     storage.ts                    0G Storage KV writers, namespaced per vault address.
                                   Local cache mirror at /tmp/sentri-cache/vaults/{addr}/
     inference.ts                  0G Sealed Inference client with TEE attestation
-    market.ts                     ETH/USD median oracle (Binance, CoinGecko, Coinbase, Kraken)
+    market.ts                     Risk/USD median oracle (ETH for Galileo, W0G for mainnet)
     setup-broker.ts               One-shot 0G compute broker registration + ledger creation
     cli.ts                        Standalone CLI loop entry (`pnpm agent`)
 
@@ -157,7 +158,15 @@ Sentri's treasury thesis is stablecoin-first, but the 0G mainnet stablecoin need
 - **0G mainnet target:** `USDC.E` / bridged USDC as the base stable asset, with `W0G` as the primary risk asset and Jaine as the real-market venue.
 - **No native-USDC claim:** we do not claim that Circle-issued native USDC is available on 0G mainnet. `USDC.E` is a bridged stablecoin and carries bridge/liquidity risk; Sentri treats that as an explicit asset risk parameter.
 
-The core vault logic is venue-agnostic: it enforces ownership, TEE signer checks, replay/deadline checks, exposure caps, drawdown, cooldown, oracle freshness, and slippage independently from whether the route is the deterministic Galileo AMM or a real 0G mainnet venue.
+The core vault logic is venue-agnostic: it enforces ownership, TEE signer checks, replay/deadline checks, exposure caps, drawdown, cooldown, oracle freshness, and slippage independently from whether the route is the deterministic Galileo AMM or a real 0G mainnet venue. The mainnet path uses `JaineV3PoolAdapter`, which adapts the public Jaine `USDC.E/W0G` V3 pool to the same `swapExactTokensForTokens(...)` surface the vault already uses on Galileo.
+
+Verified 0G mainnet real-asset defaults:
+
+| Asset / venue | Address |
+|---|---|
+| `W0G` | `0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c` |
+| `USDC.E` | `0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E` |
+| Jaine `USDC.E/W0G` pool, 0.3% | `0xa9e824Eddb9677fB2189AB9c439238A83695C091` |
 
 ---
 
@@ -246,6 +255,31 @@ forge script script/Deploy.s.sol --rpc-url galileo --broadcast --priority-gas-pr
 ```
 
 The deploy script outputs every address. Update `packages/sdk/src/constants.ts` and `apps/web/src/config/contracts.ts` with the new factory address.
+
+### Deploy the 0G mainnet real-asset stack
+
+Use a fresh mainnet key. Do not reuse a testnet/demo key.
+
+```bash
+cd contracts
+cp .env.example .env                             # fill PRIVATE_KEY + AGENT_ADDRESS + TEE_SIGNER_ADDRESS
+forge build
+forge script script/DeployMainnetReal.s.sol --rpc-url https://evmrpc.0g.ai --broadcast
+```
+
+Then run the agent/dashboard in mainnet mode:
+
+```bash
+SENTRI_NETWORK=mainnet
+MARKET_ASSET=W0G
+SENTRI_BASE_SYMBOL=USDC.E
+SENTRI_RISK_SYMBOL=W0G
+NEXT_PUBLIC_SENTRI_NETWORK=mainnet
+NEXT_PUBLIC_BASE_SYMBOL=USDC.E
+NEXT_PUBLIC_RISK_SYMBOL=W0G
+```
+
+Override the deployed mainnet `NEXT_PUBLIC_*` addresses with the script output. The mainnet script creates an empty demo vault; any `USDC.E` deposit is an explicit owner action.
 
 ---
 

@@ -5,6 +5,11 @@ import { type Abi } from "viem";
 // Set NEXT_PUBLIC_SENTRI_NETWORK=mainnet and override addresses after the
 // required 0G mainnet deployment for HackQuest review.
 
+export const SENTRI_NETWORK = process.env.NEXT_PUBLIC_SENTRI_NETWORK ?? "galileo";
+export const IS_MAINNET = SENTRI_NETWORK === "mainnet";
+export const BASE_SYMBOL = process.env.NEXT_PUBLIC_BASE_SYMBOL ?? (IS_MAINNET ? "USDC.E" : "USDC");
+export const RISK_SYMBOL = process.env.NEXT_PUBLIC_RISK_SYMBOL ?? (IS_MAINNET ? "W0G" : "WETH");
+
 export const VAULT_FACTORY_ADDRESS =
   (process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS as `0x${string}`) ??
   "0x3DBc323A0540EB104df2C73f30a12CE2881a98aa";
