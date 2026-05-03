@@ -5,11 +5,11 @@ Private strategy, verifiable results.
 
 Sentri is a multi-tenant verifiable treasury protocol. Anyone can deploy their own treasury vault — owned by them, with their own risk policy — and a shared agent operates across all vaults: requesting strategy through a verifiable **0G Sealed Inference** TEE provider path, executing under on-chain policy each vault enforces, and writing per-vault audit trails to **0G Storage**.
 
-The vault holds USDC as the home asset. The agent has bounded discretion (preset policies cap post-trade WETH exposure at 15% / 30% / 50% depending on the chosen risk tier) to deploy capital into productive risk exposure when conditions are constructive — and to deleverage automatically when they aren't.
+The vault holds a stable base asset as the home asset. On Galileo this is `MockUSDC` for deterministic rehearsal; the 0G mainnet asset model is `USDC.E` / bridged USDC, not native Circle USDC. The agent has bounded discretion (preset policies cap post-trade risk exposure at 15% / 30% / 50% depending on the chosen risk tier) to deploy capital into productive risk exposure when conditions are constructive — and to deleverage automatically when they aren't.
 
 Built for **DAOs, protocol reserves, and foundations** that hold stablecoin reserves and want intelligent — and verifiable — productive deployment, without trusting a black-box trader. Submitted to the **0G APAC Hackathon** — Track 2: *Agentic Trading Arena (Verifiable Finance)*.
 
-> Sentri is **not** a trading bot. It is a *stables-first verifiable treasury* with per-vault pause and kill controls. Each vault's owner can withdraw all vault assets immediately, or attempt an emergency deleverage to USDC with a slippage guard.
+> Sentri is **not** a trading bot. It is a *stables-first verifiable treasury* with per-vault pause and kill controls. Each vault's owner can withdraw all vault assets immediately, or attempt an emergency deleverage to the base stable asset with a slippage guard.
 
 ---
 
@@ -29,7 +29,7 @@ A treasury infrastructure where:
 - A shared agent operates across all vaults, with reasoning requested through a **0G verifiable TEE provider path** so the strategy flow is private/auditable without exposing operator-side prompts in the UI.
 - Execution is **gated by each vault's on-chain policy** — the agent literally cannot break the constraints.
 - Every decision is **cryptographically attested** and the audit trail is verifiable on 0G Storage.
-- The vault owner can **pause, reconfigure, or kill** their vault at any moment. The hard kill returns all assets; the deleverage kill attempts to convert residual WETH to USDC first.
+- The vault owner can **pause, reconfigure, or kill** their vault at any moment. The hard kill returns all assets; the deleverage kill attempts to convert residual risk exposure to the base stable asset first.
 
 ```
 ┌──────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌──────────────┐
@@ -65,7 +65,7 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     TreasuryVault.sol             Per-user clone (init pattern). Funds, policy, execution, audit log
     AgentINFT.sol                 Shared agent identity (enclave measurement + revocation)
     SentriSwapRouter.sol          Uniswap v2-style router (single-pair, 0.3% fee)
-    SentriPair.sol                Constant-product AMM (USDC ↔ WETH)
+    SentriPair.sol                Constant-product AMM (MockUSDC ↔ MockWETH on Galileo)
     SentriPriceFeed.sol           AggregatorV3-compatible oracle, pushed by the agent
     MockUSDC.sol                  6-dec stablecoin with public mint (testnet)
     MockWETH.sol                  18-dec risk asset with public mint (testnet)
@@ -126,13 +126,13 @@ Every 5 minutes the agent:
 
 System prompt is a deterministic decision tree, applied in order:
 
-1. 24h change ≤ −3% **or** drawdown ≥ 1.5% → EmergencyDeleverage all WETH back to USDC.
+1. 24h change ≤ −3% **or** drawdown ≥ 1.5% → EmergencyDeleverage all WETH back to the base stable asset.
 2. WETH share > 30% → EmergencyDeleverage trim back toward 25% target.
 3. 20% ≤ WETH share ≤ 30% → hold (no action).
-4. WETH share < 20% **and** 24h ≥ +1% **and** drawdown < 1% → deploy USDC toward 25% target.
+4. WETH share < 20% **and** 24h ≥ +1% **and** drawdown < 1% → deploy base stable asset toward 25% target.
 5. Otherwise → hold (cautious default).
 
-Default state is 100% USDC. Maximum WETH exposure is 30% of TVL by default — never exceeded by the vault. Each vault's on-chain `policy` independently caps post-trade WETH exposure (15% / 30% / 50% depending on preset).
+Default state is 100% base stable asset. Maximum WETH exposure is 30% of TVL by default — never exceeded by the vault. Each vault's on-chain `policy` independently caps post-trade WETH exposure (15% / 30% / 50% depending on preset).
 
 ---
 
@@ -146,6 +146,18 @@ Default state is 100% USDC. Maximum WETH exposure is 30% of TVL by default — n
 | **Custom** | ≤ 50% | ≤ 20% | ≤ 5% | ≥ 60s | Bounded by factory validation |
 
 Custom policies are validated on-chain at vault creation. Out-of-range values revert with `CustomPolicyOutOfRange`.
+
+---
+
+## 0G asset model
+
+Sentri's treasury thesis is stablecoin-first, but the 0G mainnet stablecoin needs to be named precisely:
+
+- **Galileo rehearsal:** `MockUSDC` / `MockWETH` through `SentriPair`, so judges and contributors can reproduce the full loop without depending on third-party liquidity.
+- **0G mainnet target:** `USDC.E` / bridged USDC as the base stable asset, with `W0G` as the primary risk asset and Jaine as the real-market venue.
+- **No native-USDC claim:** we do not claim that Circle-issued native USDC is available on 0G mainnet. `USDC.E` is a bridged stablecoin and carries bridge/liquidity risk; Sentri treats that as an explicit asset risk parameter.
+
+The core vault logic is venue-agnostic: it enforces ownership, TEE signer checks, replay/deadline checks, exposure caps, drawdown, cooldown, oracle freshness, and slippage independently from whether the route is the deterministic Galileo AMM or a real 0G mainnet venue.
 
 ---
 
@@ -192,7 +204,7 @@ pnpm install
 
 1. Open the dashboard at `http://localhost:3000` (or your hosted URL).
 2. Connect a wallet on 0G Galileo (chain 16602).
-3. Click **Deploy a vault** → choose a preset → optionally seed with USDC → submit.
+3. Click **Deploy a vault** → choose a preset → optionally seed with testnet USDC → submit.
 4. Your vault is now live. The agent will pick it up on its next cycle (≤ 5 min) and start operating.
 5. Inspect `/v/[your-vault]` for live state, audit, policy, emergency.
 
@@ -266,7 +278,7 @@ The demo covers one full lifecycle:
 3. Goes to **Deploy** → chooses Balanced → deposits 1,000 USDC → vault created in one TX.
 4. Watches the agent execute on the new vault on the next cycle (~5 min).
 5. Inspects `/v/[address]/audit` to see the on-chain intent hash, response hash, recovered TEE signer, provider metadata, storage tx/root hash, and hash-match status.
-6. Updates policy, then activates kill-switch — either all assets are returned instantly, or the owner uses the deleverage kill to attempt a USDC-only exit with slippage protection.
+6. Updates policy, then activates kill-switch — either all assets are returned instantly, or the owner uses the deleverage kill to attempt a base-stable-only exit with slippage protection.
 
 ---
 
@@ -294,14 +306,14 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 - **The contract does not parse the model JSON response.** The vault verifies the TEE signer, deadline, and single-use hashes on-chain, then stores the intent/response hashes for audit. The enriched audit page binds the verified model response, signed chat payload, reconstructed execution intent, transaction hash, and 0G Storage proof for human verification.
 - **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed WETH exposure, drawdown, slippage, or cooldown.
 - **The market price comes from centralised exchanges** (Binance, CoinGecko, Coinbase, Kraken — median of 4 sources, 2-of-4 quorum required). This is more robust than a single source but it is not a fully decentralised oracle. A coordinated manipulation across all four CEX feeds would be required to push a bad price.
-- **The swap routes through `SentriPair`**, an in-protocol AMM seeded with `MockUSDC`/`MockWETH` for testnet reproducibility. v2 mainnet would integrate a real DEX (Jaine on 0G mainnet, or equivalent) with real liquidity.
+- **The Galileo swap routes through `SentriPair`**, an in-protocol AMM seeded with `MockUSDC`/`MockWETH` for testnet reproducibility. The 0G mainnet target is a real route using `USDC.E` / bridged USDC and `W0G` on Jaine or an equivalent verified venue.
 
 ### What this means for the user
 
 A vault owner can reason about Sentri's safety along **two independent dimensions**:
 
 1. **Bound** — what's the worst the agent can do within policy? This is fully on-chain and tight: bounded post-trade WETH exposure, bounded drawdown from peak, bounded slippage per swap, bounded cadence (cooldown). The owner sets the bounds at vault creation and can update them; the agent cannot.
-2. **Recourse** — what happens if something goes wrong? `pause()` blocks all activity reversibly; `emergencyWithdraw()` returns 100% of base + risk assets to the owner irreversibly; `emergencyDeleverageAndWithdraw(minBaseOut)` attempts to swap all WETH to USDC first and reverts if the slippage guard cannot be met. All are owner-only and not gated by the agent or the price feed.
+2. **Recourse** — what happens if something goes wrong? `pause()` blocks all activity reversibly; `emergencyWithdraw()` returns 100% of base + risk assets to the owner irreversibly; `emergencyDeleverageAndWithdraw(minBaseOut)` attempts to swap all risk exposure to the base stable asset first and reverts if the slippage guard cannot be met. All are owner-only and not gated by the agent or the price feed.
 
 The TEE story is now split honestly: 0G response verification and provider attestation happen off-chain in the agent, while the vault checks the recovered TEE signer signature on-chain, rejects expired/replayed intents, and commits the intent hash for audit replay.
 
@@ -310,7 +322,7 @@ The TEE story is now split honestly: 0G response verification and provider attes
 ## What is intentionally out of scope
 
 - **Active trading / perp strategies.** Sentri rebalances and risk-manages — it does not chase short-term alpha. The interesting privacy story is *which constraints the agent enforces in private*, not *which trades it places*.
-- **Multiple risk assets.** v1 supports USDC ↔ WETH only. Multi-asset (WBTC, etc.) is a v2 conversation.
+- **Multiple risk assets.** v1 supports one base stable asset and one risk asset only. Multi-asset (WBTC, etc.) is a v2 conversation.
 - **Multi-chain.** v1 targets 0G mainnet for review and Galileo for rehearsal. Cross-chain coordination is out of scope.
 - **Agent marketplace / operator competition.** Single shared agent (us). Aegis Vault occupies that lane; we differentiate on focus.
 - **Persistent memory across iterations.** Stateless by design — auditability first.

@@ -22,13 +22,13 @@ const PRINCIPLES = [
     num: "iii",
     title: "Bounded by policy",
     body:
-      "Each vault has its own on-chain policy: max WETH exposure, drawdown, cooldown, slippage. The agent proposes; the contract disposes. No override path. Owner kill-switch returns all vault assets instantly, with an optional USDC deleverage exit.",
+      "Each vault has its own on-chain policy: max risk exposure, drawdown, cooldown, slippage. The agent proposes; the contract disposes. No override path. Owner kill-switch returns all vault assets instantly, with an optional base-asset deleverage exit.",
   },
 ];
 
 const MECHANISM = [
   { id: "01", label: "User deploys vault", detail: "Pick a preset (Conservative / Balanced / Aggressive) or custom" },
-  { id: "02", label: "User seeds USDC", detail: "Atomic create + deposit in one TX" },
+  { id: "02", label: "User seeds base asset", detail: "Atomic create + deposit in one TX" },
   { id: "03", label: "Agent discovers", detail: "Reads VaultFactory.allVaults() each cycle" },
   { id: "04", label: "Push price on-chain", detail: "Agent is sole keeper of SentriPriceFeed" },
   { id: "05", label: "Sealed inference", detail: "TEE analyzes per-vault state · returns decision" },
@@ -43,10 +43,10 @@ const STACK_ROWS = [
   { layer: "Factory", component: "VaultFactory.sol", purpose: "Deploys vault clones · presets + custom policy" },
   { layer: "Identity", component: "AgentINFT.sol", purpose: "Enclave measurement + revocation (shared)" },
   { layer: "Execution", component: "SentriSwapRouter", purpose: "Uniswap v2 router, 0.3% fee" },
-  { layer: "Liquidity", component: "SentriPair", purpose: "Constant-product AMM (USDC/WETH)" },
+  { layer: "Liquidity", component: "SentriPair", purpose: "Galileo AMM (MockUSDC/MockWETH)" },
   { layer: "Oracle", component: "SentriPriceFeed", purpose: "AggregatorV3 pushed by agent" },
   { layer: "Inference", component: "0G Sealed Inference", purpose: "Private strategy in TEE" },
-  { layer: "Storage", component: "0G Storage KV + Log", purpose: "Per-vault audit trail" },
+  { layer: "Storage", component: "0G Storage KV", purpose: "Per-vault audit entries + portfolio state" },
 ];
 
 export default async function LandingPage() {
