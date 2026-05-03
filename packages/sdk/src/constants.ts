@@ -11,6 +11,7 @@ const NETWORKS = {
     explorerUrl: "https://chainscan-galileo.0g.ai",
     indexerUrl: "https://indexer-storage-testnet-turbo.0g.ai",
     flowContract: "0x22E03a6A89B950F1c82ec5e74F8eCa321a105296",
+    storageSubmitFeeWei: "1000000000000000",
   },
   mainnet: {
     id: 16661,
@@ -19,6 +20,7 @@ const NETWORKS = {
     explorerUrl: "https://chainscan.0g.ai",
     indexerUrl: "https://indexer-storage-turbo.0g.ai",
     flowContract: "0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526",
+    storageSubmitFeeWei: "0",
   },
 } as const;
 
@@ -35,6 +37,7 @@ export const CHAIN = {
 export const STORAGE = {
   indexerUrl: process.env.STORAGE_INDEXER_URL ?? selectedNetwork.indexerUrl,
   flowContract: process.env.STORAGE_FLOW_CONTRACT ?? selectedNetwork.flowContract,
+  submitFeeWei: BigInt(process.env.STORAGE_SUBMIT_FEE_WEI ?? selectedNetwork.storageSubmitFeeWei),
 } as const;
 
 // Contract addresses — replay-protected multi-tenant deployment on Galileo (May 2026).

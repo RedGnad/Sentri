@@ -213,7 +213,8 @@ async function _writeKv(
   const batcher = new Batcher(1, nodes, getFlowContract(), CHAIN.rpcUrl);
   batcher.streamDataBuilder.set(streamId, encodeKey(key), encodeValue(value));
 
-  const [result, execErr] = await batcher.exec();
+  const execOpts = STORAGE.submitFeeWei > 0n ? { fee: STORAGE.submitFeeWei } : undefined;
+  const [result, execErr] = await batcher.exec(execOpts);
   if (execErr !== null) {
     throw new Error(`Failed to write to 0G Storage: ${execErr}`);
   }
