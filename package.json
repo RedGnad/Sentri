@@ -12,6 +12,7 @@
     "agent": "cd packages/sdk && tsx src/agent.ts"
   },
   "engines": {
-    "node": ">=18"
-  }
+    "node": "20.x"
+  },
+  "packageManager": "pnpm@10.33.2"
 }
