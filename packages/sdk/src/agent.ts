@@ -253,9 +253,9 @@ export async function executeOneIterationForVault(
 
   let decision: AgentDecision;
   try {
-    decision = JSON.parse(inference.content) as AgentDecision;
+    decision = JSON.parse(inference.modelResponse) as AgentDecision;
   } catch {
-    return { status: "skipped", reason: `invalid JSON from LLM: ${inference.content.slice(0, 120)}` };
+    return { status: "skipped", reason: `invalid JSON from LLM: ${inference.modelResponse.slice(0, 120)}` };
   }
   const validationError = validateDecision(decision);
   if (validationError) return { status: "skipped", reason: validationError };
@@ -367,7 +367,7 @@ export async function executeOneIterationForVault(
       intent,
       intentHash,
       responseHash: inference.responseHash,
-      modelResponse: inference.content,
+      modelResponse: inference.modelResponse,
       signedResponse: inference.signedResponse,
       teeSignature: inference.teeSignature,
       teeSigner: inference.teeSignerAddress,

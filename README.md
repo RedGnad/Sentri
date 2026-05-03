@@ -75,7 +75,7 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     MultiVault.t.sol              10 integration tests (5 vaults across 3 owners)
     AgentINFT.t.sol               12 tests (mint, revoke, O(k) gas scaling)
     SentriPair.t.sol              8 tests (swap, K invariant, slippage)
-                                  Total: 71 unit + integration tests, 0 failing
+                                  Total: 81 unit + integration tests, 0 failing
 
 packages/sdk/                    TypeScript multi-vault agent runtime
   src/
@@ -91,7 +91,7 @@ packages/sdk/                    TypeScript multi-vault agent runtime
     storage.ts                    0G Storage KV writers, namespaced per vault address.
                                   Local cache mirror at /tmp/sentri-cache/vaults/{addr}/
     inference.ts                  0G Sealed Inference client with TEE attestation
-    market.ts                     ETH/USD oracle (Binance / CoinGecko fallback)
+    market.ts                     ETH/USD median oracle (Binance, CoinGecko, Coinbase, Kraken)
     setup-broker.ts               One-shot 0G compute broker registration + ledger creation
     cli.ts                        Standalone CLI loop entry (`pnpm agent`)
 

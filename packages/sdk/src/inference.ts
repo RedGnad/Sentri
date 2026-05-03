@@ -10,7 +10,7 @@ const { createZGComputeNetworkBroker } = require(
 ) as typeof import("@0glabs/0g-serving-broker");
 
 export interface InferenceResult {
-  content: string;
+  modelResponse: string;
   signedResponse: string;
   teeSignature: string;
   responseHash: string;
@@ -214,7 +214,7 @@ export async function requestInference(
   })));
 
   return {
-    content,
+    modelResponse: content,
     signedResponse: signaturePayload.text,
     teeSignature: signaturePayload.signature,
     responseHash,
