@@ -172,6 +172,34 @@ Verified 0G mainnet real-asset defaults:
 
 ## Deployed addresses
 
+### 0G Mainnet
+
+Contracts live on **0G Mainnet** (chain ID `16661`). Real-asset deployment using `USDC.E` / `W0G` and Jaine, May 2026.
+
+Deployer / Agent: [`0x981F…20e0`](https://chainscan.0g.ai/address/0x981F6E0Ea94f45fDB8ee7680DC862212E3C720e0)
+
+| Contract | Address |
+|---|---|
+| `VaultFactory` (entry point) | [`0xB23A3C3492B9BA83D80C8abc9A5484d2885f058A`](https://chainscan.0g.ai/address/0xB23A3C3492B9BA83D80C8abc9A5484d2885f058A) |
+| `TreasuryVault` (impl) | [`0x7F1271D43B0E41e2eeDDD5290f459fDc6196a19a`](https://chainscan.0g.ai/address/0x7F1271D43B0E41e2eeDDD5290f459fDc6196a19a) |
+| `AgentINFT` | [`0x91f4957Df00157dF07827737AF9ABed6E7161424`](https://chainscan.0g.ai/address/0x91f4957Df00157dF07827737AF9ABed6E7161424) |
+| `JaineV3PoolAdapter` | [`0xBD43B08086917AdA580f04DB33A815f6cBb6DeAd`](https://chainscan.0g.ai/address/0xBD43B08086917AdA580f04DB33A815f6cBb6DeAd) |
+| Jaine `USDC.E/W0G` pool | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
+| `SentriPriceFeed` | [`0x185C234FfA92dACd82eB5fAc98D0Ad2988b64074`](https://chainscan.0g.ai/address/0x185C234FfA92dACd82eB5fAc98D0Ad2988b64074) |
+| `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
+| `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
+| Demo vault (Balanced preset, deployer-owned) | [`0x250db285C461c42D672d5cEde6b66bA21Bbc07b1`](https://chainscan.0g.ai/address/0x250db285C461c42D672d5cEde6b66bA21Bbc07b1) |
+
+Live mainnet proof:
+
+- `VaultFactory.vaultsCount()` returns `1`.
+- `VaultFactory.allVaults(0)` returns the demo vault above.
+- Demo vault owner is `0x981F6E0Ea94f45fDB8ee7680DC862212E3C720e0`.
+- `SentriPriceFeed.keepers(agent)` returns `true`.
+- Initial `W0G/USDC.E` price pushed on-chain; see the `SentriPriceFeed` explorer activity above.
+
+### 0G Galileo
+
 All contracts live on **0G Galileo Testnet** (chain ID `16602`). Replay-protected multi-tenant deployment, May 2026.
 
 Deployer / Agent: [`0x7531…dbd8`](https://chainscan-galileo.0g.ai/address/0x7531d467f19d1055accf6b0d22286184f87adbd8)

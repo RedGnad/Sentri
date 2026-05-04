@@ -40,20 +40,45 @@ export const STORAGE = {
   submitFeeWei: BigInt(process.env.STORAGE_SUBMIT_FEE_WEI ?? selectedNetwork.storageSubmitFeeWei),
 } as const;
 
-// Contract addresses — replay-protected multi-tenant deployment on Galileo (May 2026).
-// The VaultFactory is the public entry point; users create vaults via it.
-// All other addresses are immutable dependencies the factory wires into each
-// new clone.
+const GALILEO_CONTRACTS = {
+  vaultFactory: "0x3DBc323A0540EB104df2C73f30a12CE2881a98aa",
+  vaultImplementation: "0xf4bE6A5ead857F5927490418F2903F8Cc88533d6",
+  agentINFT: "0x1181A8670d5CA9597D60fEf2A571a14C58F33020",
+  swapRouter: "0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C",
+  swapPair: "0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f",
+  priceFeed: "0x0e75243d34E904Ab925064c8297b36484Ce2aB5E",
+  mockUSDC: "0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3",
+  mockWETH: "0x246e6080D736A217C151C3b88890C08e2C249d5E",
+  demoVault: "0xB6539EC33a360726ac7E8f053327022AC891E86D",
+} as const;
+
+const MAINNET_CONTRACTS = {
+  vaultFactory: "0xB23A3C3492B9BA83D80C8abc9A5484d2885f058A",
+  vaultImplementation: "0x7F1271D43B0E41e2eeDDD5290f459fDc6196a19a",
+  agentINFT: "0x91f4957Df00157dF07827737AF9ABed6E7161424",
+  swapRouter: "0xBD43B08086917AdA580f04DB33A815f6cBb6DeAd",
+  swapPair: "0xa9e824Eddb9677fB2189AB9c439238A83695C091",
+  priceFeed: "0x185C234FfA92dACd82eB5fAc98D0Ad2988b64074",
+  mockUSDC: "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E",
+  mockWETH: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c",
+  demoVault: "0x250db285C461c42D672d5cEde6b66bA21Bbc07b1",
+} as const;
+
+const selectedContracts = NETWORK === "mainnet" ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
+
+// Contract addresses. The VaultFactory is the public entry point; users create
+// vaults via it. All other addresses are immutable dependencies the factory
+// wires into each new clone.
 export const CONTRACTS = {
-  vaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS ?? "0x3DBc323A0540EB104df2C73f30a12CE2881a98aa",
-  vaultImplementation: process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS ?? "0xf4bE6A5ead857F5927490418F2903F8Cc88533d6",
-  agentINFT: process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS ?? "0x1181A8670d5CA9597D60fEf2A571a14C58F33020",
-  swapRouter: process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS ?? "0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C",
-  swapPair: process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS ?? "0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f",
-  priceFeed: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS ?? "0x0e75243d34E904Ab925064c8297b36484Ce2aB5E",
-  mockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ?? "0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3",
-  mockWETH: process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS ?? "0x246e6080D736A217C151C3b88890C08e2C249d5E",
-  demoVault: process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS ?? "0xB6539EC33a360726ac7E8f053327022AC891E86D",
+  vaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS ?? selectedContracts.vaultFactory,
+  vaultImplementation: process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS ?? selectedContracts.vaultImplementation,
+  agentINFT: process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS ?? selectedContracts.agentINFT,
+  swapRouter: process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS ?? selectedContracts.swapRouter,
+  swapPair: process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS ?? selectedContracts.swapPair,
+  priceFeed: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS ?? selectedContracts.priceFeed,
+  mockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ?? selectedContracts.mockUSDC,
+  mockWETH: process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS ?? selectedContracts.mockWETH,
+  demoVault: process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS ?? selectedContracts.demoVault,
 } as const;
 
 // Agent loop timing
