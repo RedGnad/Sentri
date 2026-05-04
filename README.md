@@ -262,7 +262,7 @@ Use a fresh mainnet key. Do not reuse a testnet/demo key.
 
 ```bash
 cd contracts
-cp .env.example .env                             # fill PRIVATE_KEY + AGENT_ADDRESS + TEE_SIGNER_ADDRESS
+cp .env.example .env                             # fill PRIVATE_KEY_MAINNET + AGENT_ADDRESS_MAINNET + TEE_SIGNER_ADDRESS
 forge build
 forge script script/DeployMainnetReal.s.sol --rpc-url https://evmrpc.0g.ai --broadcast
 ```

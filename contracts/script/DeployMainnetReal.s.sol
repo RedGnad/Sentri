@@ -23,8 +23,8 @@ contract DeployMainnetReal is Script {
     address internal constant DEFAULT_JAINE_USDCE_W0G_POOL = 0xa9e824Eddb9677fB2189AB9c439238A83695C091;
 
     function run() external {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        address agent = vm.envAddress("AGENT_ADDRESS");
+        uint256 deployerKey = vm.envUint("PRIVATE_KEY_MAINNET");
+        address agent = vm.envAddress("AGENT_ADDRESS_MAINNET");
         address teeSigner = vm.envAddress("TEE_SIGNER_ADDRESS");
 
         address base = vm.envOr("ZERO_G_MAINNET_USDCE_ADDRESS", DEFAULT_USDCE);
