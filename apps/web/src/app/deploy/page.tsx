@@ -213,7 +213,7 @@ function PresetStep({ tier, setTier, onNext }: { tier: number; setTier: (t: numb
         })}
       </div>
       <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
-        Custom policies (with bounded ranges) are supported on-chain and will land in the wizard in v1.1.
+        Owner policy can be updated after deployment from the vault policy screen.
       </p>
       <div className="flex justify-end">
         <Button onClick={onNext}>Continue → Deposit</Button>

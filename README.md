@@ -388,20 +388,11 @@ The TEE story is now split honestly: 0G response verification and provider attes
 ## What is intentionally out of scope
 
 - **Active trading / perp strategies.** Sentri rebalances and risk-manages — it does not chase short-term alpha. The interesting privacy story is *which constraints the agent enforces in private*, not *which trades it places*.
-- **Multiple risk assets.** v1 supports one base stable asset and one risk asset only. Multi-asset (WBTC, etc.) is a v2 conversation.
+- **Multiple risk assets.** Sentri supports one base stable asset and one risk asset per vault.
 - **Multi-chain.** v1 targets 0G mainnet for review and Galileo for rehearsal. Cross-chain coordination is out of scope.
 - **Agent marketplace / operator competition.** Single shared agent (us). Aegis Vault occupies that lane; we differentiate on focus.
 - **Persistent memory across iterations.** Stateless by design — auditability first.
-- **Smart contract audit.** Slither static analysis runs on every PR; a formal third-party audit is roadmapped pre-mainnet.
-
----
-
-## Roadmap
-
-- **v1 (now)**: Galileo rehearsal plus 0G mainnet review deployment. Multi-tenant factory, presets, in-app deploy wizard, per-vault audit.
-- **v1.1**: Custom policy in the deploy wizard UI. Subgraph for aggregate analytics. Persistent KV cache (Upstash) so the agent server's audit cache survives redeploys.
-- **v2**: Mainnet deployment. Multi-asset support. ERC-4626 vault shares for multi-LP support per vault. Operator pool with bonded stake (optional).
-- **v3**: Cross-chain (Arbitrum first). Insurance pool. Formal audit.
+- **Formal audit.** Contracts are covered by focused Foundry tests and static review, but have not undergone a third-party audit.
 
 ---
 

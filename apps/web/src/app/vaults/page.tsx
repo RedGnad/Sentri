@@ -58,7 +58,7 @@ export default function VaultsPage() {
           </div>
           {total > vaults.length && (
             <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint text-center">
-              Showing first {vaults.length} of {total} · pagination beyond {PAGE_SIZE} planned for v2
+              Showing first {vaults.length} of {total}
             </p>
           )}
         </>
