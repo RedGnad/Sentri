@@ -26,31 +26,55 @@ const PRINCIPLES = [
   },
 ];
 
-const MECHANISM = [
-  { id: "01", label: "User deploys vault", detail: "Pick a preset (Conservative / Balanced / Aggressive) or custom" },
-  { id: "02", label: "User seeds base asset", detail: "Atomic create + deposit in one TX" },
-  { id: "03", label: "Agent discovers", detail: "Reads VaultFactory.allVaults() each cycle" },
-  { id: "04", label: "Push price on-chain", detail: "Agent is sole keeper of SentriPriceFeed" },
-  { id: "05", label: "Sealed inference", detail: "TEE analyzes per-vault state · returns decision" },
-  { id: "06", label: "Policy check", detail: "Per-vault on-chain enforcement" },
-  { id: "07", label: "Execute", detail: "Real swap routed through SentriPair AMM" },
-  { id: "08", label: "Audit log", detail: "On-chain event + per-vault entry on 0G Storage" },
-  { id: "09", label: "Kill-switch", detail: "Owner can halt and drain at any time" },
-];
+function networkLabel(chainId: number): string {
+  return chainId === 16661 ? "0G Mainnet" : "0G Galileo";
+}
 
-const STACK_ROWS = [
-  { layer: "Settlement", component: "TreasuryVault.sol", purpose: "Per-user clone (EIP-1167) with funds + policy + audit log" },
-  { layer: "Factory", component: "VaultFactory.sol", purpose: "Deploys vault clones · presets + custom policy" },
-  { layer: "Identity", component: "AgentINFT.sol", purpose: "Enclave measurement + revocation (shared)" },
-  { layer: "Execution", component: "SentriSwapRouter", purpose: "Uniswap v2 router, 0.3% fee" },
-  { layer: "Liquidity", component: "SentriPair", purpose: "Galileo AMM (MockUSDC/MockWETH)" },
-  { layer: "Oracle", component: "SentriPriceFeed", purpose: "AggregatorV3 pushed by agent" },
-  { layer: "Inference", component: "0G Sealed Inference", purpose: "Private strategy in TEE" },
-  { layer: "Storage", component: "0G Storage KV", purpose: "Per-vault audit entries + portfolio state" },
-];
+function executionVenue(chainId: number): string {
+  return chainId === 16661 ? "Jaine USDC.E/W0G pool via adapter" : "SentriPair mock AMM";
+}
+
+function stackRows(chainId: number) {
+  const isMainnet = chainId === 16661;
+  return [
+    { layer: "Settlement", component: "TreasuryVault.sol", purpose: "Per-user clone (EIP-1167) with funds + policy + audit log" },
+    { layer: "Factory", component: "VaultFactory.sol", purpose: "Deploys vault clones · presets + custom policy" },
+    { layer: "Identity", component: "AgentINFT.sol", purpose: "Enclave measurement + revocation (shared)" },
+    {
+      layer: "Execution",
+      component: isMainnet ? "JaineV3PoolAdapter" : "SentriSwapRouter",
+      purpose: isMainnet ? "Mainnet adapter for Jaine USDC.E/W0G" : "Uniswap v2 router, 0.3% fee",
+    },
+    {
+      layer: "Liquidity",
+      component: isMainnet ? "Jaine USDC.E/W0G" : "SentriPair",
+      purpose: isMainnet ? "Real 0G mainnet pool" : "Galileo AMM (MockUSDC/MockWETH)",
+    },
+    { layer: "Oracle", component: "SentriPriceFeed", purpose: "AggregatorV3 pushed by agent" },
+    { layer: "Inference", component: "0G Sealed Inference", purpose: "Private strategy in TEE" },
+    { layer: "Storage", component: "0G Storage KV", purpose: "Per-vault audit entries + portfolio state" },
+  ];
+}
+
+function mechanism(chainId: number) {
+  return [
+    { id: "01", label: "User deploys vault", detail: "Pick a preset (Conservative / Balanced / Aggressive) or custom" },
+    { id: "02", label: "User seeds base asset", detail: "Atomic create + deposit in one TX" },
+    { id: "03", label: "Agent discovers", detail: "Reads VaultFactory.allVaults() each cycle" },
+    { id: "04", label: "Push price on-chain", detail: "Agent is sole keeper of SentriPriceFeed" },
+    { id: "05", label: "Sealed inference", detail: "TEE analyzes per-vault state · returns decision" },
+    { id: "06", label: "Policy check", detail: "Per-vault on-chain enforcement" },
+    { id: "07", label: "Execute", detail: `Real swap routed through ${executionVenue(chainId)}` },
+    { id: "08", label: "Audit log", detail: "On-chain event + per-vault entry on 0G Storage" },
+    { id: "09", label: "Kill-switch", detail: "Owner can halt and drain at any time" },
+  ];
+}
 
 export default async function LandingPage() {
   const snapshot = await getLiveSnapshot();
+  const chainLabel = networkLabel(snapshot.chain.id);
+  const mechanismRows = mechanism(snapshot.chain.id);
+  const stack = stackRows(snapshot.chain.id);
 
   return (
     <div className="relative">
@@ -58,7 +82,7 @@ export default async function LandingPage() {
       <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-kicker text-ink-faint pb-6 border-b border-hairline">
         <span>Sentri · Verifiable Treasury Infrastructure</span>
         <span className="hidden sm:inline">0G APAC Hackathon 2026 · Track II · Verifiable Finance</span>
-        <span>Galileo {snapshot.chain.id}</span>
+        <span>{chainLabel} · {snapshot.chain.id}</span>
       </div>
 
       {/* Hero */}
@@ -141,7 +165,7 @@ export default async function LandingPage() {
           </span>
         </div>
         <ol className="divide-y divide-hairline">
-          {MECHANISM.map((step) => (
+          {mechanismRows.map((step) => (
             <li
               key={step.id}
               className="grid grid-cols-[60px_1fr_auto] items-center gap-6 px-5 h-14 hover:bg-bg-elev/40 transition-colors group"
@@ -167,7 +191,7 @@ export default async function LandingPage() {
           <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint hidden sm:inline">Purpose</span>
         </div>
         <ul className="divide-y divide-hairline">
-          {STACK_ROWS.map((row) => (
+          {stack.map((row) => (
             <li
               key={row.layer}
               className="grid grid-cols-[1fr_1.2fr_2fr] items-center px-5 h-12 hover:bg-bg-elev/40 transition-colors"
@@ -260,12 +284,13 @@ function agentState(snapshot: LiveSnapshot): "ok" | "warn" | "off" {
 function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
   const c = chainState(snapshot);
   const a = agentState(snapshot);
+  const chainLabel = networkLabel(snapshot.chain.id);
 
   const rows = [
     {
       key: "Chain",
       value: snapshot.chain.rpcOk
-        ? `Galileo · #${snapshot.chain.blockNumber} · ${snapshot.chain.blockAgeSec}s`
+        ? `${chainLabel} · #${snapshot.chain.blockNumber} · ${snapshot.chain.blockAgeSec}s`
         : "RPC unreachable",
       state: c,
     },
@@ -356,6 +381,7 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
 }
 
 function FooterStatus({ snapshot }: { snapshot: LiveSnapshot }) {
+  const chainLabel = networkLabel(snapshot.chain.id);
   const overall =
     snapshot.chain.rpcOk && snapshot.protocol.vaultsCount !== null
       ? snapshot.agent.ok
@@ -366,7 +392,7 @@ function FooterStatus({ snapshot }: { snapshot: LiveSnapshot }) {
   return (
     <span className="flex items-center gap-1.5">
       <span className={`inline-block w-1 h-1 rounded-full ${dotClass(overall)}`} />
-      {label} · Galileo {snapshot.chain.id}
+      {label} · {chainLabel} {snapshot.chain.id}
     </span>
   );
 }

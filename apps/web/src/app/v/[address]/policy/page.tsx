@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useParsedVaultData, useSetPolicy } from "@/hooks/use-vault";
 import { bpsToPercent } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RISK_SYMBOL } from "@/config/contracts";
 
 export default function VaultPolicyPage() {
   const params = useParams<{ address: string }>();
@@ -74,7 +75,7 @@ export default function VaultPolicyPage() {
             </span>
           </header>
           <ul className="divide-y divide-hairline">
-            <PolicyRow label="Max WETH exposure" value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} hint="Post-trade share of TVL" />
+            <PolicyRow label={`Max ${RISK_SYMBOL} exposure`} value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} hint="Post-trade share of TVL" />
             <PolicyRow label="Max drawdown from HWM" value={`${bpsToPercent(vault.policy.maxDrawdownBps)} %`} hint="Strategy frozen above this" />
             <PolicyRow label="Rebalance threshold" value={`${bpsToPercent(vault.policy.rebalanceThresholdBps)} %`} hint="Min deviation to act" />
             <PolicyRow label="Max slippage" value={`${bpsToPercent(vault.policy.maxSlippageBps)} %`} hint="Per swap, vs oracle" />
@@ -92,7 +93,7 @@ export default function VaultPolicyPage() {
           </span>
         </header>
         <form onSubmit={handleSubmit} className="px-5 py-5 space-y-5">
-          <FormField label="Max WETH exposure" unit="%" value={maxAllocation} onChange={setMaxAllocation} disabled={!isOwner} step="0.1" min="0.1" max="50" />
+          <FormField label={`Max ${RISK_SYMBOL} exposure`} unit="%" value={maxAllocation} onChange={setMaxAllocation} disabled={!isOwner} step="0.1" min="0.1" max="50" />
           <FormField label="Max drawdown from HWM" unit="%" value={maxDrawdown} onChange={setMaxDrawdown} disabled={!isOwner} step="0.1" min="0.1" max="20" />
           <FormField label="Rebalance threshold" unit="%" value={rebalanceThreshold} onChange={setRebalanceThreshold} disabled={!isOwner} step="0.1" min="0" max="50" />
           <FormField label="Max slippage" unit="%" value={maxSlippage} onChange={setMaxSlippage} disabled={!isOwner} step="0.1" min="0.1" max="5" />

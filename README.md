@@ -118,7 +118,7 @@ Every 5 minutes the agent:
 2. **Discover vaults** — call `factory.allVaults()` to pick up any newly-created vaults this cycle.
 3. **For each vault** (with per-vault failure isolation):
    - Read state (balances, HWM, policy, execution count).
-   - Build a prompt with **deterministically pre-computed metrics** (WETH share, deviation from target, drawdown). The LLM never does float math — it pattern-matches against the rule branches in its system prompt.
+   - Build a prompt with **deterministically pre-computed metrics** (risk-asset share, deviation from target, drawdown). The LLM never does float math — it pattern-matches against the rule branches in its system prompt.
    - **Sealed Inference**: send to a verifiable TEE provider, require `processResponse(...) === true`, fetch the chat signature, and recover the TEE signer.
    - **Size + execute**: build a canonical `ExecutionIntent`, pass `intentHash`, provider signed chat payload, TEE signature, and attestation hash to `vault.executeStrategy(...)`. Skips emit a structured outcome and continue to next vault.
    - **Audit + state** to 0G Storage, namespaced by vault address. Audit keys include vault + tx hash + log index + intent hash so entries do not collide.
@@ -127,13 +127,13 @@ Every 5 minutes the agent:
 
 System prompt is a deterministic decision tree, applied in order:
 
-1. 24h change ≤ −3% **or** drawdown ≥ 1.5% → EmergencyDeleverage all WETH back to the base stable asset.
-2. WETH share > 30% → EmergencyDeleverage trim back toward 25% target.
-3. 20% ≤ WETH share ≤ 30% → hold (no action).
-4. WETH share < 20% **and** 24h ≥ +1% **and** drawdown < 1% → deploy base stable asset toward 25% target.
+1. 24h change ≤ −3% **or** drawdown ≥ 1.5% → EmergencyDeleverage all risk exposure back to the base stable asset.
+2. Risk-asset share > 30% → EmergencyDeleverage trim back toward 25% target.
+3. 20% ≤ risk-asset share ≤ 30% → hold (no action).
+4. Risk-asset share < 20% **and** 24h ≥ +1% **and** drawdown < 1% → deploy base stable asset toward 25% target.
 5. Otherwise → hold (cautious default).
 
-Default state is 100% base stable asset. Maximum WETH exposure is 30% of TVL by default — never exceeded by the vault. Each vault's on-chain `policy` independently caps post-trade WETH exposure (15% / 30% / 50% depending on preset).
+Default state is 100% base stable asset. Maximum risk-asset exposure is 30% of TVL by default — never exceeded by the vault. Each vault's on-chain `policy` independently caps post-trade risk exposure (15% / 30% / 50% depending on preset).
 
 ---
 
@@ -321,7 +321,7 @@ Output: **81 tests passing across 5 suites** (TreasuryVault: 27, AgentINFT: 12, 
 
 Notable coverage:
 - Init pattern guard (impl disabled, double-init revert, zero-address)
-- Per-vault policy enforcement (cooldown, post-trade WETH exposure, drawdown, slippage, stale price)
+- Per-vault policy enforcement (cooldown, post-trade risk exposure, drawdown, slippage, stale price)
 - Cross-vault isolation (one vault's pause doesn't affect others; one owner can't touch another's vault; shared INFT revocation freezes all vaults at once)
 - HWM proportional scaling on withdraw (a withdrawal shrinks the vault but does not register as strategy drawdown)
 - AMM K-invariant on swaps both directions
@@ -355,7 +355,7 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 - **TEE signer signature over the chat payload** — the vault verifies the EIP-191 signature over the provider signed payload before swapping.
 - **Intent freshness and replay protection** — each execution includes a deadline checked on-chain, and both the `intentHash` and signed `responseHash` are single-use.
 - **Cooldown elapsed** — `block.timestamp ≥ lastExecutionTime + cooldownPeriod`.
-- **Post-trade WETH exposure within policy** — risk-on actions revert if WETH value after the swap exceeds `maxAllocationBps` of TVL. Emergency deleverage is never blocked by the exposure cap.
+- **Post-trade risk exposure within policy** — risk-on actions revert if risk-asset value after the swap exceeds `maxAllocationBps` of TVL. Emergency deleverage is never blocked by the exposure cap.
 - **Drawdown within policy** — post-trade TVL must remain within `maxDrawdownBps` of the high-water mark.
 - **Oracle price is fresh** — `block.timestamp - oracleUpdatedAt ≤ maxPriceStaleness`.
 - **Swap respects oracle slippage bound** — `minOut = expected × (1 − maxSlippageBps)`. Router reverts otherwise.
@@ -366,7 +366,7 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 
 - **The full TEE attestation report is NOT cryptographically verified on-chain.** The agent verifies the 0G response off-chain with `broker.inference.processResponse(provider, chatID, content)` and the vault verifies the TEE signer signature over the provider signed chat payload on-chain. The on-chain check proves the payload came from the INFT-bound TEE signer; the broader provider attestation and service verification remain off-chain and auditable.
 - **The contract does not parse the model JSON response.** The vault verifies the TEE signer, deadline, and single-use hashes on-chain, then stores the intent/response hashes for audit. The enriched audit page binds the verified model response, signed chat payload, reconstructed execution intent, transaction hash, and 0G Storage proof for human verification.
-- **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed WETH exposure, drawdown, slippage, or cooldown.
+- **The off-chain decision is taken by the agent**, not by the contract. The contract enforces bounds; it does not compute the strategy. A malicious agent inside the bounded envelope can still pick the worst-of-allowed-actions, but it cannot exceed risk exposure, drawdown, slippage, or cooldown.
 - **The market price comes from centralised exchanges** (Binance, CoinGecko, Coinbase, Kraken — median of 4 sources, 2-of-4 quorum required). This is more robust than a single source but it is not a fully decentralised oracle. A coordinated manipulation across all four CEX feeds would be required to push a bad price.
 - **The Galileo swap routes through `SentriPair`**, an in-protocol AMM seeded with `MockUSDC`/`MockWETH` for testnet reproducibility. The 0G mainnet target is a real route using `USDC.E` / bridged USDC and `W0G` on Jaine or an equivalent verified venue.
 
@@ -374,7 +374,7 @@ We don't oversell what's verified on-chain vs off-chain. Here's the honest map.
 
 A vault owner can reason about Sentri's safety along **two independent dimensions**:
 
-1. **Bound** — what's the worst the agent can do within policy? This is fully on-chain and tight: bounded post-trade WETH exposure, bounded drawdown from peak, bounded slippage per swap, bounded cadence (cooldown). The owner sets the bounds at vault creation and can update them; the agent cannot.
+1. **Bound** — what's the worst the agent can do within policy? This is fully on-chain and tight: bounded post-trade risk exposure, bounded drawdown from peak, bounded slippage per swap, bounded cadence (cooldown). The owner sets the bounds at vault creation and can update them; the agent cannot.
 2. **Recourse** — what happens if something goes wrong? `pause()` blocks all activity reversibly; `emergencyWithdraw()` returns 100% of base + risk assets to the owner irreversibly; `emergencyDeleverageAndWithdraw(minBaseOut)` attempts to swap all risk exposure to the base stable asset first and reverts if the slippage guard cannot be met. All are owner-only and not gated by the agent or the price feed.
 
 The TEE story is now split honestly: 0G response verification and provider attestation happen off-chain in the agent, while the vault checks the recovered TEE signer signature on-chain, rejects expired/replayed intents, and commits the intent hash for audit replay.

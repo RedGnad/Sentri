@@ -73,22 +73,22 @@ export const PRESET_LABELS: Record<number, { name: PresetTierName; description: 
   0: {
     name: "Conservative",
     description: "Foundation-grade. Capital preservation first.",
-    bullets: ["15% max WETH exposure", "2% drawdown freeze", "0.5% slippage cap", "10 min cooldown"],
+    bullets: ["15% max risk exposure", "2% drawdown freeze", "0.5% slippage cap", "10 min cooldown"],
   },
   1: {
     name: "Balanced",
     description: "Standard DAO treasury. Productive but bounded.",
-    bullets: ["30% max WETH exposure", "5% drawdown freeze", "1% slippage cap", "5 min cooldown"],
+    bullets: ["30% max risk exposure", "5% drawdown freeze", "1% slippage cap", "5 min cooldown"],
   },
   2: {
     name: "Aggressive",
     description: "Protocol with appetite for productive risk.",
-    bullets: ["50% max WETH exposure", "10% drawdown freeze", "2% slippage cap", "3 min cooldown"],
+    bullets: ["50% max risk exposure", "10% drawdown freeze", "2% slippage cap", "3 min cooldown"],
   },
   3: {
     name: "Custom",
     description: "Set your own bounded parameters.",
-    bullets: ["≤ 50% WETH exposure", "≤ 20% drawdown", "≤ 5% slippage", "≥ 60s cooldown"],
+    bullets: ["≤ 50% risk exposure", "≤ 20% drawdown", "≤ 5% slippage", "≥ 60s cooldown"],
   },
 };
 
