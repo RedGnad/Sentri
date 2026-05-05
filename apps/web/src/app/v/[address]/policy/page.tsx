@@ -79,7 +79,7 @@ export default function VaultPolicyPage() {
             <PolicyRow label="Max drawdown from HWM" value={`${bpsToPercent(vault.policy.maxDrawdownBps)} %`} hint="Strategy frozen above this" />
             <PolicyRow label="Rebalance threshold" value={`${bpsToPercent(vault.policy.rebalanceThresholdBps)} %`} hint="Min deviation to act" />
             <PolicyRow label="Max slippage" value={`${bpsToPercent(vault.policy.maxSlippageBps)} %`} hint="Per swap, vs oracle" />
-            <PolicyRow label="Cooldown period" value={`${vault.policy.cooldownPeriod} s`} hint="Min seconds between executions" />
+            <PolicyRow label="Min action spacing" value={`${vault.policy.cooldownPeriod} s`} hint="Vault-level cadence guard" />
             <PolicyRow label="Max price staleness" value={`${vault.policy.maxPriceStaleness} s`} hint="Oracle freshness window" />
           </ul>
         </section>
@@ -97,7 +97,7 @@ export default function VaultPolicyPage() {
           <FormField label="Max drawdown from HWM" unit="%" value={maxDrawdown} onChange={setMaxDrawdown} disabled={!isOwner} step="0.1" min="0.1" max="20" />
           <FormField label="Rebalance threshold" unit="%" value={rebalanceThreshold} onChange={setRebalanceThreshold} disabled={!isOwner} step="0.1" min="0" max="50" />
           <FormField label="Max slippage" unit="%" value={maxSlippage} onChange={setMaxSlippage} disabled={!isOwner} step="0.1" min="0.1" max="5" />
-          <FormField label="Cooldown period" unit="s" value={cooldownPeriod} onChange={setCooldownPeriod} disabled={!isOwner} min="60" />
+          <FormField label="Min action spacing" unit="s" value={cooldownPeriod} onChange={setCooldownPeriod} disabled={!isOwner} min="60" />
           <FormField label="Max price staleness" unit="s" value={maxPriceStaleness} onChange={setMaxPriceStaleness} disabled={!isOwner} min="30" max="600" />
           <Button type="submit" className="w-full" disabled={!isOwner || isPending || isConfirming}>
             {isPending ? "Confirm in wallet..." : isConfirming ? "Waiting for TX..." : "Commit Policy → Chain"}

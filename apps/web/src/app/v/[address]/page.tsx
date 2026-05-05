@@ -125,7 +125,7 @@ export default function VaultOverviewPage() {
               <>
                 <DataRow label={`Max ${RISK_SYMBOL} exposure`} value={`${bpsToPercent(vault.policy.maxAllocationBps)} %`} accent />
                 <DataRow label="Max drawdown" value={`${bpsToPercent(vault.policy.maxDrawdownBps)} %`} accent />
-                <DataRow label="Cooldown" value={`${vault.policy.cooldownPeriod} s`} accent />
+                <DataRow label="Min action spacing" value={`${vault.policy.cooldownPeriod} s`} accent />
               </>
             )}
           </ul>

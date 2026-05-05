@@ -63,79 +63,89 @@ async function probeChainAndProtocol(): Promise<{
     totalExecutions: null,
   };
 
-  if (!VAULT_FACTORY_ADDRESS || VAULT_FACTORY_ADDRESS === "0x") {
-    return { chain: baseChain, protocol: baseProtocol };
-  }
-
   try {
     const client = createPublicClient({
       transport: http(RPC_URL, { timeout: 5_000, retryCount: 0 }),
     });
 
-    const [block, count] = await Promise.all([
-      client.getBlock({ blockTag: "latest" }),
-      client.readContract({
+    const block = await client.getBlock({ blockTag: "latest" });
+    const blockTimestamp = Number(block.timestamp);
+    const blockAgeSec = Math.max(0, Math.floor(Date.now() / 1000 - blockTimestamp));
+    const chain = {
+      id: CHAIN_ID,
+      blockNumber: Number(block.number),
+      blockAgeSec,
+      rpcOk: true,
+    };
+
+    if (!VAULT_FACTORY_ADDRESS || VAULT_FACTORY_ADDRESS === "0x") {
+      return { chain, protocol: baseProtocol };
+    }
+
+    try {
+      const count = (await client.readContract({
         address: VAULT_FACTORY_ADDRESS,
         abi: VAULT_FACTORY_ABI,
         functionName: "vaultsCount",
-      }) as Promise<bigint>,
-    ]);
+      })) as bigint;
 
-    const blockTimestamp = Number(block.timestamp);
-    const blockAgeSec = Math.max(0, Math.floor(Date.now() / 1000 - blockTimestamp));
+      const vaultsCount = Number(count);
 
-    const vaultsCount = Number(count);
+      // Aggregate TVL + executions across all vaults (capped at 50 for sanity).
+      let totalTVL = 0n;
+      let totalExecutions = 0;
+      let successfulTvlReads = 0;
+      if (vaultsCount > 0) {
+        const limit = Math.min(vaultsCount, 50);
+        const addrs = (await client.readContract({
+          address: VAULT_FACTORY_ADDRESS,
+          abi: VAULT_FACTORY_ABI,
+          functionName: "vaultsPage",
+          args: [0n, BigInt(limit)],
+        })) as readonly `0x${string}`[];
 
-    // Aggregate TVL + executions across all vaults (capped at 50 for sanity).
-    let totalTVL = 0n;
-    let totalExecutions = 0;
-    if (vaultsCount > 0) {
-      const limit = Math.min(vaultsCount, 50);
-      const addrs = (await client.readContract({
-        address: VAULT_FACTORY_ADDRESS,
-        abi: VAULT_FACTORY_ABI,
-        functionName: "vaultsPage",
-        args: [0n, BigInt(limit)],
-      })) as readonly `0x${string}`[];
-
-      const tvlReads = addrs.map((addr) =>
-        client.readContract({
-          address: addr,
-          abi: TREASURY_VAULT_ABI,
-          functionName: "totalValue",
-        }) as Promise<bigint>,
-      );
-      const logReads = addrs.map((addr) =>
-        client.readContract({
-          address: addr,
-          abi: TREASURY_VAULT_ABI,
-          functionName: "executionLogCount",
-        }) as Promise<bigint>,
-      );
-      const tvlResults = await Promise.allSettled(tvlReads);
-      const logResults = await Promise.allSettled(logReads);
-      for (const r of tvlResults) {
-        if (r.status === "fulfilled") totalTVL += r.value;
+        const tvlReads = addrs.map((addr) =>
+          client.readContract({
+            address: addr,
+            abi: TREASURY_VAULT_ABI,
+            functionName: "totalValue",
+          }) as Promise<bigint>,
+        );
+        const logReads = addrs.map((addr) =>
+          client.readContract({
+            address: addr,
+            abi: TREASURY_VAULT_ABI,
+            functionName: "executionLogCount",
+          }) as Promise<bigint>,
+        );
+        const tvlResults = await Promise.allSettled(tvlReads);
+        const logResults = await Promise.allSettled(logReads);
+        for (const r of tvlResults) {
+          if (r.status === "fulfilled") {
+            successfulTvlReads += 1;
+            totalTVL += r.value;
+          }
+        }
+        for (const r of logResults) {
+          if (r.status === "fulfilled") totalExecutions += Number(r.value);
+        }
       }
-      for (const r of logResults) {
-        if (r.status === "fulfilled") totalExecutions += Number(r.value);
-      }
+
+      return {
+        chain,
+        protocol: {
+          factoryAddress: VAULT_FACTORY_ADDRESS,
+          vaultsCount,
+          totalTVL:
+            vaultsCount === 0 || successfulTvlReads > 0
+              ? (Number(totalTVL) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : null,
+          totalExecutions,
+        },
+      };
+    } catch {
+      return { chain, protocol: baseProtocol };
     }
-
-    return {
-      chain: {
-        id: CHAIN_ID,
-        blockNumber: Number(block.number),
-        blockAgeSec,
-        rpcOk: true,
-      },
-      protocol: {
-        factoryAddress: VAULT_FACTORY_ADDRESS,
-        vaultsCount,
-        totalTVL: (Number(totalTVL) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-        totalExecutions,
-      },
-    };
   } catch {
     return { chain: baseChain, protocol: baseProtocol };
   }
@@ -183,9 +193,15 @@ async function probeAgent(): Promise<LiveSnapshot["agent"]> {
 
 export async function getLiveSnapshot(): Promise<LiveSnapshot> {
   const [{ chain, protocol }, agent] = await Promise.all([probeChainAndProtocol(), probeAgent()]);
+  const protocolWithAgentFallback = {
+    ...protocol,
+    vaultsCount:
+      protocol.vaultsCount ?? (agent.trackedVaultCount !== null ? agent.trackedVaultCount : null),
+  };
+
   return {
     chain,
-    protocol,
+    protocol: protocolWithAgentFallback,
     agent,
     links: {
       explorer: EXPLORER,

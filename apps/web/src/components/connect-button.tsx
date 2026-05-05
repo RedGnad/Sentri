@@ -213,7 +213,7 @@ export function ConnectButton() {
                 }`}
               />
               <span className={wrongNetwork ? "text-alert" : "text-phosphor"}>
-                {wrongNetwork ? "Offline" : "Online"}
+                {wrongNetwork ? "Wrong network" : "Online"}
               </span>
             </span>
           </div>

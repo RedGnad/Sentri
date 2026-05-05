@@ -98,7 +98,7 @@ export default function DeployPage() {
         num="02"
         section="Deploy"
         title="New Vault"
-        subtitle="Four steps · ~30 seconds · two transactions max"
+        subtitle="Preset policy · optional seed deposit · owner-controlled after deployment"
       />
 
       <Stepper current={step} />
@@ -175,8 +175,9 @@ function PresetStep({ tier, setTier, onNext }: { tier: number; setTier: (t: numb
     <div className="space-y-6">
       <h2 className="font-serif text-3xl text-ink">Choose a risk preset</h2>
       <p className="font-serif italic text-base text-ink-dim">
-        Each preset bakes a vetted policy: max {RISK_SYMBOL} exposure, drawdown freeze, slippage cap, cooldown.
-        You can change the policy later as the vault owner.
+        Presets are the fastest safe path: max {RISK_SYMBOL} exposure, drawdown freeze,
+        slippage cap, and minimum action spacing. The vault owner can update these
+        bounds on-chain after deployment.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {tiers.map((t) => {
@@ -213,7 +214,7 @@ function PresetStep({ tier, setTier, onNext }: { tier: number; setTier: (t: numb
         })}
       </div>
       <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
-        Owner policy can be updated after deployment from the vault policy screen.
+        The agent can check often; the vault enforces how often it may actually execute.
       </p>
       <div className="flex justify-end">
         <Button onClick={onNext}>Continue → Deposit</Button>
