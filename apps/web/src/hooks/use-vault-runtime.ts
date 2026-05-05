@@ -88,7 +88,11 @@ export function useVaultAuditDetail(address: `0x${string}` | undefined, timestam
     queryKey: ["vault-audit-detail", address?.toLowerCase(), timestamp],
     queryFn: async () => {
       if (!address || timestamp === null) return null;
-      const res = await fetch(`/api/vault-audit?address=${address}&timestamp=${timestamp}`, { cache: "no-store" });
+      const params = new URLSearchParams({
+        address,
+        timestamp: timestamp.toString(),
+      });
+      const res = await fetch(`/api/vault-audit?${params.toString()}`, { cache: "no-store" });
       if (res.status === 404) return null;
       if (!res.ok) return null;
       return res.json();

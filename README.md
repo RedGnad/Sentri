@@ -34,7 +34,7 @@ A treasury infrastructure where:
 ```
 ┌──────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌──────────────┐
 │ Market data  │ → │ Sealed        │ → │ Per-vault     │ → │ On-chain      │ → │ 0G Storage   │
-│ (ETH/USD)    │   │ Inference TEE │   │ policy check  │   │ swap          │   │ per-vault    │
+│ risk/base    │   │ Inference TEE │   │ policy check  │   │ swap          │   │ per-vault    │
 └──────────────┘   └───────────────┘   └───────────────┘   └───────────────┘   │ audit trail  │
                        private              public              real           └──────────────┘
                                                                                   verifiable
@@ -114,7 +114,7 @@ apps/web/                        Next.js 14 dashboard (App Router, wagmi v2, vie
 
 Every 5 minutes the agent:
 
-1. **Push price on-chain** — fetch ETH/USD spot from Binance, CoinGecko, Coinbase, and Kraken, then push the median to `SentriPriceFeed`. The agent is the sole keeper.
+1. **Push price on-chain** — fetch the risk/base market price, then push the median to `SentriPriceFeed`. Galileo rehearsal uses ETH/USD for MockWETH; 0G mainnet uses W0G/USDC.E through the configured W0G market sources. The agent is the sole keeper.
 2. **Discover vaults** — call `factory.allVaults()` to pick up any newly-created vaults this cycle.
 3. **For each vault** (with per-vault failure isolation):
    - Read state (balances, HWM, policy, execution count).

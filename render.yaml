@@ -1,4 +1,9 @@
 # Render Blueprint for the Sentri multi-vault agent runtime.
+# This default service is the Galileo rehearsal agent used for deterministic
+# full-loop demos. Mainnet review mode uses the same code with Render env
+# overrides (`SENTRI_NETWORK=mainnet`, `MARKET_ASSET=W0G`, USDC.E/W0G/Jaine
+# addresses) so the public rehearsal service is not accidentally pointed at
+# real liquidity.
 # Connect this repo in Render → Blueprints → "New Blueprint Instance".
 # Render auto-creates the service with the config below.
 # Only PRIVATE_KEY is left blank — paste it manually in the Render UI
