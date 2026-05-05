@@ -180,15 +180,15 @@ Deployer / Agent: [`0x981F…20e0`](https://chainscan.0g.ai/address/0x981F6E0Ea9
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0xB23A3C3492B9BA83D80C8abc9A5484d2885f058A`](https://chainscan.0g.ai/address/0xB23A3C3492B9BA83D80C8abc9A5484d2885f058A) |
-| `TreasuryVault` (impl) | [`0x7F1271D43B0E41e2eeDDD5290f459fDc6196a19a`](https://chainscan.0g.ai/address/0x7F1271D43B0E41e2eeDDD5290f459fDc6196a19a) |
-| `AgentINFT` | [`0x91f4957Df00157dF07827737AF9ABed6E7161424`](https://chainscan.0g.ai/address/0x91f4957Df00157dF07827737AF9ABed6E7161424) |
-| `JaineV3PoolAdapter` | [`0xBD43B08086917AdA580f04DB33A815f6cBb6DeAd`](https://chainscan.0g.ai/address/0xBD43B08086917AdA580f04DB33A815f6cBb6DeAd) |
+| `VaultFactory` (entry point) | [`0xF62E401bE84e099CE3F00e3F193960Eb295259D8`](https://chainscan.0g.ai/address/0xF62E401bE84e099CE3F00e3F193960Eb295259D8) |
+| `TreasuryVault` (impl) | [`0x7eCA98adb3EE5Bd11e09Cf4cb04d9ceF4914c7b0`](https://chainscan.0g.ai/address/0x7eCA98adb3EE5Bd11e09Cf4cb04d9ceF4914c7b0) |
+| `AgentINFT` | [`0xb921613c9F71c1B5191F6619e8252CD83Fcc59EC`](https://chainscan.0g.ai/address/0xb921613c9F71c1B5191F6619e8252CD83Fcc59EC) |
+| `JaineV3PoolAdapter` | [`0x4A85187939E56071F05a38633F54CFf8d39c295C`](https://chainscan.0g.ai/address/0x4A85187939E56071F05a38633F54CFf8d39c295C) |
 | Jaine `USDC.E/W0G` pool | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
-| `SentriPriceFeed` | [`0x185C234FfA92dACd82eB5fAc98D0Ad2988b64074`](https://chainscan.0g.ai/address/0x185C234FfA92dACd82eB5fAc98D0Ad2988b64074) |
+| `SentriPriceFeed` | [`0xBe3B15de061BE593086c48268f662Cc4c7001E07`](https://chainscan.0g.ai/address/0xBe3B15de061BE593086c48268f662Cc4c7001E07) |
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
-| Demo vault (Balanced preset, deployer-owned) | [`0x250db285C461c42D672d5cEde6b66bA21Bbc07b1`](https://chainscan.0g.ai/address/0x250db285C461c42D672d5cEde6b66bA21Bbc07b1) |
+| Demo vault (Balanced preset, deployer-owned) | [`0xb503E945a70fD4F7ADDFd0dcd6B2CB0b9a08Ba5f`](https://chainscan.0g.ai/address/0xb503E945a70fD4F7ADDFd0dcd6B2CB0b9a08Ba5f) |
 
 Live mainnet proof:
 
@@ -196,7 +196,10 @@ Live mainnet proof:
 - `VaultFactory.allVaults(0)` returns the demo vault above.
 - Demo vault owner is `0x981F6E0Ea94f45fDB8ee7680DC862212E3C720e0`.
 - `SentriPriceFeed.keepers(agent)` returns `true`.
-- Initial `W0G/USDC.E` price pushed on-chain; see the `SentriPriceFeed` explorer activity above.
+- Autonomous execution tx: [`0x052e16ec8f2538aefb2620c2a3937c5045b34771c718ad5a850c8346d6be3b29`](https://chainscan.0g.ai/tx/0x052e16ec8f2538aefb2620c2a3937c5045b34771c718ad5a850c8346d6be3b29), where the TEE-signed `EmergencyDeleverage` intent swapped W0G into USDC.E through Jaine.
+- Audit entry written to 0G Storage KV: tx `0x43852bb09c4b7d968fbb53b5a16ba68660ea6589bcd753ae2df2b91bd7a66f28`, root `0x81fc80953043345a768acc8bffffaad04aec8a2847e64f391265bc488125d85a`.
+- Portfolio state written to 0G Storage KV: tx `0x8b77615b98bc3eea752d692b113298e486615ac10086b756f0caa33ec3f780b6`, root `0xb4d5613176ea782c3821460b97b1d55258af3dbc9c80b346fc829b239fbc9312`.
+- Post-execution demo vault state: `0.02012 USDC.E + 0.0125 W0G`, `executionLogCount() == 1`.
 
 ### 0G Galileo
 

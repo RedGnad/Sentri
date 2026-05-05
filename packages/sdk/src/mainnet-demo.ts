@@ -14,6 +14,15 @@ process.env.SENTRI_BASE_SYMBOL ??= "USDC.E";
 process.env.SENTRI_RISK_SYMBOL ??= "W0G";
 process.env.NEXT_PUBLIC_BASE_SYMBOL ??= "USDC.E";
 process.env.NEXT_PUBLIC_RISK_SYMBOL ??= "W0G";
+process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS = "0xF62E401bE84e099CE3F00e3F193960Eb295259D8";
+process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS = "0x7eCA98adb3EE5Bd11e09Cf4cb04d9ceF4914c7b0";
+process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS = "0xb921613c9F71c1B5191F6619e8252CD83Fcc59EC";
+process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS = "0x4A85187939E56071F05a38633F54CFf8d39c295C";
+process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS = "0xa9e824Eddb9677fB2189AB9c439238A83695C091";
+process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS = "0xBe3B15de061BE593086c48268f662Cc4c7001E07";
+process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS = "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E";
+process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS = "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c";
+process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS = "0xb503E945a70fD4F7ADDFd0dcd6B2CB0b9a08Ba5f";
 if (process.env.PRIVATE_KEY_MAINNET) {
   process.env.PRIVATE_KEY = process.env.PRIVATE_KEY_MAINNET;
 }
@@ -169,9 +178,7 @@ async function main() {
     try {
       const ledger = await broker.ledger.getLedger();
       console.log("Existing ledger:", ledger);
-      console.log(`Depositing ${amount} OG into compute ledger...`);
-      await broker.ledger.depositFund(amount);
-      console.log("Compute ledger topped up.");
+      console.log("Compute ledger already exists. Skipping deposit.");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log(`No compute ledger yet (${msg})`);
@@ -213,7 +220,9 @@ async function main() {
   usage();
 }
 
-main().catch((err) => {
+main().then(() => {
+  process.exit(0);
+}).catch((err) => {
   console.error(err);
   process.exit(1);
 });

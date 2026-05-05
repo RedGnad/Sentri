@@ -78,9 +78,37 @@ contract JaineV3PoolAdapter is IJaineV3SwapCallback {
         if (amountOut < amountOutMin) revert InsufficientAmountOut();
     }
 
-    /// @notice V3 pool callback. Pulls the exact input token from the caller
-    ///         that approved this adapter, then pays the pool.
+    /// @notice Uniswap V3-style callback. Pulls the exact input token from the
+    ///         caller that approved this adapter, then pays the pool.
     function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        _payPool(amount0Delta, amount1Delta, data);
+    }
+
+    /// @notice Pancake V3-style callback. Some Jaine deployments use Pancake's
+    ///         callback name while keeping the Uniswap V3 swap surface.
+    function pancakeV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        _payPool(amount0Delta, amount1Delta, data);
+    }
+
+    /// @notice Algebra-style callback fallback for V3-compatible pools that use
+    ///         a generic swap callback name.
+    function algebraSwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        _payPool(amount0Delta, amount1Delta, data);
+    }
+
+    /// @notice Catch-all for Jaine pools compiled with a custom callback
+    ///         selector. It is still locked to `pool`, so arbitrary callers
+    ///         cannot pull funds through this adapter.
+    fallback(bytes calldata input) external returns (bytes memory) {
+        if (msg.sender != address(pool)) revert InvalidCallback();
+        if (input.length < 100) revert InvalidCallback();
+        (int256 amount0Delta, int256 amount1Delta, bytes memory data) =
+            abi.decode(input[4:], (int256, int256, bytes));
+        _payPool(amount0Delta, amount1Delta, data);
+        return "";
+    }
+
+    function _payPool(int256 amount0Delta, int256 amount1Delta, bytes memory data) private {
         if (msg.sender != address(pool)) revert InvalidCallback();
         address payer = abi.decode(data, (address));
 

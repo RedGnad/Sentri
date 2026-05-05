@@ -256,7 +256,7 @@ export async function executeOneIterationForVault(
 
   let decision: AgentDecision;
   try {
-    decision = JSON.parse(inference.modelResponse) as AgentDecision;
+    decision = parseAgentDecision(inference.modelResponse);
   } catch {
     return { status: "skipped", reason: `invalid JSON from LLM: ${inference.modelResponse.slice(0, 120)}` };
   }
@@ -453,6 +453,13 @@ function validateDecision(decision: AgentDecision): string | null {
     return `invalid confidence from LLM: ${String(decision.confidence)}`;
   }
   return null;
+}
+
+function parseAgentDecision(raw: string): AgentDecision {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const text = fenced?.[1]?.trim() ?? trimmed;
+  return JSON.parse(text) as AgentDecision;
 }
 
 function canonicalJson(value: unknown): string {
