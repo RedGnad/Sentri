@@ -10,6 +10,7 @@
     "dev": "tsc --watch",
     "agent": "tsx src/cli.ts",
     "server": "tsx src/server.ts",
+    "mainnet:demo": "tsx src/mainnet-demo.ts",
     "setup-broker": "tsx src/setup-broker.ts"
   },
   "dependencies": {

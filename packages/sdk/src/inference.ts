@@ -67,7 +67,7 @@ export async function selectProvider(): Promise<ProviderInfo> {
     throw new Error("No inference services available on the network.");
   }
 
-  const candidates = services
+  const candidates = Array.from(services)
     .filter((service) => {
       if (service.serviceType !== "chatbot") return false;
       if (!service.teeSignerAcknowledged) return false;
