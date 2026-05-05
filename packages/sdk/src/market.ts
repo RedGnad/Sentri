@@ -1,6 +1,7 @@
 // Real-time market data source for the treasury agent.
 // Galileo defaults to ETH/USD for MockWETH. 0G mainnet can set
 // MARKET_ASSET=W0G to price W0G/USD for the USDC.E/W0G real-asset stack.
+import { ethers } from "ethers";
 
 export interface MarketSnapshot {
   priceUsd: number;        // median across reachable sources
@@ -13,6 +14,9 @@ export interface MarketSnapshot {
   sourceCount: number;     // how many sources contributed (>= 2 required)
   spreadPct: number;       // (max - min) / median × 100, for monitoring
   rawSources: Array<{ source: string; priceUsd: number; ethUsd: number }>;
+  health: "fresh" | "degraded" | "external-only";
+  tradingAllowed: boolean;
+  failures: string[];
 }
 
 interface SourceResult {
@@ -27,6 +31,22 @@ const MARKET_ASSET = (process.env.MARKET_ASSET ?? process.env.SENTRI_MARKET_ASSE
 const BASE_SYMBOL = process.env.SENTRI_BASE_SYMBOL ?? (MARKET_ASSET === "W0G" ? "USDC.E" : "USDC");
 const RISK_SYMBOL = process.env.SENTRI_RISK_SYMBOL ?? MARKET_ASSET;
 const MAX_MARKET_SPREAD_BPS = Number(process.env.MAX_MARKET_SPREAD_BPS ?? "500");
+const ZERO_G_MAINNET_RPC = process.env.RPC_URL ?? "https://evmrpc.0g.ai";
+const ZERO_G_MAINNET_JAINE_POOL =
+  process.env.ZERO_G_MAINNET_JAINE_USDCE_W0G_POOL_ADDRESS ??
+  "0xa9e824Eddb9677fB2189AB9c439238A83695C091";
+const ZERO_G_MAINNET_W0G =
+  process.env.ZERO_G_MAINNET_W0G_ADDRESS ?? "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c";
+const ZERO_G_MAINNET_USDCE =
+  process.env.ZERO_G_MAINNET_USDCE_ADDRESS ?? "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E";
+
+const JAINE_POOL_ABI = [
+  "function token0() view returns (address)",
+  "function token1() view returns (address)",
+  "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
+] as const;
+
+const ERC20_DECIMALS_ABI = ["function decimals() view returns (uint8)"] as const;
 
 async function fetchBinance(): Promise<SourceResult> {
   const res = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", {
@@ -90,9 +110,7 @@ async function fetchW0GCoinGecko(): Promise<SourceResult> {
 }
 
 async function fetchW0GGeckoTerminal(): Promise<SourceResult> {
-  const pool = process.env.ZERO_G_MAINNET_JAINE_USDCE_W0G_POOL_ADDRESS ??
-    "0xa9e824EDDb9677fB2189aB9C439238a83695c091";
-  const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/0g/pools/${pool}`, {
+  const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/0g/pools/${ZERO_G_MAINNET_JAINE_POOL}`, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`GeckoTerminal W0G ${res.status}`);
@@ -111,6 +129,54 @@ async function fetchW0GGeckoTerminal(): Promise<SourceResult> {
   };
 }
 
+async function fetchW0GJaineSpot(): Promise<SourceResult> {
+  const provider = new ethers.JsonRpcProvider(ZERO_G_MAINNET_RPC);
+  const pool = new ethers.Contract(ZERO_G_MAINNET_JAINE_POOL, JAINE_POOL_ABI, provider);
+  const [token0, token1, slot0] = await Promise.all([
+    pool.token0() as Promise<string>,
+    pool.token1() as Promise<string>,
+    pool.slot0() as Promise<[bigint, bigint, number, number, number, number, boolean]>,
+  ]);
+
+  const token0Norm = token0.toLowerCase();
+  const token1Norm = token1.toLowerCase();
+  const w0gNorm = ZERO_G_MAINNET_W0G.toLowerCase();
+  const usdceNorm = ZERO_G_MAINNET_USDCE.toLowerCase();
+  if (
+    !((token0Norm === w0gNorm && token1Norm === usdceNorm) ||
+      (token0Norm === usdceNorm && token1Norm === w0gNorm))
+  ) {
+    throw new Error(`Jaine pool token mismatch: token0=${token0}, token1=${token1}`);
+  }
+
+  const token0Contract = new ethers.Contract(token0, ERC20_DECIMALS_ABI, provider);
+  const token1Contract = new ethers.Contract(token1, ERC20_DECIMALS_ABI, provider);
+  const [dec0, dec1] = await Promise.all([
+    token0Contract.decimals() as Promise<number>,
+    token1Contract.decimals() as Promise<number>,
+  ]);
+
+  const sqrtPriceX96 = BigInt(slot0[0]);
+  if (sqrtPriceX96 <= 0n) throw new Error("Jaine slot0 missing sqrtPriceX96");
+
+  // V3 slot0 encodes token1/token0 as sqrtPriceX96 in Q64.96.
+  const rawToken1PerToken0 = Number(sqrtPriceX96 * sqrtPriceX96) / Number(2n ** 192n);
+  const adjustedToken1PerToken0 = rawToken1PerToken0 * 10 ** (Number(dec0) - Number(dec1));
+  const w0gUsd =
+    token0Norm === w0gNorm
+      ? adjustedToken1PerToken0
+      : 1 / adjustedToken1PerToken0;
+
+  if (!Number.isFinite(w0gUsd) || w0gUsd <= 0) {
+    throw new Error(`Jaine slot0 invalid W0G price: ${w0gUsd}`);
+  }
+
+  return {
+    source: "jaine:onchain-slot0",
+    priceUsd: w0gUsd,
+  };
+}
+
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
@@ -122,7 +188,7 @@ function median(values: number[]): number {
 export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   const providers =
     MARKET_ASSET === "W0G"
-      ? [fetchW0GCoinGecko(), fetchW0GGeckoTerminal()]
+      ? [fetchW0GJaineSpot(), fetchW0GCoinGecko(), fetchW0GGeckoTerminal()]
       : [fetchBinance(), fetchCoinGecko(), fetchCoinbase(), fetchKraken()];
 
   const settled = await Promise.allSettled(providers);
@@ -134,10 +200,11 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     else failures.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
   }
 
-  if (successes.length < MIN_QUORUM) {
+  const requiredQuorum = MARKET_ASSET === "W0G" ? 1 : MIN_QUORUM;
+  if (successes.length < requiredQuorum) {
     throw new Error(
-      `Insufficient market quorum: ${successes.length}/4 sources succeeded ` +
-        `(need ≥ ${MIN_QUORUM}). Asset: ${MARKET_ASSET}. Failures: ${failures.join(" | ")}`,
+      `Insufficient market quorum: ${successes.length}/${providers.length} sources succeeded ` +
+        `(need ≥ ${requiredQuorum}). Asset: ${MARKET_ASSET}. Failures: ${failures.join(" | ")}`,
     );
   }
 
@@ -155,6 +222,17 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   // 24h change: prefer the first source that exposes it, otherwise 0.
   const changeSource = successes.find((s) => s.change24h !== undefined);
   const change24h = changeSource?.change24h ?? 0;
+  const hasOnchain = successes.some((s) => s.source === "jaine:onchain-slot0");
+  const hasExternal = successes.some((s) => s.source !== "jaine:onchain-slot0");
+  const tradingAllowed = MARKET_ASSET !== "W0G" || (hasOnchain && hasExternal && successes.length >= 2);
+  const health =
+    MARKET_ASSET !== "W0G"
+      ? "fresh"
+      : tradingAllowed
+        ? "fresh"
+        : hasOnchain
+          ? "degraded"
+          : "external-only";
 
   return {
     priceUsd: med,
@@ -167,5 +245,8 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     sourceCount: successes.length,
     spreadPct,
     rawSources: successes.map((s) => ({ source: s.source, priceUsd: s.priceUsd, ethUsd: s.priceUsd })),
+    health,
+    tradingAllowed,
+    failures,
   };
 }

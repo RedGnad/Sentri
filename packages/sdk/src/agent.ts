@@ -144,7 +144,7 @@ export async function pushPrice(ctx: GlobalContext): Promise<MarketSnapshot> {
   const market = await getMarketSnapshot();
   log(
     `Market: ${market.riskSymbol}=$${market.priceUsd.toFixed(4)} · 24h ${market.change24h.toFixed(2)}% · ` +
-      `${market.sourceCount} sources · spread ${market.spreadPct.toFixed(3)}% · ${market.source}`,
+      `${market.sourceCount} sources · spread ${market.spreadPct.toFixed(3)}% · ${market.health} · ${market.source}`,
   );
 
   const feedDecimals: bigint = await ctx.priceFeed.decimals();
@@ -230,6 +230,15 @@ export async function executeOneIterationForVault(
 
   if (tvl === 0n) {
     return { status: "skipped", reason: "vault is empty" };
+  }
+
+  if (market.tradingAllowed === false) {
+    return {
+      status: "skipped",
+      reason:
+        `market health ${market.health}; ${riskSymbol} trading requires Jaine on-chain price plus external sanity check. ` +
+        `Sources: ${market.source}. Failures: ${market.failures.join(" | ") || "none"}`,
+    };
   }
 
   const prompt = buildMarketPrompt({

@@ -44,6 +44,21 @@ contract JaineV3PoolAdapter is IJaineV3SwapCallback {
     error InvalidCallback();
     error InsufficientAmountOut();
 
+    struct CallbackData {
+        address payer;
+        address tokenIn;
+        address tokenOut;
+        uint256 amountInMax;
+        bytes32 swapId;
+    }
+
+    event PoolCallbackPaid(
+        bytes32 indexed swapId,
+        address indexed payer,
+        address indexed tokenIn,
+        uint256 amount
+    );
+
     constructor(address _pool) {
         if (_pool == address(0)) revert InvalidPool();
         pool = IJaineV3Pool(_pool);
@@ -66,12 +81,20 @@ contract JaineV3PoolAdapter is IJaineV3SwapCallback {
         if (tokenIn != token0 && tokenIn != token1) revert InvalidPath();
 
         bool zeroForOne = tokenIn == token0;
+        address tokenOut = zeroForOne ? token1 : token0;
+        bytes32 swapId = keccak256(abi.encodePacked(msg.sender, tokenIn, tokenOut, amountIn, to, deadline, block.number));
         (int256 amount0, int256 amount1) = pool.swap(
             to,
             zeroForOne,
             int256(amountIn),
             zeroForOne ? MIN_SQRT_RATIO_PLUS_ONE : MAX_SQRT_RATIO_MINUS_ONE,
-            abi.encode(msg.sender)
+            abi.encode(CallbackData({
+                payer: msg.sender,
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                amountInMax: amountIn,
+                swapId: swapId
+            }))
         );
 
         amountOut = uint256(-(zeroForOne ? amount1 : amount0));
@@ -110,13 +133,21 @@ contract JaineV3PoolAdapter is IJaineV3SwapCallback {
 
     function _payPool(int256 amount0Delta, int256 amount1Delta, bytes memory data) private {
         if (msg.sender != address(pool)) revert InvalidCallback();
-        address payer = abi.decode(data, (address));
+        CallbackData memory callback = abi.decode(data, (CallbackData));
 
-        if (amount0Delta > 0) {
-            IERC20(token0).safeTransferFrom(payer, msg.sender, uint256(amount0Delta));
-        }
-        if (amount1Delta > 0) {
-            IERC20(token1).safeTransferFrom(payer, msg.sender, uint256(amount1Delta));
-        }
+        bool payToken0 = amount0Delta > 0 && amount1Delta < 0;
+        bool payToken1 = amount1Delta > 0 && amount0Delta < 0;
+        if (!payToken0 && !payToken1) revert InvalidCallback();
+
+        address expectedTokenIn = payToken0 ? token0 : token1;
+        address expectedTokenOut = payToken0 ? token1 : token0;
+        if (callback.tokenIn != expectedTokenIn || callback.tokenOut != expectedTokenOut) revert InvalidPath();
+        if (callback.payer == address(0)) revert InvalidCallback();
+
+        uint256 amountToPay = payToken0 ? uint256(amount0Delta) : uint256(amount1Delta);
+        if (amountToPay == 0 || amountToPay > callback.amountInMax) revert InvalidCallback();
+
+        IERC20(callback.tokenIn).safeTransferFrom(callback.payer, msg.sender, amountToPay);
+        emit PoolCallbackPaid(callback.swapId, callback.payer, callback.tokenIn, amountToPay);
     }
 }

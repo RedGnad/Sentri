@@ -180,15 +180,15 @@ Deployer / Agent: [`0x981F…20e0`](https://chainscan.0g.ai/address/0x981F6E0Ea9
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0xF62E401bE84e099CE3F00e3F193960Eb295259D8`](https://chainscan.0g.ai/address/0xF62E401bE84e099CE3F00e3F193960Eb295259D8) |
-| `TreasuryVault` (impl) | [`0x7eCA98adb3EE5Bd11e09Cf4cb04d9ceF4914c7b0`](https://chainscan.0g.ai/address/0x7eCA98adb3EE5Bd11e09Cf4cb04d9ceF4914c7b0) |
-| `AgentINFT` | [`0xb921613c9F71c1B5191F6619e8252CD83Fcc59EC`](https://chainscan.0g.ai/address/0xb921613c9F71c1B5191F6619e8252CD83Fcc59EC) |
-| `JaineV3PoolAdapter` | [`0x4A85187939E56071F05a38633F54CFf8d39c295C`](https://chainscan.0g.ai/address/0x4A85187939E56071F05a38633F54CFf8d39c295C) |
+| `VaultFactory` (entry point) | [`0x929dB0e9BB09E47f05f471F516b35C0a545b80e7`](https://chainscan.0g.ai/address/0x929dB0e9BB09E47f05f471F516b35C0a545b80e7) |
+| `TreasuryVault` (impl) | [`0x987ef3a95f27d254367f0CC0e0e8B7bB4805efF0`](https://chainscan.0g.ai/address/0x987ef3a95f27d254367f0CC0e0e8B7bB4805efF0) |
+| `AgentINFT` | [`0x83C375F3808efAB339276E98C20dddfa69Af3659`](https://chainscan.0g.ai/address/0x83C375F3808efAB339276E98C20dddfa69Af3659) |
+| `JaineV3PoolAdapter` | [`0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2`](https://chainscan.0g.ai/address/0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2) |
 | Jaine `USDC.E/W0G` pool | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
-| `SentriPriceFeed` | [`0xBe3B15de061BE593086c48268f662Cc4c7001E07`](https://chainscan.0g.ai/address/0xBe3B15de061BE593086c48268f662Cc4c7001E07) |
+| `SentriPriceFeed` | [`0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6`](https://chainscan.0g.ai/address/0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6) |
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
-| Demo vault (Balanced preset, deployer-owned) | [`0xb503E945a70fD4F7ADDFd0dcd6B2CB0b9a08Ba5f`](https://chainscan.0g.ai/address/0xb503E945a70fD4F7ADDFd0dcd6B2CB0b9a08Ba5f) |
+| Demo vault (Balanced preset, deployer-owned) | [`0xEE28cFdCCdD86069332834F0758B7CebBeB1BF64`](https://chainscan.0g.ai/address/0xEE28cFdCCdD86069332834F0758B7CebBeB1BF64) |
 
 Live mainnet proof:
 
@@ -196,10 +196,11 @@ Live mainnet proof:
 - `VaultFactory.allVaults(0)` returns the demo vault above.
 - Demo vault owner is `0x981F6E0Ea94f45fDB8ee7680DC862212E3C720e0`.
 - `SentriPriceFeed.keepers(agent)` returns `true`.
-- Autonomous execution tx: [`0x052e16ec8f2538aefb2620c2a3937c5045b34771c718ad5a850c8346d6be3b29`](https://chainscan.0g.ai/tx/0x052e16ec8f2538aefb2620c2a3937c5045b34771c718ad5a850c8346d6be3b29), where the TEE-signed `EmergencyDeleverage` intent swapped W0G into USDC.E through Jaine.
-- Audit entry written to 0G Storage KV: tx `0x43852bb09c4b7d968fbb53b5a16ba68660ea6589bcd753ae2df2b91bd7a66f28`, root `0x81fc80953043345a768acc8bffffaad04aec8a2847e64f391265bc488125d85a`.
-- Portfolio state written to 0G Storage KV: tx `0x8b77615b98bc3eea752d692b113298e486615ac10086b756f0caa33ec3f780b6`, root `0xb4d5613176ea782c3821460b97b1d55258af3dbc9c80b346fc829b239fbc9312`.
-- Post-execution demo vault state: `0.02012 USDC.E + 0.0125 W0G`, `executionLogCount() == 1`.
+- W0G oracle uses Jaine `slot0()` on-chain spot as the primary source, with CoinGecko and GeckoTerminal as external sanity checks. The latest mainnet run used 3/3 sources and `fresh` market health.
+- Autonomous execution tx: [`0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675), where the TEE-signed `EmergencyDeleverage` intent swapped W0G into USDC.E through the hardened Jaine adapter.
+- Audit entry written to 0G Storage KV: tx `0x223c5e0419655c577223d6aff22364380f83d2ff2c8b33651c964edd473b23ea`, root `0xb19c85f49a3fc05fb18d9bd4acd382aeaa39228e3b4207f9be98f1660e556cf0`.
+- Portfolio state written to 0G Storage KV: tx `0x5ab6670e64316a40de1120a2f216a3791cccf952ff8db991203ce221b79a1b56`, root `0x2b46977acce1eae129365b93292972099cd0ad377127ef778d1e3b95b727065c`.
+- Post-execution demo vault state: `0.008083 USDC.E + 0.005 W0G`, `executionLogCount() == 1`.
 
 ### 0G Galileo
 
