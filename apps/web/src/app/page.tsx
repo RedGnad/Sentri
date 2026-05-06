@@ -5,27 +5,13 @@ import { getLiveSnapshot, formatRelative, type LiveSnapshot } from "@/lib/live-s
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const PROOF_POINTS = [
-  {
-    label: "0G Compute",
-    value: "TeeML verified",
-    detail: "The agent refuses to trade unless processResponse verifies the response.",
-  },
-  {
-    label: "Vault security",
-    value: "Signer gated",
-    detail: "The vault recovers the TEE signer and checks the active AgentINFT binding.",
-  },
-  {
-    label: "Replay control",
-    value: "Single-use intent",
-    detail: "Expired or replayed intent and response hashes are rejected on-chain.",
-  },
-  {
-    label: "Audit",
-    value: "Storage backed",
-    detail: "Executions expose intent hash, response hash, tx hash, signer, deadline and Storage proof.",
-  },
+const TRUST_TICKER = [
+  "TEE-verified inference",
+  "INFT-bound signer",
+  "Single-use intent + deadline",
+  "On-chain policy gate",
+  "0G Storage audit",
+  "Slippage-guarded swap",
 ];
 
 function networkLabel(chainId: number): string {
@@ -63,8 +49,8 @@ export default async function LandingPage() {
         <span>{chainLabel} · {snapshot.chain.id}</span>
       </div>
 
-      {/* Operating surface */}
-      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-10 pb-14">
+      {/* Hero + Live panel */}
+      <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-10 pb-12">
         <div className="lg:col-span-8 animate-fade-up">
           <div className="font-mono text-[10px] uppercase tracking-kicker text-amber mb-6 flex items-center gap-2">
             <span className="inline-block w-1.5 h-1.5 bg-amber animate-pulse-dot" />
@@ -103,29 +89,30 @@ export default async function LandingPage() {
           </div>
         </div>
 
-        {/* Live system panel */}
         <div className="lg:col-span-4 animate-fade-up" style={{ animationDelay: "120ms" }}>
           <LiveSystemPanel snapshot={snapshot} />
         </div>
       </section>
 
-      <section className="grid grid-cols-2 lg:grid-cols-4 border border-hairline divide-x divide-y lg:divide-y-0 divide-hairline mb-8 animate-fade-up" style={{ animationDelay: "160ms" }}>
-        {PROOF_POINTS.map((point) => (
-          <div key={point.label} className="px-5 py-5 bg-bg-elev/20">
-            <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-2">
-              {point.label}
-            </div>
-            <div className="font-serif text-2xl text-ink">{point.value}</div>
-            <p className="text-[12px] text-ink-dim leading-relaxed mt-2">{point.detail}</p>
-          </div>
-        ))}
+      {/* Trust ticker — single dense row */}
+      <section className="border-y border-hairline animate-fade-up" style={{ animationDelay: "160ms" }}>
+        <div className="px-5 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-kicker">
+          <span className="text-amber">Trust path</span>
+          {TRUST_TICKER.map((item, i) => (
+            <span key={item} className="flex items-center gap-x-5">
+              <span className="text-ink">{item}</span>
+              {i < TRUST_TICKER.length - 1 && <span className="text-ink-faint">·</span>}
+            </span>
+          ))}
+        </div>
       </section>
 
-      <section className="grid grid-cols-1 lg:grid-cols-[1.1fr_0.9fr] gap-6 mb-16 animate-fade-up" style={{ animationDelay: "220ms" }}>
+      {/* Execution path */}
+      <section className="mt-8 mb-10 animate-fade-up" style={{ animationDelay: "220ms" }}>
         <div className="border border-hairline bg-bg-elev/20">
           <div className="flex items-center justify-between px-5 h-9 border-b border-hairline">
             <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-              Execution path
+              Execution path · per cycle
             </span>
             <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
               {executionVenue(snapshot.chain.id)}
@@ -135,7 +122,7 @@ export default async function LandingPage() {
             {mechanismRows.map((step) => (
               <li
                 key={step.id}
-                className="grid grid-cols-[48px_1fr] sm:grid-cols-[48px_1fr_1.2fr] items-center gap-4 px-5 min-h-14 py-3 hover:bg-bg-elev/40 transition-colors group"
+                className="grid grid-cols-[48px_1fr] sm:grid-cols-[48px_1fr_1.6fr] items-center gap-4 px-5 min-h-14 py-3 hover:bg-bg-elev/40 transition-colors group"
               >
                 <span className="font-mono text-[10px] text-ink-faint tabular">{step.id}</span>
                 <span className="font-mono text-[11px] uppercase tracking-kicker text-ink group-hover:text-amber transition-colors">
@@ -147,46 +134,11 @@ export default async function LandingPage() {
               </li>
             ))}
           </ol>
-        </div>
-
-        <div className="border border-hairline bg-bg-elev/20">
-          <div className="flex items-center justify-between px-5 h-9 border-b border-hairline">
-            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-              Control model
-            </span>
-            <span className="font-mono text-[9px] uppercase tracking-kicker text-phosphor">
-              Owner bounded
-            </span>
+          <div className="px-5 py-4 border-t border-hairline">
+            <p className="font-serif italic text-lg text-ink-dim leading-snug">
+              One verified operator. Your vault, your policy.
+            </p>
           </div>
-          <ul className="divide-y divide-hairline">
-            <ControlRow label="Agent" value="Shared verified operator" />
-            <ControlRow label="Vault owner" value="Owns funds and policy" />
-            <ControlRow label="Policy presets" value="Conservative · Balanced · Aggressive" />
-            <ControlRow label="Policy editing" value="Owner can update bounds on-chain" />
-            <ControlRow label="Action cadence" value="Min spacing enforced by vault" />
-            <ControlRow label="Emergency exit" value="Withdraw all assets or deleverage with slippage guard" />
-          </ul>
-        </div>
-      </section>
-
-      <section className="border-t border-hairline pt-8 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-            Product stance
-          </span>
-          <p className="text-[14px] text-ink-dim mt-2 max-w-2xl leading-relaxed">
-            Sentri keeps one verified operator path for demo and review, while each user deploys
-            their own vault and owns the policy bounds. That is the deliberate security split:
-            custom vaults, not arbitrary unverified agents.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <Link href="/deploy">
-            <Button>Deploy Vault →</Button>
-          </Link>
-          <Link href="/vaults">
-            <Button variant="outline">Vault Registry</Button>
-          </Link>
         </div>
       </section>
 
@@ -196,19 +148,6 @@ export default async function LandingPage() {
         <FooterStatus snapshot={snapshot} />
       </footer>
     </div>
-  );
-}
-
-function ControlRow({ label, value }: { label: string; value: string }) {
-  return (
-    <li className="flex items-center justify-between gap-4 px-5 h-11">
-      <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
-        {label}
-      </span>
-      <span className="font-mono text-[10px] uppercase tracking-kicker text-ink text-right">
-        {value}
-      </span>
-    </li>
   );
 }
 

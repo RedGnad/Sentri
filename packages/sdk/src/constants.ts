@@ -41,27 +41,27 @@ export const STORAGE = {
 } as const;
 
 const GALILEO_CONTRACTS = {
-  vaultFactory: "0x3DBc323A0540EB104df2C73f30a12CE2881a98aa",
-  vaultImplementation: "0xf4bE6A5ead857F5927490418F2903F8Cc88533d6",
+  vaultFactory: "0x8a94F377De5450269e2035C8fAE31dE1E181F10e",
+  vaultImplementation: "0x2A33268CbB4a5639063331Db94FD94a8426765C0",
   agentINFT: "0x1181A8670d5CA9597D60fEf2A571a14C58F33020",
   swapRouter: "0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C",
   swapPair: "0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f",
   priceFeed: "0x0e75243d34E904Ab925064c8297b36484Ce2aB5E",
-  mockUSDC: "0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3",
-  mockWETH: "0x246e6080D736A217C151C3b88890C08e2C249d5E",
-  demoVault: "0xB6539EC33a360726ac7E8f053327022AC891E86D",
+  baseToken: "0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3",
+  riskToken: "0x246e6080D736A217C151C3b88890C08e2C249d5E",
+  demoVault: "0x5Aa3a7083915F6213238fc8c7461be969d5504e2",
 } as const;
 
 const MAINNET_CONTRACTS = {
-  vaultFactory: "0x929dB0e9BB09E47f05f471F516b35C0a545b80e7",
-  vaultImplementation: "0x987ef3a95f27d254367f0CC0e0e8B7bB4805efF0",
+  vaultFactory: "0x1794aADef202e0F39494D27491752B06c0CC26Bc",
+  vaultImplementation: "0x539Ad624E9be34DB7369c6Ee0Fb22A6dF01C7bEE",
   agentINFT: "0x83C375F3808efAB339276E98C20dddfa69Af3659",
   swapRouter: "0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2",
   swapPair: "0xa9e824Eddb9677fB2189AB9c439238A83695C091",
   priceFeed: "0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6",
-  mockUSDC: "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E",
-  mockWETH: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c",
-  demoVault: "0xEE28cFdCCdD86069332834F0758B7CebBeB1BF64",
+  baseToken: "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E",
+  riskToken: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c",
+  demoVault: "0x87dA9a9A5fC6aA33a3379C026482704c41ECc676",
 } as const;
 
 const selectedContracts = NETWORK === "mainnet" ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
@@ -69,6 +69,10 @@ const selectedContracts = NETWORK === "mainnet" ? MAINNET_CONTRACTS : GALILEO_CO
 // Contract addresses. The VaultFactory is the public entry point; users create
 // vaults via it. All other addresses are immutable dependencies the factory
 // wires into each new clone.
+//
+// Token addresses accept both the new BASE_TOKEN/RISK_TOKEN env names and the
+// legacy MOCK_USDC/MOCK_WETH names (kept for compat with un-migrated env files
+// and Render config).
 export const CONTRACTS = {
   vaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS ?? selectedContracts.vaultFactory,
   vaultImplementation: process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS ?? selectedContracts.vaultImplementation,
@@ -76,8 +80,14 @@ export const CONTRACTS = {
   swapRouter: process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS ?? selectedContracts.swapRouter,
   swapPair: process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS ?? selectedContracts.swapPair,
   priceFeed: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS ?? selectedContracts.priceFeed,
-  mockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS ?? selectedContracts.mockUSDC,
-  mockWETH: process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS ?? selectedContracts.mockWETH,
+  baseToken:
+    process.env.NEXT_PUBLIC_BASE_TOKEN_ADDRESS
+    ?? process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS
+    ?? selectedContracts.baseToken,
+  riskToken:
+    process.env.NEXT_PUBLIC_RISK_TOKEN_ADDRESS
+    ?? process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS
+    ?? selectedContracts.riskToken,
   demoVault: process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS ?? selectedContracts.demoVault,
 } as const;
 

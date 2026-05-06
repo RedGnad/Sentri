@@ -24,9 +24,9 @@ contract VaultFactory {
     // ── Types ────────────────────────────────────────────────────────────
 
     enum PresetTier {
-        Conservative, // 15% alloc · 2% drawdown · 0.5% slippage · 10min cooldown
-        Balanced,     // 30% alloc · 5% drawdown · 1% slippage · 5min cooldown
-        Aggressive,   // 50% alloc · 10% drawdown · 2% slippage · 3min cooldown
+        Conservative, // 15% alloc · 2% drawdown · 0.5% slippage · 12h cooldown
+        Balanced,     // 30% alloc · 5% drawdown · 1% slippage · 30min cooldown
+        Aggressive,   // 50% alloc · 10% drawdown · 2% slippage · 60s cooldown
         Custom        // pass your own (bounded) policy
     }
 
@@ -174,7 +174,7 @@ contract VaultFactory {
                 maxDrawdownBps: 200,
                 rebalanceThresholdBps: 200,
                 maxSlippageBps: 50,
-                cooldownPeriod: 600,
+                cooldownPeriod: 43200,
                 maxPriceStaleness: 120
             });
         } else if (tier == PresetTier.Balanced) {
@@ -183,7 +183,7 @@ contract VaultFactory {
                 maxDrawdownBps: 500,
                 rebalanceThresholdBps: 300,
                 maxSlippageBps: 100,
-                cooldownPeriod: 300,
+                cooldownPeriod: 1800,
                 maxPriceStaleness: 120
             });
         } else if (tier == PresetTier.Aggressive) {
@@ -192,7 +192,7 @@ contract VaultFactory {
                 maxDrawdownBps: 1000,
                 rebalanceThresholdBps: 500,
                 maxSlippageBps: 200,
-                cooldownPeriod: 180,
+                cooldownPeriod: 60,
                 maxPriceStaleness: 180
             });
         }

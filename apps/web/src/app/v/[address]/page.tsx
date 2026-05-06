@@ -18,7 +18,7 @@ import {
   useMintUsdc,
 } from "@/hooks/use-vault";
 import { useVaultStateFromAgent } from "@/hooks/use-vault-runtime";
-import { BASE_SYMBOL, IS_MAINNET, MOCK_USDC_ADDRESS, RISK_SYMBOL } from "@/config/contracts";
+import { BASE_SYMBOL, IS_MAINNET, RISK_SYMBOL } from "@/config/contracts";
 
 export default function VaultOverviewPage() {
   const params = useParams<{ address: string }>();
@@ -247,8 +247,6 @@ export default function VaultOverviewPage() {
         </div>
       </section>
 
-      {/* hidden import keeper to silence unused-warning if MOCK_USDC_ADDRESS isn't read elsewhere */}
-      <span className="hidden">{MOCK_USDC_ADDRESS}</span>
     </div>
   );
 }

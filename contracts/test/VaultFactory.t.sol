@@ -97,7 +97,7 @@ contract VaultFactoryTest is Test {
         assertEq(dd, 200);
         assertEq(reb, 200);
         assertEq(slp, 50);
-        assertEq(cd, 600);
+        assertEq(cd, 43200);
         assertEq(stale, 120);
         assertEq(v.owner(), alice);
         assertEq(address(v.base()), address(usdc));
@@ -113,7 +113,7 @@ contract VaultFactoryTest is Test {
         assertEq(alloc, 3000);
         assertEq(dd, 500);
         assertEq(slp, 100);
-        assertEq(cd, 300);
+        assertEq(cd, 1800);
     }
 
     function test_createVault_aggressive_setsCorrectPolicy() public {
@@ -124,7 +124,7 @@ contract VaultFactoryTest is Test {
         assertEq(alloc, 5000);
         assertEq(dd, 1000);
         assertEq(slp, 200);
-        assertEq(cd, 180);
+        assertEq(cd, 60);
     }
 
     function test_createVault_revertsOnCustomTier() public {

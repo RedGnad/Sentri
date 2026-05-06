@@ -141,9 +141,9 @@ Default state is 100% base stable asset. Maximum risk-asset exposure is 30% of T
 
 | Preset | Max alloc | Max drawdown | Max slippage | Cooldown | Use case |
 |---|---|---|---|---|---|
-| **Conservative** | 15% | 2% | 0.5% | 10 min | Foundation / endowment reserves |
-| **Balanced** | 30% | 5% | 1% | 5 min | Standard DAO treasury |
-| **Aggressive** | 50% | 10% | 2% | 3 min | Protocol with appetite for productive risk |
+| **Conservative** | 15% | 2% | 0.5% | 12 h | Foundation / endowment reserves |
+| **Balanced** | 30% | 5% | 1% | 30 min | Standard DAO treasury |
+| **Aggressive** | 50% | 10% | 2% | 60 s | Active rebalancer / higher cadence treasuries |
 | **Custom** | ≤ 50% | ≤ 20% | ≤ 5% | ≥ 60s | Bounded by factory validation |
 
 Custom policies are validated on-chain at vault creation. Out-of-range values revert with `CustomPolicyOutOfRange`.
@@ -180,15 +180,15 @@ Deployer / Agent: [`0x981F…20e0`](https://chainscan.0g.ai/address/0x981F6E0Ea9
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0x929dB0e9BB09E47f05f471F516b35C0a545b80e7`](https://chainscan.0g.ai/address/0x929dB0e9BB09E47f05f471F516b35C0a545b80e7) |
-| `TreasuryVault` (impl) | [`0x987ef3a95f27d254367f0CC0e0e8B7bB4805efF0`](https://chainscan.0g.ai/address/0x987ef3a95f27d254367f0CC0e0e8B7bB4805efF0) |
+| `VaultFactory` (entry point) | [`0x1794aADef202e0F39494D27491752B06c0CC26Bc`](https://chainscan.0g.ai/address/0x1794aADef202e0F39494D27491752B06c0CC26Bc) |
+| `TreasuryVault` (impl) | [`0x539Ad624E9be34DB7369c6Ee0Fb22A6dF01C7bEE`](https://chainscan.0g.ai/address/0x539Ad624E9be34DB7369c6Ee0Fb22A6dF01C7bEE) |
 | `AgentINFT` | [`0x83C375F3808efAB339276E98C20dddfa69Af3659`](https://chainscan.0g.ai/address/0x83C375F3808efAB339276E98C20dddfa69Af3659) |
 | `JaineV3PoolAdapter` | [`0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2`](https://chainscan.0g.ai/address/0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2) |
 | Jaine `USDC.E/W0G` pool | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
 | `SentriPriceFeed` | [`0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6`](https://chainscan.0g.ai/address/0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6) |
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
-| Demo vault (Balanced preset, deployer-owned) | [`0xEE28cFdCCdD86069332834F0758B7CebBeB1BF64`](https://chainscan.0g.ai/address/0xEE28cFdCCdD86069332834F0758B7CebBeB1BF64) |
+| Demo vault (Aggressive preset, deployer-owned) | [`0x87dA9a9A5fC6aA33a3379C026482704c41ECc676`](https://chainscan.0g.ai/address/0x87dA9a9A5fC6aA33a3379C026482704c41ECc676) |
 
 Live mainnet proof:
 
@@ -210,15 +210,15 @@ Deployer / Agent: [`0x7531…dbd8`](https://chainscan-galileo.0g.ai/address/0x75
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0x3DBc323A0540EB104df2C73f30a12CE2881a98aa`](https://chainscan-galileo.0g.ai/address/0x3DBc323A0540EB104df2C73f30a12CE2881a98aa) |
-| `TreasuryVault` (impl) | [`0xf4bE6A5ead857F5927490418F2903F8Cc88533d6`](https://chainscan-galileo.0g.ai/address/0xf4bE6A5ead857F5927490418F2903F8Cc88533d6) |
+| `VaultFactory` (entry point) | [`0x8a94F377De5450269e2035C8fAE31dE1E181F10e`](https://chainscan-galileo.0g.ai/address/0x8a94F377De5450269e2035C8fAE31dE1E181F10e) |
+| `TreasuryVault` (impl) | [`0x2A33268CbB4a5639063331Db94FD94a8426765C0`](https://chainscan-galileo.0g.ai/address/0x2A33268CbB4a5639063331Db94FD94a8426765C0) |
 | `AgentINFT` | [`0x1181A8670d5CA9597D60fEf2A571a14C58F33020`](https://chainscan-galileo.0g.ai/address/0x1181A8670d5CA9597D60fEf2A571a14C58F33020) |
 | `SentriSwapRouter` | [`0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C`](https://chainscan-galileo.0g.ai/address/0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C) |
 | `SentriPair` | [`0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f`](https://chainscan-galileo.0g.ai/address/0x0BeC7F13a4E9DAc95954EcdF3FF2DABd8279700f) |
 | `SentriPriceFeed` | [`0x0e75243d34E904Ab925064c8297b36484Ce2aB5E`](https://chainscan-galileo.0g.ai/address/0x0e75243d34E904Ab925064c8297b36484Ce2aB5E) |
 | `MockUSDC` | [`0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3`](https://chainscan-galileo.0g.ai/address/0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3) |
 | `MockWETH` | [`0x246e6080D736A217C151C3b88890C08e2C249d5E`](https://chainscan-galileo.0g.ai/address/0x246e6080D736A217C151C3b88890C08e2C249d5E) |
-| Demo vault (Balanced preset, deployer-owned) | [`0xB6539EC33a360726ac7E8f053327022AC891E86D`](https://chainscan-galileo.0g.ai/address/0xB6539EC33a360726ac7E8f053327022AC891E86D) |
+| Demo vault (Aggressive preset, deployer-owned) | [`0x5Aa3a7083915F6213238fc8c7461be969d5504e2`](https://chainscan-galileo.0g.ai/address/0x5Aa3a7083915F6213238fc8c7461be969d5504e2) |
 
 Live Galileo proof:
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { TREASURY_VAULT_ABI, ERC20_ABI, MOCK_USDC_ADDRESS } from "@/config/contracts";
+import { TREASURY_VAULT_ABI, ERC20_ABI, BASE_TOKEN_ADDRESS } from "@/config/contracts";
 import { parseUnits } from "viem";
 import { galileo } from "@/config/wagmi";
 
@@ -106,7 +106,7 @@ export function useExecutionLog(vaultAddress: `0x${string}` | undefined, index: 
 
 export function useUsdcBalance(address: `0x${string}` | undefined) {
   return useReadContract({
-    address: MOCK_USDC_ADDRESS,
+    address: BASE_TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
@@ -123,7 +123,7 @@ export function useUsdcAllowance(
   spender: `0x${string}` | undefined,
 ) {
   return useReadContract({
-    address: MOCK_USDC_ADDRESS,
+    address: BASE_TOKEN_ADDRESS,
     abi: ERC20_ABI,
     functionName: "allowance",
     args: owner && spender ? [owner, spender] : undefined,
@@ -143,7 +143,7 @@ export function useApproveUsdc() {
 
   function approve(spender: `0x${string}`, amount: string) {
     writeContract({
-      address: MOCK_USDC_ADDRESS,
+      address: BASE_TOKEN_ADDRESS,
       abi: ERC20_ABI,
       functionName: "approve",
       args: [spender, parseUnits(amount, 6)],
@@ -276,7 +276,7 @@ export function useMintUsdc() {
 
   function mint(to: `0x${string}`, amount: string) {
     writeContract({
-      address: MOCK_USDC_ADDRESS,
+      address: BASE_TOKEN_ADDRESS,
       abi: ERC20_ABI,
       functionName: "mint",
       args: [to, parseUnits(amount, 6)],

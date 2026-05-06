@@ -7,10 +7,15 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatUSDC(value: bigint): string {
   const num = Number(value) / 1e6;
-  return num.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  if (num === 0) return "0.00";
+  if (num > 0 && num < 0.01) {
+    // Sub-cent values: show 4 decimals so they don't render as "$0.00"
+    return num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  }
+  if (num < 1) {
+    return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  }
+  return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function shortenAddress(address: string): string {
