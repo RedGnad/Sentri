@@ -513,12 +513,170 @@ export async function runMultiVaultLoop(): Promise<void> {
   }
 }
 
+/**
+ * Strategy regime classifier.
+ *
+ * Sentri v2 uses a vol-adjusted regime-aware target rather than a fixed 25%
+ * anchor. The classifier maps three live signals to a regime label:
+ *
+ * - drawdown_from_HWM (capital preservation)
+ * - 24h price change   (directional momentum)
+ * - oracle spread      (Pyth vs Jaine on-chain — disagreement = stress proxy)
+ *
+ * Regime labels are evaluated in order; first match wins. This mirrors the
+ * institutional "vol-targeting" pattern documented as 2026 best practice for
+ * AI-managed crypto treasuries: scale exposure down when realised vol /
+ * regime stress widens, expand it when the regime is calm and constructive.
+ */
+type Regime =
+  | "drawdown_breach" // drawdown ≥ 1.5%
+  | "crash"           // 24h ≤ -3%
+  | "down_wide"       // 24h ≤ -1% AND spread ≥ 1%
+  | "down_tight"      // 24h ≤ -1% AND spread < 1%
+  | "flat"            // -1% < 24h < +1%
+  | "up_wide"         // 24h ≥ +1% AND spread ≥ 1%
+  | "up_tight";       // 24h ≥ +1% AND spread < 1%
+
+function classifyRegime(input: {
+  drawdownPct: number;
+  change24h: number;
+  spreadPct: number;
+}): Regime {
+  if (input.drawdownPct >= 1.5) return "drawdown_breach";
+  if (input.change24h <= -3) return "crash";
+  if (input.change24h <= -1) return input.spreadPct >= 1 ? "down_wide" : "down_tight";
+  if (input.change24h < 1) return "flat";
+  return input.spreadPct >= 1 ? "up_wide" : "up_tight";
+}
+
+/**
+ * Target risk-asset share (% of TVL) for a given regime + preset tier.
+ *
+ * Aggressive presets (maxAllocationBps ≥ 5000) get a slightly higher
+ * constructive target so the tier's larger envelope translates into a
+ * visibly different position than Balanced under the same conditions.
+ */
+function targetShareForRegime(regime: Regime, maxAllocationBps: number): number {
+  const isAggressive = maxAllocationBps >= 5000;
+  switch (regime) {
+    case "drawdown_breach":
+    case "crash":
+      return 0;
+    case "down_wide":
+      return 10;
+    case "down_tight":
+      return 18;
+    case "flat":
+      return 22;
+    case "up_wide":
+      return 20;
+    case "up_tight":
+      return isAggressive ? 28 : 25;
+  }
+}
+
+interface StrategyRecommendation {
+  regime: Regime;
+  targetShare: number;
+  recommendedAction: "Rebalance" | "EmergencyDeleverage" | "hold";
+  recommendedAmountBps: number;
+  rationale: string;
+}
+
+/**
+ * Compute the deterministic strategy recommendation. Hold band is ±3pp from
+ * target (anti-flap). Outside the band the recommendation translates the gap
+ * into a concrete amount_bps using actual balances + price + TVL — so the
+ * LLM never has to do float math, and the recommendation is reproducible
+ * off-chain by anyone with the same inputs.
+ */
+function computeStrategy(input: {
+  currentShare: number;
+  drawdownPct: number;
+  change24h: number;
+  spreadPct: number;
+  baseBalance: number;
+  riskBalance: number;
+  tvl: number;
+  priceUsd: number;
+  maxAllocationBps: number;
+}): StrategyRecommendation {
+  const regime = classifyRegime({
+    drawdownPct: input.drawdownPct,
+    change24h: input.change24h,
+    spreadPct: input.spreadPct,
+  });
+  const targetShare = targetShareForRegime(regime, input.maxAllocationBps);
+  const drift = input.currentShare - targetShare;
+
+  // Hard regime: drawdown breach or 24h crash → full deleverage.
+  if (regime === "drawdown_breach" || regime === "crash") {
+    if (input.riskBalance <= 0) {
+      return { regime, targetShare, recommendedAction: "hold", recommendedAmountBps: 0,
+        rationale: `${regime} but no risk balance to deleverage` };
+    }
+    return {
+      regime,
+      targetShare,
+      recommendedAction: "EmergencyDeleverage",
+      recommendedAmountBps: 9500,
+      rationale: `${regime}: deleverage 95% of risk balance to base stable`,
+    };
+  }
+
+  // Within ±3pp of target → hold (anti-flap band).
+  if (Math.abs(drift) < 3) {
+    return {
+      regime,
+      targetShare,
+      recommendedAction: "hold",
+      recommendedAmountBps: 0,
+      rationale: `regime=${regime}, share=${input.currentShare.toFixed(1)}% ≈ target=${targetShare}% (drift ${drift.toFixed(1)}pp)`,
+    };
+  }
+
+  // Drift < -3pp → deploy base into risk to reach target.
+  if (drift < -3) {
+    if (input.baseBalance <= 0) {
+      return { regime, targetShare, recommendedAction: "hold", recommendedAmountBps: 0,
+        rationale: `regime=${regime}, under-target but no base balance` };
+    }
+    const deployValueUsd = (Math.abs(drift) / 100) * input.tvl;
+    const ratio = Math.min(1, deployValueUsd / input.baseBalance);
+    const bps = Math.min(Math.round(ratio * 10000), input.maxAllocationBps);
+    return {
+      regime,
+      targetShare,
+      recommendedAction: "Rebalance",
+      recommendedAmountBps: bps,
+      rationale: `regime=${regime}, deploy ${deployValueUsd.toFixed(2)} base toward ${targetShare}% target`,
+    };
+  }
+
+  // Drift > +3pp → trim risk back toward target.
+  const riskValueUsd = input.riskBalance * input.priceUsd;
+  if (riskValueUsd <= 0) {
+    return { regime, targetShare, recommendedAction: "hold", recommendedAmountBps: 0,
+      rationale: `regime=${regime}, over-target but no risk balance` };
+  }
+  const trimValueUsd = (drift / 100) * input.tvl;
+  const ratio = Math.min(1, trimValueUsd / riskValueUsd);
+  const bps = Math.min(Math.round(ratio * 10000), 9500);
+  return {
+    regime,
+    targetShare,
+    recommendedAction: "EmergencyDeleverage",
+    recommendedAmountBps: bps,
+    rationale: `regime=${regime}, trim ${trimValueUsd.toFixed(2)} of risk toward ${targetShare}% target`,
+  };
+}
+
 function buildMarketPrompt(input: {
   baseBalance: string;
   riskBalance: string;
   tvl: string;
   hwm: string;
-  market: { priceUsd: number; riskSymbol: string; baseSymbol: string; change24h: number; source: string };
+  market: { priceUsd: number; riskSymbol: string; baseSymbol: string; change24h: number; source: string; spreadPct: number };
   policy: {
     maxAllocationBps: number;
     maxDrawdownBps: number;
@@ -527,8 +685,6 @@ function buildMarketPrompt(input: {
     cooldownPeriod: number;
   };
 }): string {
-  // Pre-compute every metric in TS so the LLM never does float math.
-  // Stables-first doctrine: target band = 20-30% risk asset, max 30%.
   const baseN = Number(input.baseBalance);
   const riskN = Number(input.riskBalance);
   const tvlN = Number(input.tvl);
@@ -537,8 +693,22 @@ function buildMarketPrompt(input: {
   const baseSymbol = input.market.baseSymbol ?? "USDC";
   const riskValueUsd = riskN * input.market.priceUsd;
   const riskSharePct = tvlN > 0 ? (riskValueUsd / tvlN) * 100 : 0;
-  const deviationFromTargetPct = riskSharePct - 25; // target = 25% mid-band
   const drawdownPct = hwmN > 0 ? ((hwmN - tvlN) / hwmN) * 100 : 0;
+  const spreadPct = input.market.spreadPct ?? 0;
+
+  // Deterministic vol-adjusted regime-aware recommendation. Computed in TS so
+  // the LLM never has to do float math; LLM's job is to confirm or override.
+  const recommendation = computeStrategy({
+    currentShare: riskSharePct,
+    drawdownPct,
+    change24h: input.market.change24h,
+    spreadPct,
+    baseBalance: baseN,
+    riskBalance: riskN,
+    tvl: tvlN,
+    priceUsd: input.market.priceUsd,
+    maxAllocationBps: input.policy.maxAllocationBps,
+  });
 
   return `Treasury state (computed):
 - ${baseSymbol} balance: ${baseN.toFixed(2)} ${baseSymbol}
@@ -548,11 +718,11 @@ function buildMarketPrompt(input: {
 - HWM: ${hwmN.toFixed(2)} ${baseSymbol}
 - Drawdown from HWM: ${drawdownPct.toFixed(2)}%
 - ${riskSymbol} share of TVL: ${riskSharePct.toFixed(2)}%
-- Deviation from 25% target: ${deviationFromTargetPct.toFixed(2)} percentage points
 
 Market (${input.market.source}):
 - ${riskSymbol}/USD: $${input.market.priceUsd.toFixed(4)}
 - 24h change: ${input.market.change24h.toFixed(2)}%
+- Oracle spread (Pyth vs Jaine): ${spreadPct.toFixed(3)}%
 
 Policy bounds:
 - Max post-trade ${riskSymbol} exposure: ${input.policy.maxAllocationBps / 100}% of TVL
@@ -560,6 +730,14 @@ Policy bounds:
 - Max slippage: ${input.policy.maxSlippageBps / 100}%
 - Cooldown between actions: ${input.policy.cooldownPeriod}s
 
-Apply the decision rules from your system prompt against the values above.
-Respond with the JSON object only.`;
+Strategy v2 recommendation (vol-adjusted regime-aware):
+- Regime: ${recommendation.regime}
+- Target share: ${recommendation.targetShare}% of TVL
+- Recommended action: ${recommendation.recommendedAction}
+- Recommended amount_bps: ${recommendation.recommendedAmountBps}
+- Rationale: ${recommendation.rationale}
+
+Confirm the recommendation by returning the same action and amount_bps, OR
+override only if a critical reason justifies it (state your reason in
+short_reason). Respond with the JSON object only.`;
 }

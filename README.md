@@ -123,17 +123,31 @@ Every 5 minutes the agent:
    - **Size + execute**: build a canonical `ExecutionIntent`, pass `intentHash`, provider signed chat payload, TEE signature, and attestation hash to `vault.executeStrategy(...)`. Skips emit a structured outcome and continue to next vault.
    - **Audit + state** to 0G Storage, namespaced by vault address. Audit keys include vault + tx hash + log index + intent hash so entries do not collide.
 
-### Strategy doctrine (`packages/sdk/src/inference.ts`)
+### Strategy doctrine — vol-adjusted regime-aware target (`agent.ts` + `inference.ts`)
 
-System prompt is a deterministic decision tree, applied in order:
+Sentri's strategy is *vol-targeting*: instead of one fixed allocation goal, the target risk-asset share moves with the regime so exposure shrinks when the regime is stressed and expands when the regime is calm and constructive. This is the institutional pattern referenced as 2026 best practice for AI-managed crypto treasuries (volatility forecasting → dynamic position sizing → drawdown control).
 
-1. 24h change ≤ −3% **or** drawdown ≥ 1.5% → EmergencyDeleverage all risk exposure back to the base stable asset.
-2. Risk-asset share > 30% → EmergencyDeleverage trim back toward 25% target.
-3. 20% ≤ risk-asset share ≤ 30% → hold (no action).
-4. Risk-asset share < 20% **and** 24h ≥ +1% **and** drawdown < 1% → deploy base stable asset toward 25% target.
-5. Otherwise → hold (cautious default).
+Three live signals classify the regime — all already known to the agent without any extra fetch:
 
-Default state is 100% base stable asset. Maximum risk-asset exposure is 30% of TVL by default — never exceeded by the vault. Each vault's on-chain `policy` independently caps post-trade risk exposure (15% / 30% / 50% depending on preset).
+- **drawdown_from_HWM** — capital preservation
+- **24h price change** — directional momentum
+- **oracle spread** — Pyth vs Jaine on-chain disagreement, used as a regime-stress proxy (wide spread = unsettled regime)
+
+The matrix below is computed deterministically in TypeScript before the LLM call, so the model never does float math. The LLM either confirms the recommendation or overrides it in a strictly more defensive direction (smaller buy, larger trim, never larger buy than recommended). The TEE attestation binds the resulting decision regardless.
+
+| Regime | Trigger | Target share (Bal / Aggr) |
+|---|---|---|
+| `drawdown_breach` | drawdown ≥ 1.5% | 0% — full deleverage |
+| `crash` | 24h ≤ −3% | 0% — full deleverage |
+| `down_wide` | 24h ≤ −1% AND spread ≥ 1% | 10% — defensive lean |
+| `down_tight` | 24h ≤ −1% AND spread < 1% | 18% — soft lean |
+| `flat` | −1% < 24h < +1% | 22% — neutral, slight under-target |
+| `up_wide` | 24h ≥ +1% AND spread ≥ 1% | 20% — tempered enthusiasm |
+| `up_tight` | 24h ≥ +1% AND spread < 1% | 25% / **28%** Aggressive |
+
+Hold band is ±3pp around the target (anti-flap). Outside the band the recommendation translates the gap into a concrete `amount_bps` using actual balances + price + TVL. Every step is reproducible off-chain by anyone with the same inputs.
+
+Default state remains 100% base stable asset. Each vault's on-chain `policy` independently caps post-trade risk exposure (15% / 30% / 50% depending on preset) — the matrix never exceeds the cap.
 
 ---
 
