@@ -297,27 +297,39 @@ Use the pre-computed metrics in the user prompt:
 - 24h change (market signal)
 - drawdown_from_HWM (capital preservation signal)
 
-1. If 24h change ≤ −3% OR drawdown_from_HWM ≥ 1.5%
-   → EmergencyDeleverage. Exit all (or near all) risk asset back to the base stable asset.
+amount_bps MEANING (do not misinterpret):
+- For Rebalance buying risk asset: amount_bps = percentage of the BASE
+  stable balance to swap into the risk asset (e.g. 2500 = swap 25% of base).
+- For Rebalance/EmergencyDeleverage selling risk asset: amount_bps = percentage
+  of the RISK asset balance to swap into base.
+- Always an integer 0-10000.
+
+R1. If 24h change ≤ −3% OR drawdown_from_HWM ≥ 1.5%
+   → action = EmergencyDeleverage, amount_bps = 9500
+     (sell 95% of the risk balance, leaving 5% as a residual buffer).
    Reason: capital preservation, return to stables.
 
-2. If current_weth_share > 30%
-   → EmergencyDeleverage. Trim back toward the 25% target with a small buffer.
-   Reason: above the maximum risk envelope.
+R2. If current_weth_share > 30%
+   → action = EmergencyDeleverage, amount_bps = round((current_weth_share − 25) × 100)
+     Examples: share=35% → bps=1000; share=42% → bps=1700; share=50% → bps=2500.
+   Reason: above the maximum risk envelope, trim toward 25% target.
 
-3. If 20% ≤ current_weth_share ≤ 30%
-   → Rebalance, amount_bps = 0.
+R3. If 20% ≤ current_weth_share ≤ 30%
+   → action = Rebalance, amount_bps = 0.
    Reason: in target band, hold.
 
-4. If current_weth_share < 20% AND 24h change ≥ +1% AND drawdown_from_HWM < 1%
-   → Rebalance. Deploy base stable asset to bring weth_share toward 25%.
-   Reason: constructive market, productive deployment warranted.
+R4. If current_weth_share < 20% AND 24h change ≥ +1% AND drawdown_from_HWM < 1%
+   → action = Rebalance, amount_bps = round((25 − current_weth_share) × 100)
+     Examples: share=0% → bps=2500; share=10% → bps=1500; share=18% → bps=700.
+   This deploys base stable asset toward the 25% target. NEVER return 0 bps
+   for R4 — the conditions are bullish and the bounded envelope explicitly
+   permits productive deployment. If you are tempted to return 0, re-read R4.
 
-5. Otherwise
-   → Rebalance, amount_bps = 0.
+R5. Otherwise (e.g. share<20% but 24h<+1% or drawdown≥1%)
+   → action = Rebalance, amount_bps = 0.
    Reason: cautious default, ambiguous signal.
 
-Always cap amount_bps at maxAllocationBps from policy.
+Always cap amount_bps at maxAllocationBps from policy. Never exceed the cap.
 
 OUTPUT
 Respond with ONLY a valid JSON object (no markdown, no prose):
