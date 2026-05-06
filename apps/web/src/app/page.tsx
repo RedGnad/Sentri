@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getLiveSnapshot, formatRelative, type LiveSnapshot } from "@/lib/live-state";
+import { DEMO_VAULT_ADDRESS } from "@/config/contracts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -36,9 +37,7 @@ export default async function LandingPage() {
   const chainLabel = networkLabel(snapshot.chain.id);
   const mechanismRows = mechanism(snapshot.chain.id);
   const isMainnet = snapshot.chain.id === 16661;
-  const demoVaultHref = isMainnet
-    ? "/v/0xEE28cFdCCdD86069332834F0758B7CebBeB1BF64"
-    : "/v/0xB6539EC33a360726ac7E8f053327022AC891E86D";
+  const demoVaultHref = `/v/${DEMO_VAULT_ADDRESS}`;
 
   return (
     <div className="relative">
