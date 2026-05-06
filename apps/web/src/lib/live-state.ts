@@ -134,10 +134,9 @@ async function probeChainAndProtocol(): Promise<{
             functionName: "riskBalance",
           }) as Promise<bigint>,
         ]);
-        const [tvlResults, logResults, balanceResults, priceResult, decimalsResult] = await Promise.all([
-          Promise.allSettled(tvlReads),
-          Promise.allSettled(logReads),
-          Promise.allSettled(balanceReads),
+        // Promise.allSettled the price feed reads too, so a temporarily
+        // stale or unavailable oracle doesn't tank TVL + executions display.
+        const priceCallSettled = Promise.allSettled([
           client.readContract({
             address: PRICE_FEED_ADDRESS,
             abi: PRICE_FEED_ABI,
@@ -149,6 +148,12 @@ async function probeChainAndProtocol(): Promise<{
             functionName: "decimals",
           }) as Promise<number>,
         ]);
+        const [tvlResults, logResults, balanceResults, priceSettled] = await Promise.all([
+          Promise.allSettled(tvlReads),
+          Promise.allSettled(logReads),
+          Promise.allSettled(balanceReads),
+          priceCallSettled,
+        ]);
         for (const r of tvlResults) {
           if (r.status === "fulfilled") {
             successfulTvlReads += 1;
@@ -158,15 +163,20 @@ async function probeChainAndProtocol(): Promise<{
         for (const r of logResults) {
           if (r.status === "fulfilled") totalExecutions += Number(r.value);
         }
-        const price = priceResult[1];
-        if (price > 0n) {
-          const riskQuoteDivisor = 10n ** BigInt(18 + Number(decimalsResult) - 6);
-          for (let i = 0; i < addrs.length; i += 1) {
-            const baseResult = balanceResults[i * 2];
-            const riskResult = balanceResults[i * 2 + 1];
-            if (baseResult?.status === "fulfilled" && riskResult?.status === "fulfilled") {
-              fallbackTotalTVL += baseResult.value + (riskResult.value * price) / riskQuoteDivisor;
-              successfulFallbackTvlReads += 1;
+        const priceRaw = priceSettled[0];
+        const decimalsRaw = priceSettled[1];
+        if (priceRaw.status === "fulfilled" && decimalsRaw.status === "fulfilled") {
+          const price = priceRaw.value[1];
+          const decimals = decimalsRaw.value;
+          if (price > 0n) {
+            const riskQuoteDivisor = 10n ** BigInt(18 + Number(decimals) - 6);
+            for (let i = 0; i < addrs.length; i += 1) {
+              const baseResult = balanceResults[i * 2];
+              const riskResult = balanceResults[i * 2 + 1];
+              if (baseResult?.status === "fulfilled" && riskResult?.status === "fulfilled") {
+                fallbackTotalTVL += baseResult.value + (riskResult.value * price) / riskQuoteDivisor;
+                successfulFallbackTvlReads += 1;
+              }
             }
           }
         }

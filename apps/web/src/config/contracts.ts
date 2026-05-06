@@ -32,41 +32,49 @@ const MAINNET_CONTRACTS = {
 
 const SELECTED_CONTRACTS = IS_MAINNET ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
 
+// viem rejects mixed-case addresses with an invalid EIP-55 checksum. We
+// lowercase whatever comes in from env (Vercel/Render dashboards routinely
+// preserve whatever casing was pasted) so contract calls don't blow up just
+// because someone copied an address with the wrong case mid-string.
+function normalizeAddress(value: string | undefined): `0x${string}` | undefined {
+  return value ? (value.toLowerCase() as `0x${string}`) : undefined;
+}
+
 export const VAULT_FACTORY_ADDRESS =
-  (process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS as `0x${string}`) ??
-  SELECTED_CONTRACTS.vaultFactory;
+  normalizeAddress(process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS) ??
+  (SELECTED_CONTRACTS.vaultFactory as `0x${string}`);
 
 export const AGENT_INFT_ADDRESS =
-  (process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS as `0x${string}`) ??
-  SELECTED_CONTRACTS.agentINFT;
+  normalizeAddress(process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS) ??
+  (SELECTED_CONTRACTS.agentINFT as `0x${string}`);
 
 export const SWAP_ROUTER_ADDRESS =
-  (process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS as `0x${string}`) ??
-  SELECTED_CONTRACTS.swapRouter;
+  normalizeAddress(process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS) ??
+  (SELECTED_CONTRACTS.swapRouter as `0x${string}`);
 
 export const PRICE_FEED_ADDRESS =
-  (process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS as `0x${string}`) ??
-  SELECTED_CONTRACTS.priceFeed;
+  normalizeAddress(process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS) ??
+  (SELECTED_CONTRACTS.priceFeed as `0x${string}`);
 
 // Base stable asset token (USDC.E on mainnet, MockUSDC on Galileo).
 // Reads NEXT_PUBLIC_BASE_TOKEN_ADDRESS first, falls back to legacy
 // NEXT_PUBLIC_MOCK_USDC_ADDRESS for compat with un-migrated env files.
 export const BASE_TOKEN_ADDRESS =
-  (process.env.NEXT_PUBLIC_BASE_TOKEN_ADDRESS as `0x${string}` | undefined) ??
-  (process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as `0x${string}` | undefined) ??
-  SELECTED_CONTRACTS.baseToken;
+  normalizeAddress(process.env.NEXT_PUBLIC_BASE_TOKEN_ADDRESS) ??
+  normalizeAddress(process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS) ??
+  (SELECTED_CONTRACTS.baseToken as `0x${string}`);
 
 // Risk asset token (W0G on mainnet, MockWETH on Galileo).
 // Reads NEXT_PUBLIC_RISK_TOKEN_ADDRESS first, falls back to legacy
 // NEXT_PUBLIC_MOCK_WETH_ADDRESS for compat.
 export const RISK_TOKEN_ADDRESS =
-  (process.env.NEXT_PUBLIC_RISK_TOKEN_ADDRESS as `0x${string}` | undefined) ??
-  (process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS as `0x${string}` | undefined) ??
-  SELECTED_CONTRACTS.riskToken;
+  normalizeAddress(process.env.NEXT_PUBLIC_RISK_TOKEN_ADDRESS) ??
+  normalizeAddress(process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS) ??
+  (SELECTED_CONTRACTS.riskToken as `0x${string}`);
 
 export const DEMO_VAULT_ADDRESS =
-  (process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS as `0x${string}`) ??
-  SELECTED_CONTRACTS.demoVault;
+  normalizeAddress(process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS) ??
+  (SELECTED_CONTRACTS.demoVault as `0x${string}`);
 
 // Preset tier enum mirrors VaultFactory.PresetTier solidity enum.
 export const PresetTier = {
