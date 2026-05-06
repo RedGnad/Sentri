@@ -180,8 +180,8 @@ Deployer / Agent: [`0x981F…20e0`](https://chainscan.0g.ai/address/0x981F6E0Ea9
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0x1794aADef202e0F39494D27491752B06c0CC26Bc`](https://chainscan.0g.ai/address/0x1794aADef202e0F39494D27491752B06c0CC26Bc) |
-| `TreasuryVault` (impl) | [`0x539Ad624E9be34DB7369c6Ee0Fb22A6dF01C7bEE`](https://chainscan.0g.ai/address/0x539Ad624E9be34DB7369c6Ee0Fb22A6dF01C7bEE) |
+| `VaultFactory` (entry point) | [`0x1794AADef202E0f39494D27491752B06c0CC26BC`](https://chainscan.0g.ai/address/0x1794AADef202E0f39494D27491752B06c0CC26BC) |
+| `TreasuryVault` (impl) | [`0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE`](https://chainscan.0g.ai/address/0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE) |
 | `AgentINFT` | [`0x83C375F3808efAB339276E98C20dddfa69Af3659`](https://chainscan.0g.ai/address/0x83C375F3808efAB339276E98C20dddfa69Af3659) |
 | `JaineV3PoolAdapter` | [`0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2`](https://chainscan.0g.ai/address/0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2) |
 | Jaine `USDC.E/W0G` pool | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |

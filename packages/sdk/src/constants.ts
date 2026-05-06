@@ -53,8 +53,8 @@ const GALILEO_CONTRACTS = {
 } as const;
 
 const MAINNET_CONTRACTS = {
-  vaultFactory: "0x1794aADef202e0F39494D27491752B06c0CC26Bc",
-  vaultImplementation: "0x539Ad624E9be34DB7369c6Ee0Fb22A6dF01C7bEE",
+  vaultFactory: "0x1794AADef202E0f39494D27491752B06c0CC26BC",
+  vaultImplementation: "0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE",
   agentINFT: "0x83C375F3808efAB339276E98C20dddfa69Af3659",
   swapRouter: "0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2",
   swapPair: "0xa9e824Eddb9677fB2189AB9c439238A83695C091",
@@ -66,6 +66,14 @@ const MAINNET_CONTRACTS = {
 
 const selectedContracts = NETWORK === "mainnet" ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
 
+// ethers v6 throws on mixed-case addresses with an invalid EIP-55 checksum.
+// We normalise everything we read from env to lowercase, which ethers accepts
+// without checksum validation. Source defaults are written in proper EIP-55
+// for readability.
+function normalizeAddress(value: string | undefined): string | undefined {
+  return value ? value.toLowerCase() : value;
+}
+
 // Contract addresses. The VaultFactory is the public entry point; users create
 // vaults via it. All other addresses are immutable dependencies the factory
 // wires into each new clone.
@@ -74,21 +82,21 @@ const selectedContracts = NETWORK === "mainnet" ? MAINNET_CONTRACTS : GALILEO_CO
 // legacy MOCK_USDC/MOCK_WETH names (kept for compat with un-migrated env files
 // and Render config).
 export const CONTRACTS = {
-  vaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS ?? selectedContracts.vaultFactory,
-  vaultImplementation: process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS ?? selectedContracts.vaultImplementation,
-  agentINFT: process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS ?? selectedContracts.agentINFT,
-  swapRouter: process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS ?? selectedContracts.swapRouter,
-  swapPair: process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS ?? selectedContracts.swapPair,
-  priceFeed: process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS ?? selectedContracts.priceFeed,
+  vaultFactory: normalizeAddress(process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS) ?? selectedContracts.vaultFactory,
+  vaultImplementation: normalizeAddress(process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS) ?? selectedContracts.vaultImplementation,
+  agentINFT: normalizeAddress(process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS) ?? selectedContracts.agentINFT,
+  swapRouter: normalizeAddress(process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS) ?? selectedContracts.swapRouter,
+  swapPair: normalizeAddress(process.env.NEXT_PUBLIC_SWAP_PAIR_ADDRESS) ?? selectedContracts.swapPair,
+  priceFeed: normalizeAddress(process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS) ?? selectedContracts.priceFeed,
   baseToken:
-    process.env.NEXT_PUBLIC_BASE_TOKEN_ADDRESS
-    ?? process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS
+    normalizeAddress(process.env.NEXT_PUBLIC_BASE_TOKEN_ADDRESS)
+    ?? normalizeAddress(process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS)
     ?? selectedContracts.baseToken,
   riskToken:
-    process.env.NEXT_PUBLIC_RISK_TOKEN_ADDRESS
-    ?? process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS
+    normalizeAddress(process.env.NEXT_PUBLIC_RISK_TOKEN_ADDRESS)
+    ?? normalizeAddress(process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS)
     ?? selectedContracts.riskToken,
-  demoVault: process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS ?? selectedContracts.demoVault,
+  demoVault: normalizeAddress(process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS) ?? selectedContracts.demoVault,
 } as const;
 
 // Agent loop timing
