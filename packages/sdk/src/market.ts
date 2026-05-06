@@ -40,6 +40,16 @@ const ZERO_G_MAINNET_W0G =
 const ZERO_G_MAINNET_USDCE =
   process.env.ZERO_G_MAINNET_USDCE_ADDRESS ?? "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E";
 
+// Pyth Network is the official 0G mainnet oracle (day-1 partnership, 2000+ feeds).
+// Hermes is the public price-update endpoint; pull model with no rate limit.
+// Feed id `Crypto.0G/USD` is the canonical 0G token price (publishers include
+// Cboe, Binance, OKX, Jane Street, etc. — fully decentralised).
+const PYTH_HERMES_BASE = process.env.PYTH_HERMES_BASE ?? "https://hermes.pyth.network";
+const PYTH_FEED_W0G_USD =
+  process.env.PYTH_FEED_W0G_USD ??
+  "fa9e8d4591613476ad0961732475dc08969d248faca270cc6c47efe009ea3070";
+const PYTH_MAX_AGE_S = Number(process.env.PYTH_MAX_AGE_S ?? "60");
+
 const JAINE_POOL_ABI = [
   "function token0() view returns (address)",
   "function token1() view returns (address)",
@@ -95,37 +105,60 @@ async function fetchKraken(): Promise<SourceResult> {
   return { source: "kraken", priceUsd: Number(tickers[0].c[0]) };
 }
 
-async function fetchW0GCoinGecko(): Promise<SourceResult> {
+/**
+ * Pyth Network price feed for 0G/USD via the public Hermes endpoint.
+ *
+ * Pyth is the official 0G mainnet oracle. Hermes returns the latest signed
+ * price update authored by the Pyth publisher set (≥100 institutions).
+ * We use the parsed JSON form here — the agent does not push the update
+ * on-chain because the vault's slippage gate already reads from
+ * SentriPriceFeed (which the agent pushes itself, derived from the median
+ * of all reachable sources in this module).
+ */
+async function fetchW0GPyth(): Promise<SourceResult> {
+  const url = `${PYTH_HERMES_BASE}/v2/updates/price/latest?ids[]=${PYTH_FEED_W0G_USD}&parsed=true&encoding=hex`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`Pyth Hermes ${res.status}`);
+  const data = (await res.json()) as {
+    parsed?: Array<{
+      price: { price: string; expo: number; conf: string; publish_time: number };
+    }>;
+  };
+  const entry = data.parsed?.[0];
+  if (!entry) throw new Error("Pyth Hermes empty parsed payload");
+
+  const rawPrice = Number(entry.price.price);
+  const expo = entry.price.expo;
+  const priceUsd = rawPrice * 10 ** expo;
+  if (!Number.isFinite(priceUsd) || priceUsd <= 0) {
+    throw new Error(`Pyth Hermes invalid price: ${priceUsd}`);
+  }
+
+  const ageS = Math.floor(Date.now() / 1000) - entry.price.publish_time;
+  if (ageS > PYTH_MAX_AGE_S) {
+    throw new Error(`Pyth Hermes price stale: ${ageS}s old (max ${PYTH_MAX_AGE_S}s)`);
+  }
+
+  return { source: "pyth:0g-usd", priceUsd };
+}
+
+/**
+ * Optional CoinGecko probe for 24h change only. Pyth and Jaine slot0 do not
+ * expose 24h change; CoinGecko is the convenience source for that metric.
+ * Kept opportunistic — its failure does not block trading because the
+ * mandatory pair (Jaine on-chain + Pyth) covers price discovery.
+ */
+async function fetchW0G24hChangeCoinGecko(): Promise<SourceResult> {
   const res = await fetch(
     "https://api.coingecko.com/api/v3/simple/price?ids=wrapped-0g&vs_currencies=usd&include_24hr_change=true",
     { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
   );
-  if (!res.ok) throw new Error(`CoinGecko W0G ${res.status}`);
+  if (!res.ok) throw new Error(`CoinGecko W0G 24h ${res.status}`);
   const data = (await res.json()) as { "wrapped-0g": { usd: number; usd_24h_change: number } };
   return {
     source: "coingecko:wrapped-0g",
     priceUsd: data["wrapped-0g"].usd,
     change24h: data["wrapped-0g"].usd_24h_change,
-  };
-}
-
-async function fetchW0GGeckoTerminal(): Promise<SourceResult> {
-  const res = await fetch(`https://api.geckoterminal.com/api/v2/networks/0g/pools/${ZERO_G_MAINNET_JAINE_POOL}`, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`GeckoTerminal W0G ${res.status}`);
-  const data = (await res.json()) as {
-    data?: { attributes?: { quote_token_price_usd?: string; base_token_price_usd?: string; price_change_percentage?: { h24?: string } } };
-  };
-  const attrs = data.data?.attributes;
-  // GeckoTerminal names this pool "USDC.e / W0G": base token is USDC.e and
-  // quote token is W0G. We need the W0G/USD price for the vault's risk feed.
-  const price = Number(attrs?.quote_token_price_usd);
-  if (!Number.isFinite(price) || price <= 0) throw new Error("GeckoTerminal W0G missing price");
-  return {
-    source: "geckoterminal:jaine-usdce-w0g",
-    priceUsd: price,
-    change24h: attrs?.price_change_percentage?.h24 ? Number(attrs.price_change_percentage.h24) : undefined,
   };
 }
 
@@ -186,9 +219,14 @@ function median(values: number[]): number {
 }
 
 export async function getMarketSnapshot(): Promise<MarketSnapshot> {
+  // W0G path (0G mainnet): mandatory cross-validation between an on-chain
+  // source (Jaine V3 slot0) and Pyth's decentralised publisher network.
+  // CoinGecko is opportunistic for 24h change only and never gates trading.
+  // ETH path (Galileo rehearsal): 4-source CEX median (Binance/CoinGecko/
+  // Coinbase/Kraken) since these endpoints don't rate-limit ETH.
   const providers =
     MARKET_ASSET === "W0G"
-      ? [fetchW0GJaineSpot(), fetchW0GCoinGecko(), fetchW0GGeckoTerminal()]
+      ? [fetchW0GJaineSpot(), fetchW0GPyth(), fetchW0G24hChangeCoinGecko()]
       : [fetchBinance(), fetchCoinGecko(), fetchCoinbase(), fetchKraken()];
 
   const settled = await Promise.allSettled(providers);
@@ -200,37 +238,43 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     else failures.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
   }
 
-  const requiredQuorum = MARKET_ASSET === "W0G" ? 1 : MIN_QUORUM;
-  if (successes.length < requiredQuorum) {
+  if (successes.length < MIN_QUORUM) {
     throw new Error(
       `Insufficient market quorum: ${successes.length}/${providers.length} sources succeeded ` +
-        `(need ≥ ${requiredQuorum}). Asset: ${MARKET_ASSET}. Failures: ${failures.join(" | ")}`,
+        `(need ≥ ${MIN_QUORUM}). Asset: ${MARKET_ASSET}. Failures: ${failures.join(" | ")}`,
     );
   }
 
-  const prices = successes.map((s) => s.priceUsd);
+  // For the W0G path, drop the opportunistic CoinGecko price from the median:
+  // it lags the on-chain price (last 24h average refresh) and could skew the
+  // median. We still keep its 24h change signal below.
+  const priceContributors =
+    MARKET_ASSET === "W0G"
+      ? successes.filter((s) => s.source !== "coingecko:wrapped-0g")
+      : successes;
+  const prices = priceContributors.map((s) => s.priceUsd);
   const med = median(prices);
   const spreadPct = prices.length > 1 ? ((Math.max(...prices) - Math.min(...prices)) / med) * 100 : 0;
   if (spreadPct * 100 > MAX_MARKET_SPREAD_BPS) {
     throw new Error(
       `Market spread too wide for ${MARKET_ASSET}: ${spreadPct.toFixed(3)}% ` +
         `(max ${(MAX_MARKET_SPREAD_BPS / 100).toFixed(2)}%). Sources: ` +
-        successes.map((s) => `${s.source}=${s.priceUsd}`).join(" | "),
+        priceContributors.map((s) => `${s.source}=${s.priceUsd}`).join(" | "),
     );
   }
 
   // 24h change: prefer the first source that exposes it, otherwise 0.
   const changeSource = successes.find((s) => s.change24h !== undefined);
   const change24h = changeSource?.change24h ?? 0;
-  const hasOnchain = successes.some((s) => s.source === "jaine:onchain-slot0");
-  const hasExternal = successes.some((s) => s.source !== "jaine:onchain-slot0");
-  const tradingAllowed = MARKET_ASSET !== "W0G" || (hasOnchain && hasExternal && successes.length >= 2);
+  const hasJaineOnchain = successes.some((s) => s.source === "jaine:onchain-slot0");
+  const hasPyth = successes.some((s) => s.source === "pyth:0g-usd");
+  const tradingAllowed = MARKET_ASSET !== "W0G" || (hasJaineOnchain && hasPyth);
   const health =
     MARKET_ASSET !== "W0G"
       ? "fresh"
       : tradingAllowed
         ? "fresh"
-        : hasOnchain
+        : hasJaineOnchain
           ? "degraded"
           : "external-only";
 
@@ -240,11 +284,11 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     riskSymbol: RISK_SYMBOL,
     baseSymbol: BASE_SYMBOL,
     change24h,
-    source: `median:${successes.map((s) => s.source).join(",")}`,
+    source: `median:${priceContributors.map((s) => s.source).join(",")}`,
     timestamp: Date.now(),
-    sourceCount: successes.length,
+    sourceCount: priceContributors.length,
     spreadPct,
-    rawSources: successes.map((s) => ({ source: s.source, priceUsd: s.priceUsd, ethUsd: s.priceUsd })),
+    rawSources: priceContributors.map((s) => ({ source: s.source, priceUsd: s.priceUsd, ethUsd: s.priceUsd })),
     health,
     tradingAllowed,
     failures,
