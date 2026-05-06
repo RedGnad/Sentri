@@ -1,6 +1,5 @@
 "use client";
 
-import { use } from "react";
 import { isAddress } from "viem";
 import { useParsedVaultData } from "@/hooks/use-vault";
 import { useAccount } from "wagmi";
@@ -15,9 +14,9 @@ export default function VaultLayout({
   params,
 }: {
   children: React.ReactNode;
-  params: Promise<{ address: string }>;
+  params: { address: string };
 }) {
-  const { address: rawAddress } = use(params);
+  const { address: rawAddress } = params;
 
   if (!isAddress(rawAddress)) {
     return (

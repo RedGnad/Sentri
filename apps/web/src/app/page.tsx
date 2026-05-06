@@ -70,15 +70,21 @@ export default async function LandingPage() {
             <span className="inline-block w-1.5 h-1.5 bg-amber animate-pulse-dot" />
             Live treasury infrastructure on 0G
           </div>
-          <h1 className="font-serif text-[52px] sm:text-[72px] lg:text-[92px] leading-[0.94] tracking-tightest text-ink max-w-4xl">
-            Vaults where AI can propose,
-            <br className="hidden sm:block" /> but policy decides.
+          <h1 className="font-serif text-[64px] sm:text-[88px] lg:text-[112px] leading-[0.92] tracking-tightest text-ink">
+            Your AI
+            <br />
+            <em className="italic text-amber">Treasurer</em>
+            <span className="cursor-block" />
           </h1>
-          <p className="text-[16px] text-ink-dim max-w-2xl mt-6 leading-relaxed">
-            Sentri runs stable-first treasury vaults. The shared agent uses 0G Sealed
-            Inference, but every execution still has to pass signer verification,
-            replay protection, deadline, exposure, drawdown, slippage, oracle freshness
-            and owner controls on-chain.
+          <p className="font-serif italic text-2xl sm:text-3xl text-ink-dim mt-6 max-w-2xl leading-snug">
+            Private strategy. Verifiable results.
+          </p>
+          <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-3">
+            Stables-first · Bounded risk · Owner-controlled
+          </p>
+          <p className="text-[16px] text-ink-dim max-w-xl mt-8 leading-relaxed">
+            Sentri turns treasury reserves into bounded productive capital: privately
+            decided in a TEE, executed only when on-chain policy allows it.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-8">
             <Link href="/deploy">

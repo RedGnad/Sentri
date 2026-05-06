@@ -8,6 +8,8 @@
 
 import { createPublicClient, http } from "viem";
 import {
+  PRICE_FEED_ABI,
+  PRICE_FEED_ADDRESS,
   VAULT_FACTORY_ADDRESS,
   VAULT_FACTORY_ABI,
   TREASURY_VAULT_ABI,
@@ -95,6 +97,8 @@ async function probeChainAndProtocol(): Promise<{
       let totalTVL = 0n;
       let totalExecutions = 0;
       let successfulTvlReads = 0;
+      let fallbackTotalTVL = 0n;
+      let successfulFallbackTvlReads = 0;
       if (vaultsCount > 0) {
         const limit = Math.min(vaultsCount, 50);
         const addrs = (await client.readContract({
@@ -118,8 +122,33 @@ async function probeChainAndProtocol(): Promise<{
             functionName: "executionLogCount",
           }) as Promise<bigint>,
         );
-        const tvlResults = await Promise.allSettled(tvlReads);
-        const logResults = await Promise.allSettled(logReads);
+        const balanceReads = addrs.flatMap((addr) => [
+          client.readContract({
+            address: addr,
+            abi: TREASURY_VAULT_ABI,
+            functionName: "vaultBalance",
+          }) as Promise<bigint>,
+          client.readContract({
+            address: addr,
+            abi: TREASURY_VAULT_ABI,
+            functionName: "riskBalance",
+          }) as Promise<bigint>,
+        ]);
+        const [tvlResults, logResults, balanceResults, priceResult, decimalsResult] = await Promise.all([
+          Promise.allSettled(tvlReads),
+          Promise.allSettled(logReads),
+          Promise.allSettled(balanceReads),
+          client.readContract({
+            address: PRICE_FEED_ADDRESS,
+            abi: PRICE_FEED_ABI,
+            functionName: "latestRoundData",
+          }) as Promise<readonly [bigint, bigint, bigint, bigint, bigint]>,
+          client.readContract({
+            address: PRICE_FEED_ADDRESS,
+            abi: PRICE_FEED_ABI,
+            functionName: "decimals",
+          }) as Promise<number>,
+        ]);
         for (const r of tvlResults) {
           if (r.status === "fulfilled") {
             successfulTvlReads += 1;
@@ -129,7 +158,23 @@ async function probeChainAndProtocol(): Promise<{
         for (const r of logResults) {
           if (r.status === "fulfilled") totalExecutions += Number(r.value);
         }
+        const price = priceResult[1];
+        if (price > 0n) {
+          const riskQuoteDivisor = 10n ** BigInt(18 + Number(decimalsResult) - 6);
+          for (let i = 0; i < addrs.length; i += 1) {
+            const baseResult = balanceResults[i * 2];
+            const riskResult = balanceResults[i * 2 + 1];
+            if (baseResult?.status === "fulfilled" && riskResult?.status === "fulfilled") {
+              fallbackTotalTVL += baseResult.value + (riskResult.value * price) / riskQuoteDivisor;
+              successfulFallbackTvlReads += 1;
+            }
+          }
+        }
       }
+
+      const tvlForDisplay = successfulTvlReads > 0 ? totalTVL : fallbackTotalTVL;
+      const successfulDisplayTvlReads =
+        successfulTvlReads > 0 ? successfulTvlReads : successfulFallbackTvlReads;
 
       return {
         chain,
@@ -137,8 +182,8 @@ async function probeChainAndProtocol(): Promise<{
           factoryAddress: VAULT_FACTORY_ADDRESS,
           vaultsCount,
           totalTVL:
-            vaultsCount === 0 || successfulTvlReads > 0
-              ? (Number(totalTVL) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })
+            vaultsCount === 0 || successfulDisplayTvlReads > 0
+              ? (Number(tvlForDisplay) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 })
               : null,
           totalExecutions,
         },
