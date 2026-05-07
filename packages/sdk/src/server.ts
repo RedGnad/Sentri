@@ -9,8 +9,8 @@
 //
 // The agent writes the canonical record to 0G Storage. The endpoints below
 // serve the local cache mirror — every entry includes its 0G Storage tx +
-// root hash so any consumer can independently verify on
-// https://storagescan-galileo.0g.ai.
+// root hash so any consumer can independently verify on the StorageScan
+// endpoint for the active 0G network (storagescan-galileo.0g.ai or storagescan.0g.ai).
 
 import "dotenv/config";
 import express from "express";
@@ -338,8 +338,30 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
     res.json(entry);
     return;
   }
-  // Cache miss + no tolerant match. Fall back to on-chain log lookup so the
-  // detail view still has something to show.
+  // Cache miss. Try KV manifest fallback (survives Render restarts with full enrichment).
+  try {
+    const kvEntries = await readAuditFromKv(addr, 50);
+    if (kvEntries.length > 0) {
+      const requested = Number(ts);
+      const kvMatch =
+        kvEntries.find((e) => String(e.timestamp) === ts) ??
+        kvEntries.reduce<typeof kvEntries[number] | null>(
+          (closest, e) =>
+            closest === null ||
+            Math.abs(e.timestamp - requested) < Math.abs(closest.timestamp - requested)
+              ? e
+              : closest,
+          null,
+        );
+      if (kvMatch) {
+        res.json({ ...kvMatch, source: "kv-fallback" });
+        return;
+      }
+    }
+  } catch {
+    // KV unreachable — continue to chain fallback below.
+  }
+  // KV miss. Fall back to on-chain log lookup so the detail view still has something to show.
   if (!ctx) {
     res.status(404).json({ error: "No enriched audit entry cached for this timestamp." });
     return;
