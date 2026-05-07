@@ -9,7 +9,7 @@
 **Verifiable autonomous treasury for stablecoin reserves on 0G.**
 Private strategy, verifiable results. The agent proposes, the vault disposes.
 
-Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded vault from a public factory, with their own risk policy. A shared agent operates across every vault: it requests strategy through a verifiable [0G Sealed Inference](https://docs.0g.ai/) TEE provider path, and the vault enforces every cryptographic and economic check on-chain before any swap can fire. The vault owner can pause, reconfigure, or hard-kill at any moment.
+Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded vault from a public factory, with their own risk policy. A shared agent operates across every vault: it requests strategy through a verifiable 0G Sealed Inference TEE provider path, and the vault enforces every cryptographic and economic check on-chain before any swap can fire. The vault owner can pause, reconfigure, or hard-kill at any moment.
 
 ```
 ┌──────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌──────────────┐
@@ -28,10 +28,10 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 |---|---|
 | What is Sentri? | A policy-first autonomous treasury vault on 0G. |
 | Is it live on mainnet? | Yes — deployed on 0G mainnet `16661`. |
-| Does it move real assets? | Yes — `USDC.E/W0G` through Jaine. |
-| What 0G components are used? | 4 core 0G components — Chain, Compute TeeML, Storage KV, Agent INFT — plus Jaine as the real 0G mainnet execution venue. |
-| Is the AI trusted blindly? | No — the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
-| Can judges verify it? | Yes — public dashboard, chainscan links, execution txs, storage tx/root hashes. |
+| Does it move real assets? | Yes, `USDC.E/W0G` through Jaine. |
+| What 0G components are used? | 4 core 0G components: Chain, Compute TeeML, Storage KV, Agent INFT, + Jaine as the real 0G mainnet execution venue. |
+| Is the AI trusted blindly? | No, the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
+| Can judges verify it? | Yes, public dashboard, chainscan links, execution txs, storage tx/root hashes. |
 
 ---
 
@@ -45,7 +45,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 ## 0G integration
 
-Sentri uses 4 core 0G components plus one real 0G mainnet ecosystem venue.
+Sentri uses 4 core 0G components + one real 0G mainnet ecosystem venue.
 
 | Layer | Usage |
 |---|---|
@@ -177,7 +177,7 @@ For the complete enumeration, see [`docs/architecture.md#trust-boundary`](./docs
 
 ## Roadmap
 
-This is a forward-looking section — none of the items below are live in v1.
+This is a forward-looking section.
 
 **v1.1 — hardening (weeks)**
 
@@ -206,7 +206,9 @@ The thesis: the treasury problem is not about clever trading — it is about **b
 
 ## Submission
 
-Sentri was submitted to the [0G APAC Hackathon](https://www.hackquest.io/hackathons/0G-APAC-Hackathon) — Track 2: Agentic Trading Arena (Verifiable Finance). The submission summary lives in [`SUBMISSION.md`](./SUBMISSION.md); the demo video walkthrough is linked from the HackQuest entry.
+Sentri was submitted to the [0G APAC Hackathon], Track 2: Agentic Trading Arena (Verifiable Finance). The submission summary lives in [`SUBMISSION.md`](./SUBMISSION.md); the demo video walkthrough is linked from the HackQuest entry.
+
+Live demo : https://sentri-web-dusky.vercel.app/
 
 ## Contributing
 
