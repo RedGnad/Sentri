@@ -14,6 +14,7 @@
 
 import "dotenv/config";
 import express from "express";
+import { ethers } from "ethers";
 import {
   setupGlobalContext,
   discoverVaults,
@@ -30,7 +31,78 @@ import {
   findClosestVaultAudit,
   listKnownVaultsFromCache,
 } from "./storage.js";
-import { AGENT } from "./constants.js";
+import { AGENT, TREASURY_VAULT_ABI } from "./constants.js";
+
+const ACTION_LABELS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"] as const;
+
+/**
+ * Fallback: when the agent's local cache is wiped (Render restart on a
+ * /tmp filesystem), reconstruct an audit list from on-chain executionLogs.
+ * This loses the off-chain enrichment (model response, reasoning text,
+ * signed chat payload) but preserves every verifiable field — intent
+ * hash, response hash, recovered TEE signer, TEE attestation hash,
+ * deadline, amounts, post-trade TVL — so the dashboard's audit tab keeps
+ * working after a service restart instead of going dark.
+ */
+async function readAuditFromChain(
+  vaultAddress: string,
+  context: GlobalContext,
+  limit: number,
+): Promise<unknown[]> {
+  const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, context.provider);
+  const countRaw = (await vault.executionLogCount()) as bigint;
+  const count = Number(countRaw);
+  if (count === 0) return [];
+  const start = Math.max(0, count - limit);
+  const indices = Array.from({ length: count - start }, (_, i) => start + i);
+  const logs = await Promise.all(
+    indices.map(
+      (i) =>
+        vault.executionLogs(i) as Promise<
+          [bigint, bigint, bigint, bigint, bigint, string, string, string, string, bigint]
+        >,
+    ),
+  );
+  return logs
+    .map((log, k) => ({
+      source: "chain-fallback" as const,
+      logIndex: indices[k],
+      timestamp: Number(log[0]) * 1000,
+      action: ACTION_LABELS[Number(log[1])] ?? "Unknown",
+      amountIn: log[2].toString(),
+      amountOut: log[3].toString(),
+      tvlAfter: log[4].toString(),
+      intentHash: log[5],
+      responseHash: log[6],
+      teeSigner: log[7],
+      teeAttestation: log[8],
+      deadline: Number(log[9]),
+    }))
+    .reverse();
+}
+
+async function readVaultStateFromChain(
+  vaultAddress: string,
+  context: GlobalContext,
+): Promise<unknown> {
+  const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, context.provider);
+  const [vaultBalance, riskBalance, totalValue, highWaterMark, executionLogCount] =
+    await Promise.all([
+      vault.vaultBalance() as Promise<bigint>,
+      vault.riskBalance() as Promise<bigint>,
+      vault.totalValue() as Promise<bigint>,
+      vault.highWaterMark() as Promise<bigint>,
+      vault.executionLogCount() as Promise<bigint>,
+    ]);
+  return {
+    source: "chain-fallback" as const,
+    vaultBalance: vaultBalance.toString(),
+    riskBalance: riskBalance.toString(),
+    totalValue: totalValue.toString(),
+    highWaterMark: highWaterMark.toString(),
+    totalExecutions: Number(executionLogCount),
+  };
+}
 
 const PORT = Number(process.env.PORT ?? 8080);
 const CYCLE_INTERVAL_MS = Number(process.env.AGENT_INTERVAL_MS ?? AGENT.cycleIntervalMs);
@@ -184,31 +256,63 @@ app.get("/vaults", (_req, res) => {
   res.json({ count: list.length, vaults: list });
 });
 
-app.get("/vault/:address/state", (req, res) => {
+app.get("/vault/:address/state", async (req, res) => {
   const addr = req.params.address;
   const runtime = state.trackedVaults.get(addr.toLowerCase()) ?? null;
   const cache = readVaultStateFromCache(addr);
-  if (!cache && !runtime) {
+  if (cache || runtime) {
+    res.json({ address: addr, runtime, portfolio: cache });
+    return;
+  }
+  // Cache + runtime miss (typical after a Render restart on /tmp). Fall
+  // back to a direct chain read so the dashboard does not show "pending".
+  if (!ctx) {
     res.status(404).json({ error: "Vault not tracked yet (no cycle has run on it)." });
     return;
   }
-  res.json({
-    address: addr,
-    runtime,
-    portfolio: cache,
-  });
+  try {
+    const portfolio = await readVaultStateFromChain(addr, ctx);
+    res.json({ address: addr, runtime: null, portfolio, source: "chain-fallback" });
+  } catch (err) {
+    res
+      .status(404)
+      .json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
-app.get("/vault/:address/audit", (req, res) => {
+app.get("/vault/:address/audit", async (req, res) => {
   const addr = req.params.address;
   const timestamps = listVaultAuditFromCache(addr, 50);
-  const entries = timestamps
+  const cached = timestamps
     .map((ts) => readVaultAuditFromCache(addr, ts))
     .filter((e): e is NonNullable<typeof e> => e !== null);
-  res.json({ address: addr, count: entries.length, entries });
+  if (cached.length > 0) {
+    res.json({ address: addr, count: cached.length, entries: cached, source: "cache" });
+    return;
+  }
+  // Cache empty (likely a fresh service instance). Reconstruct from chain.
+  if (!ctx) {
+    res.json({ address: addr, count: 0, entries: [], source: "no-context" });
+    return;
+  }
+  try {
+    const entries = await readAuditFromChain(addr, ctx, 50);
+    res.json({
+      address: addr,
+      count: entries.length,
+      entries,
+      source: "chain-fallback",
+      note:
+        "Local cache empty (typical after a service restart). Showing on-chain executionLogs " +
+        "without off-chain enrichment (model response, reasoning, signed chat payload). " +
+        "Verify each entry's intentHash, responseHash, teeSigner and teeAttestation on chainscan.",
+    });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
-app.get("/vault/:address/audit/:timestamp", (req, res) => {
+app.get("/vault/:address/audit/:timestamp", async (req, res) => {
   const addr = req.params.address;
   const ts = req.params.timestamp;
   let entry = readVaultAuditFromCache(addr, ts);
@@ -216,11 +320,39 @@ app.get("/vault/:address/audit/:timestamp", (req, res) => {
     const closest = findClosestVaultAudit(addr, Number(ts));
     if (closest) entry = readVaultAuditFromCache(addr, closest);
   }
-  if (!entry) {
+  if (entry) {
+    res.json(entry);
+    return;
+  }
+  // Cache miss + no tolerant match. Fall back to on-chain log lookup so the
+  // detail view still has something to show.
+  if (!ctx) {
     res.status(404).json({ error: "No enriched audit entry cached for this timestamp." });
     return;
   }
-  res.json(entry);
+  try {
+    const onchain = (await readAuditFromChain(addr, ctx, 50)) as Array<{
+      timestamp: number;
+    }>;
+    const requested = Number(ts);
+    const match =
+      onchain.find((e) => e.timestamp === requested) ??
+      onchain.reduce<typeof onchain[number] | null>(
+        (closest, e) =>
+          closest === null ||
+          Math.abs(e.timestamp - requested) < Math.abs(closest.timestamp - requested)
+            ? e
+            : closest,
+        null,
+      );
+    if (!match) {
+      res.status(404).json({ error: "No on-chain executionLog found for this vault either." });
+      return;
+    }
+    res.json({ ...match, source: "chain-fallback" });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
 });
 
 app.get("/", (_req, res) => res.redirect("/healthz"));
