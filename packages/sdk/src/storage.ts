@@ -40,6 +40,10 @@ function auditStreamId(vaultAddr: string): string {
   return ethers.keccak256(ethers.toUtf8Bytes(`sentri:audit-log:${vaultAddr.toLowerCase()}`));
 }
 
+function auditManifestKey(vaultAddr: string): string {
+  return `audit:manifest:${vaultAddr.toLowerCase()}`;
+}
+
 let _indexer: Indexer | null = null;
 let _signer: ethers.Wallet | null = null;
 let _flowContract: FixedPriceFlow | null = null;
@@ -155,7 +159,7 @@ export interface AuditEntry {
   teeSigner: string;
   recoveredSigner?: string;
   expectedSigner?: string;
-  signerMatchedAgentINFT?: boolean;
+  signerMatchedProvider?: boolean;
   teeAttestation: string;
   deadline: number;
   processResponseVerified?: true;
@@ -242,6 +246,20 @@ export async function appendAuditLog(
     kvIndexError = err instanceof Error ? err.message : String(err);
     indexedEntry.kvIndexError = kvIndexError;
   }
+  // Update the KV audit manifest so we can reconstruct the list after a cache wipe.
+  try {
+    const manifestKey = auditManifestKey(vaultAddr);
+    const existing = await _readKv<string[]>(auditStreamId(vaultAddr), manifestKey, STORAGE.kvNodeUrl);
+    const manifest: string[] = existing ?? [];
+    if (!manifest.includes(logKey)) {
+      manifest.push(logKey);
+      // Keep only the 200 most recent keys to cap KV manifest size.
+      const trimmed = manifest.slice(-200);
+      await _writeKv(auditStreamId(vaultAddr), manifestKey, trimmed);
+    }
+  } catch {
+    // Non-fatal: manifest update failure does not block the audit write.
+  }
   writeCacheFile(
     path.join("vaults", vaultAddr.toLowerCase(), "audit", `${entry.timestamp}.json`),
     {
@@ -260,6 +278,27 @@ export async function readAuditEntry(
   kvNodeUrl: string,
 ): Promise<AuditEntry | null> {
   return _readKv<AuditEntry>(auditStreamId(vaultAddr), auditKey(vaultAddr, entry), kvNodeUrl);
+}
+
+/**
+ * Reconstruct cached audit entries from 0G Storage KV using the persisted
+ * manifest of keys. Used as a fallback when the local cache is wiped
+ * (e.g. Render restart on a /tmp filesystem).
+ */
+export async function readAuditFromKv(
+  vaultAddr: string,
+  limit = 50,
+): Promise<CachedAuditEntry[]> {
+  const manifestKey = auditManifestKey(vaultAddr);
+  const keys = await _readKv<string[]>(auditStreamId(vaultAddr), manifestKey, STORAGE.kvNodeUrl);
+  if (!keys || keys.length === 0) return [];
+  const recent = keys.slice(-limit).reverse();
+  const entries = await Promise.all(
+    recent.map((key) =>
+      _readKv<CachedAuditEntry>(auditStreamId(vaultAddr), key, STORAGE.kvNodeUrl),
+    ),
+  );
+  return entries.filter((e): e is CachedAuditEntry => e !== null);
 }
 
 // ── Internal KV primitives ───────────────────────────────────────────────
@@ -291,6 +330,10 @@ async function _uploadCanonicalBlob(
 ): Promise<{ txHash: string; rootHash: string } | null> {
   const bytes = Uint8Array.from(Buffer.from(canonicalJson(record), "utf-8"));
   const file = new MemData(bytes);
+  const [, treeErr] = await file.merkleTree();
+  if (treeErr !== null) {
+    throw new Error(`Canonical audit Merkle tree error: ${treeErr}`);
+  }
   const uploadOpts = STORAGE.submitFeeWei > 0n
     ? { fee: STORAGE.submitFeeWei, tags: ethers.toUtf8Bytes("sentri:audit:v1") }
     : { tags: ethers.toUtf8Bytes("sentri:audit:v1") };

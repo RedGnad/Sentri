@@ -331,11 +331,11 @@ function AuditEntry({
                     {detail.processResponseVerified ? "VERIFIED" : "MISSING"}
                   </span>
                 </Field>
-                <Field label="TEE signer match">
+                <Field label="Signer matched provider">
                   <span
-                    className={`font-mono text-[11px] tabular ${detail.signerMatchedAgentINFT ? "text-phosphor" : "text-alert"}`}
+                    className={`font-mono text-[11px] tabular ${detail.signerMatchedProvider ? "text-phosphor" : "text-alert"}`}
                   >
-                    {detail.signerMatchedAgentINFT ? "MATCH" : "UNKNOWN"}
+                    {detail.signerMatchedProvider ? "MATCH" : "UNKNOWN"}
                   </span>
                 </Field>
               </div>
@@ -363,8 +363,8 @@ function AuditEntry({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
                 <Field label="Market quorum">
                   <span className="font-mono text-[11px] text-ink-dim tabular">
-                    {detail.marketSourceCount
-                      ? `${detail.marketSourceCount}/4`
+                    {detail.marketSourceCount != null
+                      ? `${detail.marketSourceCount}/2`
                       : "-"}
                   </span>
                 </Field>

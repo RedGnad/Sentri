@@ -47,7 +47,7 @@ export interface VaultAuditEntry {
   teeSigner: string;
   recoveredSigner?: string;
   expectedSigner?: string;
-  signerMatchedAgentINFT?: boolean;
+  signerMatchedProvider?: boolean;
   teeAttestation: string;
   deadline?: number;
   processResponseVerified?: true;

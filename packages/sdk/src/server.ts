@@ -30,6 +30,7 @@ import {
   listVaultAuditFromCache,
   findClosestVaultAudit,
   listKnownVaultsFromCache,
+  readAuditFromKv,
 } from "./storage.js";
 import { AGENT, TREASURY_VAULT_ABI } from "./constants.js";
 
@@ -294,7 +295,16 @@ app.get("/vault/:address/audit", async (req, res) => {
     res.json({ address: addr, count: cached.length, entries: cached, source: "cache" });
     return;
   }
-  // Cache empty (likely a fresh service instance). Reconstruct from chain.
+  // Cache empty (likely after a Render restart). Try 0G Storage KV manifest first.
+  try {
+    const kvEntries = await readAuditFromKv(addr, 50);
+    if (kvEntries.length > 0) {
+      res.json({ address: addr, count: kvEntries.length, entries: kvEntries, source: "kv-fallback" });
+      return;
+    }
+  } catch {
+    // KV unreachable — continue to chain fallback below.
+  }
   if (!ctx) {
     res.json({ address: addr, count: 0, entries: [], source: "no-context" });
     return;

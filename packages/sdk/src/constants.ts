@@ -38,6 +38,8 @@ export const STORAGE = {
   indexerUrl: process.env.STORAGE_INDEXER_URL ?? selectedNetwork.indexerUrl,
   flowContract: process.env.STORAGE_FLOW_CONTRACT ?? selectedNetwork.flowContract,
   submitFeeWei: BigInt(process.env.STORAGE_SUBMIT_FEE_WEI ?? selectedNetwork.storageSubmitFeeWei),
+  // KV node URL — must be overridden via STORAGE_KV_NODE_URL in production.
+  kvNodeUrl: process.env.STORAGE_KV_NODE_URL ?? "http://3.101.147.150:6789",
 } as const;
 
 const GALILEO_CONTRACTS = {

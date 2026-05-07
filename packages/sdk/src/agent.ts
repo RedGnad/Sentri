@@ -402,7 +402,7 @@ export async function executeOneIterationForVault(
       teeSigner: inference.teeSignerAddress,
       recoveredSigner: inference.recoveredSignerAddress,
       expectedSigner: inference.teeSignerAddress,
-      signerMatchedAgentINFT: inference.recoveredSignerAddress.toLowerCase() === inference.teeSignerAddress.toLowerCase(),
+      signerMatchedProvider: inference.recoveredSignerAddress.toLowerCase() === inference.teeSignerAddress.toLowerCase(),
       teeAttestation: inference.teeAttestation,
       deadline,
       processResponseVerified: inference.processResponseVerified,
