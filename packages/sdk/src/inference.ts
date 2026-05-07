@@ -14,14 +14,18 @@ export interface InferenceResult {
   signedResponse: string;
   teeSignature: string;
   responseHash: string;
+  rawResponseHash: string;
+  signedPayloadHash: string;
   teeAttestation: string;
   chatID: string;
+  processResponseVerified: true;
   verified: true;
   provider: string;
   model: string;
   endpoint: string;
   verifiability: string;
   teeSignerAddress: string;
+  recoveredSignerAddress: string;
 }
 
 let _broker: ZGComputeNetworkBroker | null = null;
@@ -202,7 +206,9 @@ export async function requestInference(
     throw new Error(`TEE chat signature recovered ${recovered}, expected ${providerInfo.teeSignerAddress}.`);
   }
 
-  const responseHash = ethers.keccak256(ethers.toUtf8Bytes(signaturePayload.text));
+  const rawResponseHash = ethers.keccak256(ethers.toUtf8Bytes(content));
+  const signedPayloadHash = ethers.keccak256(ethers.toUtf8Bytes(signaturePayload.text));
+  const responseHash = signedPayloadHash;
 
   const teeAttestation = ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify({
     chatID,
@@ -218,14 +224,18 @@ export async function requestInference(
     signedResponse: signaturePayload.text,
     teeSignature: signaturePayload.signature,
     responseHash,
+    rawResponseHash,
+    signedPayloadHash,
     teeAttestation,
     chatID,
+    processResponseVerified: true,
     verified: true,
     provider: addr,
     model,
     endpoint,
     verifiability: providerInfo.verifiability,
     teeSignerAddress: providerInfo.teeSignerAddress,
+    recoveredSignerAddress: recovered,
   };
 }
 

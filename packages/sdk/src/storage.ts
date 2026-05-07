@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Indexer, Batcher, KvClient, FixedPriceFlow__factory } from "@0gfoundation/0g-ts-sdk";
+import { Indexer, Batcher, KvClient, FixedPriceFlow__factory, MemData } from "@0gfoundation/0g-ts-sdk";
 import type { FixedPriceFlow } from "@0gfoundation/0g-ts-sdk";
 import { CHAIN, STORAGE } from "./constants.js";
 
@@ -65,6 +65,11 @@ function getFlowContract(): FixedPriceFlow {
   return _flowContract;
 }
 
+function getSigner(): ethers.Wallet {
+  if (!_signer) throw new Error("Storage not initialized. Call initStorage() first.");
+  return _signer;
+}
+
 // ── Encoding helpers ──────────────────────────────────────────────────────
 
 function encodeKey(key: string): Uint8Array {
@@ -73,6 +78,17 @@ function encodeKey(key: string): Uint8Array {
 
 function encodeValue(value: unknown): Uint8Array {
   return Uint8Array.from(Buffer.from(JSON.stringify(value), "utf-8"));
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 // ── KV Storage (Portfolio State) ─────────────────────────────────────────
@@ -131,14 +147,21 @@ export interface AuditEntry {
   intent: unknown;
   intentHash: string;
   responseHash: string;
+  rawResponseHash?: string;
+  signedPayloadHash?: string;
   modelResponse?: string;
   signedResponse: string;
   teeSignature: string;
   teeSigner: string;
+  recoveredSigner?: string;
+  expectedSigner?: string;
+  signerMatchedAgentINFT?: boolean;
   teeAttestation: string;
   deadline: number;
+  processResponseVerified?: true;
   verified: true;
   provider: string;
+  providerEndpoint?: string;
   model: string;
   verifiability: string;
   chatID: string;
@@ -152,6 +175,22 @@ export interface AuditEntry {
   marketRawSources?: Array<{ source: string; ethUsd: number }>;
   priceAttestationPayload?: unknown;
   storageError?: string;
+  canonicalRootHash?: string;
+  canonicalStorageTxHash?: string;
+  canonicalRecordHash?: string;
+  kvIndexRootHash?: string;
+  kvIndexTxHash?: string;
+  canonicalStorageError?: string;
+  kvIndexError?: string;
+}
+
+export interface CanonicalAuditRecord {
+  schema: "sentri.audit.v1";
+  chainId: number;
+  vault: string;
+  key: string;
+  recordedAt: number;
+  entry: AuditEntry;
 }
 
 export function auditKey(
@@ -170,23 +209,49 @@ export async function appendAuditLog(
   entry: AuditEntry,
 ): Promise<{ txHash: string; rootHash: string } | null> {
   const logKey = auditKey(vaultAddr, entry);
-  let result: { txHash: string; rootHash: string } | null = null;
-  let storageError: string | undefined;
+  const canonicalRecord: CanonicalAuditRecord = {
+    schema: "sentri.audit.v1",
+    chainId: CHAIN.id,
+    vault: vaultAddr.toLowerCase(),
+    key: logKey,
+    recordedAt: Date.now(),
+    entry,
+  };
+  const canonicalRecordHash = ethers.keccak256(ethers.toUtf8Bytes(canonicalJson(canonicalRecord)));
+  let canonicalResult: { txHash: string; rootHash: string } | null = null;
+  let kvResult: { txHash: string; rootHash: string } | null = null;
+  let canonicalStorageError: string | undefined;
+  let kvIndexError: string | undefined;
   try {
-    result = await _writeKv(auditStreamId(vaultAddr), logKey, entry);
+    canonicalResult = await _uploadCanonicalBlob(canonicalRecord);
   } catch (err) {
-    storageError = err instanceof Error ? err.message : String(err);
+    canonicalStorageError = err instanceof Error ? err.message : String(err);
+  }
+  const indexedEntry: AuditEntry = {
+    ...entry,
+    canonicalRootHash: canonicalResult?.rootHash,
+    canonicalStorageTxHash: canonicalResult?.txHash,
+    canonicalRecordHash,
+    canonicalStorageError,
+  };
+  try {
+    kvResult = await _writeKv(auditStreamId(vaultAddr), logKey, indexedEntry);
+    indexedEntry.kvIndexRootHash = kvResult?.rootHash;
+    indexedEntry.kvIndexTxHash = kvResult?.txHash;
+  } catch (err) {
+    kvIndexError = err instanceof Error ? err.message : String(err);
+    indexedEntry.kvIndexError = kvIndexError;
   }
   writeCacheFile(
     path.join("vaults", vaultAddr.toLowerCase(), "audit", `${entry.timestamp}.json`),
     {
-      ...entry,
-      storageTxHash: result?.txHash,
-      storageRootHash: result?.rootHash,
-      storageError,
+      ...indexedEntry,
+      storageTxHash: canonicalResult?.txHash ?? kvResult?.txHash,
+      storageRootHash: canonicalResult?.rootHash ?? kvResult?.rootHash,
+      storageError: canonicalStorageError ?? kvIndexError,
     },
   );
-  return result;
+  return canonicalResult ?? kvResult;
 }
 
 export async function readAuditEntry(
@@ -221,6 +286,26 @@ async function _writeKv(
   return result;
 }
 
+async function _uploadCanonicalBlob(
+  record: CanonicalAuditRecord,
+): Promise<{ txHash: string; rootHash: string } | null> {
+  const bytes = Uint8Array.from(Buffer.from(canonicalJson(record), "utf-8"));
+  const file = new MemData(bytes);
+  const uploadOpts = STORAGE.submitFeeWei > 0n
+    ? { fee: STORAGE.submitFeeWei, tags: ethers.toUtf8Bytes("sentri:audit:v1") }
+    : { tags: ethers.toUtf8Bytes("sentri:audit:v1") };
+  const [result, err] = await getIndexer().upload(file, CHAIN.rpcUrl, getSigner(), uploadOpts);
+  if (err !== null) {
+    throw new Error(`Failed to upload canonical audit record to 0G Storage: ${err}`);
+  }
+  if (!result) return null;
+  if ("txHash" in result) return result;
+  return {
+    txHash: result.txHashes[0],
+    rootHash: result.rootHashes[0],
+  };
+}
+
 async function _readKv<T = unknown>(
   streamId: string,
   key: string,
@@ -248,6 +333,11 @@ export interface CachedVaultState extends PortfolioState {
 export interface CachedAuditEntry extends AuditEntry {
   storageTxHash?: string;
   storageRootHash?: string;
+  canonicalRootHash?: string;
+  canonicalStorageTxHash?: string;
+  canonicalRecordHash?: string;
+  kvIndexRootHash?: string;
+  kvIndexTxHash?: string;
 }
 
 export function readVaultStateFromCache(vaultAddr: string): CachedVaultState | null {

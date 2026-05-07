@@ -39,14 +39,21 @@ export interface VaultAuditEntry {
   intent?: unknown;
   intentHash: string;
   responseHash: string;
+  rawResponseHash?: string;
+  signedPayloadHash?: string;
   modelResponse?: string;
   signedResponse?: string;
   teeSignature?: string;
   teeSigner: string;
+  recoveredSigner?: string;
+  expectedSigner?: string;
+  signerMatchedAgentINFT?: boolean;
   teeAttestation: string;
   deadline?: number;
+  processResponseVerified?: true;
   verified: true;
   provider: string;
+  providerEndpoint?: string;
   model: string;
   verifiability: string;
   chatID: string;
@@ -56,9 +63,16 @@ export interface VaultAuditEntry {
   storageTxHash?: string;
   storageRootHash?: string;
   storageError?: string;
+  canonicalRootHash?: string;
+  canonicalStorageTxHash?: string;
+  canonicalRecordHash?: string;
+  kvIndexRootHash?: string;
+  kvIndexTxHash?: string;
+  canonicalStorageError?: string;
+  kvIndexError?: string;
   marketSpreadPct?: number;
   marketSourceCount?: number;
-  marketRawSources?: Array<{ source: string; ethUsd: number }>;
+  marketRawSources?: Array<{ source: string; priceUsd?: number; ethUsd: number }>;
   priceAttestationPayload?: unknown;
 }
 

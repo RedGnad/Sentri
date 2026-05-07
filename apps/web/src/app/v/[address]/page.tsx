@@ -18,6 +18,7 @@ import {
   useMintUsdc,
 } from "@/hooks/use-vault";
 import { useVaultStateFromAgent } from "@/hooks/use-vault-runtime";
+import { useExecutionToast } from "@/hooks/use-execution-toast";
 import { BASE_SYMBOL, IS_MAINNET, RISK_SYMBOL } from "@/config/contracts";
 
 export default function VaultOverviewPage() {
@@ -29,6 +30,11 @@ export default function VaultOverviewPage() {
   const { data: usdcBalance } = useUsdcBalance(connected);
   const { data: allowance } = useUsdcAllowance(connected, address);
   const { data: agentState } = useVaultStateFromAgent(address);
+
+  // Surface every new agent execution as a single auto-dismiss toast.
+  // Listens to the `logCount` already in `useParsedVaultData` so this is
+  // free in network terms — no extra polling, no backend change.
+  useExecutionToast(address, vault?.logCount);
 
   const { approve, isPending: isApproving, isConfirming: isApproveConfirming, isSuccess: approveSuccess, error: approveError } = useApproveUsdc();
   const { deposit, isPending: isDepositing, isConfirming: isDepositConfirming, isSuccess: depositSuccess, error: depositError } = useDeposit();
