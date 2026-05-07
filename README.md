@@ -45,7 +45,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 ## 0G integration
 
-Sentri uses 4 core 0G components + one real 0G mainnet ecosystem venue.
+Sentri uses 4 core 0G components + 1 real 0G mainnet ecosystem venue.
 
 | Layer | Usage |
 |---|---|
