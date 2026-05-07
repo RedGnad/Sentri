@@ -76,7 +76,7 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     MultiVault.t.sol              10 integration tests (5 vaults across 3 owners)
     AgentINFT.t.sol               12 tests (mint, revoke, O(k) gas scaling)
     SentriPair.t.sol              8 tests (swap, K invariant, slippage)
-                                  Total: 81 unit + integration tests, 0 failing
+                                  Total: 86 unit + integration tests, 0 failing
 
 packages/sdk/                    TypeScript multi-vault agent runtime
   src/
@@ -147,6 +147,15 @@ The matrix below is computed deterministically in TypeScript before the LLM call
 
 Hold band is ±3pp around the target (anti-flap). Outside the band the recommendation translates the gap into a concrete `amount_bps` using actual balances + price + TVL. Every step is reproducible off-chain by anyone with the same inputs.
 
+**The LLM's role is "defensive verifier", not "free trader".** Each cycle, the deterministic recommendation is computed, sent to the TEE provider as part of the user prompt, and the model returns either the same action and `amount_bps` (most common case) or a strictly more cautious decision. The agent then runs `validateAgainstRecommendation()` on the LLM output before any swap can fire:
+
+- In `crash` or `drawdown_breach` regimes, no Rebalance buy is permitted — period.
+- For a Rebalance recommendation of *N* bps, the LLM may return a buy in `[0, N]` or fall back to hold; never `> N`.
+- For an EmergencyDeleverage recommendation of *N* bps, the LLM must return at least *N* — under-trimming a defensive recommendation is forbidden.
+- Hold (`amount_bps = 0`) is always permitted regardless of recommendation.
+
+Any contract violation is rejected at the agent layer with a logged reason; the cycle is skipped without an on-chain swap. This makes the "AI as defensive verifier" claim machine-checked in the call path, not only stated in the prompt doctrine.
+
 Default state remains 100% base stable asset. Each vault's on-chain `policy` independently caps post-trade risk exposure (15% / 30% / 50% depending on preset) — the matrix never exceeds the cap.
 
 ---
@@ -206,15 +215,16 @@ Deployer / Agent: [`0x981F…20e0`](https://chainscan.0g.ai/address/0x981F6E0Ea9
 
 Live mainnet proof:
 
-- `VaultFactory.vaultsCount()` returns `1`.
-- `VaultFactory.allVaults(0)` returns the demo vault above.
+- `VaultFactory.vaultsCount()` returns the on-chain count of vaults deployed via the factory; users enumerate them through `allVaults(i)`. The deployer-owned demo vault above is index 0.
 - Demo vault owner is `0x981F6E0Ea94f45fDB8ee7680DC862212E3C720e0`.
-- `SentriPriceFeed.keepers(agent)` returns `true`.
-- W0G oracle uses Jaine `slot0()` on-chain spot as the primary source, with CoinGecko and GeckoTerminal as external sanity checks. The latest mainnet run used 3/3 sources and `fresh` market health.
-- Autonomous execution tx: [`0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675), where the TEE-signed `EmergencyDeleverage` intent swapped W0G into USDC.E through the hardened Jaine adapter.
-- Audit entry written to 0G Storage KV: tx `0x223c5e0419655c577223d6aff22364380f83d2ff2c8b33651c964edd473b23ea`, root `0xb19c85f49a3fc05fb18d9bd4acd382aeaa39228e3b4207f9be98f1660e556cf0`.
-- Portfolio state written to 0G Storage KV: tx `0x5ab6670e64316a40de1120a2f216a3791cccf952ff8db991203ce221b79a1b56`, root `0x2b46977acce1eae129365b93292972099cd0ad377127ef778d1e3b95b727065c`.
-- Post-execution demo vault state: `0.008083 USDC.E + 0.005 W0G`, `executionLogCount() == 1`.
+- `SentriPriceFeed.keepers(agent)` returns `true` — the agent wallet is the registered oracle keeper.
+- W0G oracle pipeline is a 2-source path: **Jaine V3 `slot0()` on-chain pool price** + **Pyth Network `0G/USD`** via the public Hermes endpoint (Pyth is 0G's official mainnet oracle integration; `0G/USD` feed id `fa9e8d4591…ea3070`). Both must succeed and agree within the spread bound (default 5%) before the agent pushes the median to `SentriPriceFeed`. CoinGecko is queried opportunistically for 24h change only; its failure does not gate trading.
+- Reference autonomous execution txs (every successful execution emits `StrategyExecuted` with intent hash, response hash, recovered TEE signer, TEE attestation, and deadline):
+  - [`0x30a2d51a…b675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675) — initial mainnet rehearsal: TEE-signed `EmergencyDeleverage` swapped residual W0G into USDC.E through the hardened Jaine adapter.
+  - [`0x5bf6ab1b…39c4`](https://chainscan.0g.ai/tx/0x5bf6ab1b5bb8f200f6b1a076ca10bff131d2b539eef00e64c84af86e361739c4) — post-redeploy Strategy v2 cycle: the deterministic recommendation classified the regime as `up_tight` (24h +3.23%, oracle spread 0.038%), targeted 28% W0G for the Aggressive preset, and the LLM confirmed the matrix recommendation; the vault swapped USDC.E for W0G via Jaine to bring the position to target.
+  - Recovered TEE signer on both: `0xA46EA4FC5889AD35A1487e1Ed04dCcfa872146B9`.
+- Each successful execution writes an audit entry to 0G Storage KV (the entry binds the verified model response, the reconstructed intent, the chain tx, and the storage tx/root) and updates the per-vault portfolio state in 0G Storage KV.
+- Live counts (`vaultsCount`, `executionLogCount`, vault balances) are read directly from the chain by the dashboard — they update with every cycle and any deposit / withdraw / strategy execution, so any pinned snapshot in this README would drift. Visit the dashboard or call the contract directly for the current state.
 
 ### 0G Galileo
 
@@ -335,7 +345,7 @@ Override the deployed mainnet `NEXT_PUBLIC_*` addresses with the script output. 
 cd contracts && forge test
 ```
 
-Output: **81 tests passing across 5 suites** (TreasuryVault: 27, AgentINFT: 12, SentriPair: 8, VaultFactory: 21, MultiVault: 13).
+Output: **86 tests passing across 6 suites** (TreasuryVault: 27, VaultFactory: 21, MultiVault: 13, AgentINFT: 12, SentriPair: 8, JaineV3PoolAdapter: 5).
 
 Notable coverage:
 - Init pattern guard (impl disabled, double-init revert, zero-address)

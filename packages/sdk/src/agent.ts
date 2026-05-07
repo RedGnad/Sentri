@@ -241,7 +241,7 @@ export async function executeOneIterationForVault(
     };
   }
 
-  const prompt = buildMarketPrompt({
+  const { prompt, recommendation } = buildMarketPrompt({
     baseBalance: baseStr,
     riskBalance: riskStr,
     tvl: tvlStr,
@@ -255,6 +255,11 @@ export async function executeOneIterationForVault(
       cooldownPeriod: Number(policy[4]),
     },
   });
+
+  log(
+    `Recommendation: regime=${recommendation.regime} target=${recommendation.targetShare}% ` +
+      `action=${recommendation.recommendedAction} amount_bps=${recommendation.recommendedAmountBps}`,
+  );
 
   log("Requesting Sealed Inference (TEE)...");
   const inference = await requestInference(prompt, TREASURY_SYSTEM_PROMPT);
@@ -274,6 +279,16 @@ export async function executeOneIterationForVault(
   const reasoning = decision.short_reason ?? decision.reasoning ?? "";
   log(`Decision: ${decision.action} | ${decision.amount_bps}bps | conf ${decision.confidence}%`);
   log(`Reasoning: ${reasoning}`);
+
+  // Defensive verifier: the LLM is allowed to be MORE cautious than the
+  // deterministic recommendation, never less. Reject overrides that lean
+  // risk-on relative to the matrix. This makes the "AI as defensive
+  // verifier" claim verifiable in the call path, not just in the prompt.
+  const validation = validateAgainstRecommendation(decision, recommendation);
+  if (!validation.ok) {
+    log(`LLM override rejected (defensive contract violated): ${validation.reason}`);
+    return { status: "skipped", reason: `defensive override violation: ${validation.reason}` };
+  }
 
   if (decision.amount_bps === 0) {
     return { status: "skipped", reason: "no action needed (amount_bps=0)" };
@@ -671,6 +686,87 @@ function computeStrategy(input: {
   };
 }
 
+/**
+ * Defensive contract for the LLM's role in the loop. The deterministic
+ * recommendation defines the *most aggressive* permissible action for the
+ * current regime; the LLM may only confirm it or pick a strictly more
+ * cautious action. Specifically:
+ *
+ *   1. In `crash` or `drawdown_breach` regimes, no Rebalance buy is allowed.
+ *   2. If the recommendation is a Rebalance buy with N bps, the LLM may
+ *      return a buy in [0, N] or fall back to hold (amount_bps = 0).
+ *   3. If the recommendation is an EmergencyDeleverage of N bps, the LLM
+ *      must return EmergencyDeleverage with amount_bps in [N, 9500] —
+ *      under-trimming a defensive recommendation is forbidden.
+ *   4. The LLM may always pick "hold" (action=Rebalance, amount_bps=0).
+ *
+ * Any other override is treated as a contract violation: the cycle is
+ * skipped and the reason is logged. This makes the "AI as defensive
+ * verifier" claim machine-checked in the call path, not only in the
+ * prompt doctrine.
+ */
+export function validateAgainstRecommendation(
+  decision: AgentDecision,
+  recommendation: StrategyRecommendation,
+): { ok: true } | { ok: false; reason: string } {
+  // Hold is always allowed regardless of recommendation.
+  const isHold = decision.action === "Rebalance" && decision.amount_bps === 0;
+  if (isHold) return { ok: true };
+
+  // Crash / drawdown_breach regimes never permit a risk-on buy.
+  if (
+    (recommendation.regime === "crash" || recommendation.regime === "drawdown_breach") &&
+    decision.action === "Rebalance" &&
+    decision.amount_bps > 0
+  ) {
+    return {
+      ok: false,
+      reason: `regime=${recommendation.regime} forbids any Rebalance buy; LLM proposed ${decision.amount_bps}bps`,
+    };
+  }
+
+  if (recommendation.recommendedAction === "Rebalance") {
+    // Recommendation is a buy. LLM may scale it down or hold; never up.
+    if (decision.action !== "Rebalance") {
+      return {
+        ok: false,
+        reason: `recommended Rebalance(${recommendation.recommendedAmountBps}bps); LLM picked ${decision.action} which is not a defensive override`,
+      };
+    }
+    if (decision.amount_bps > recommendation.recommendedAmountBps) {
+      return {
+        ok: false,
+        reason: `LLM amount_bps=${decision.amount_bps} exceeds recommended Rebalance buy of ${recommendation.recommendedAmountBps}bps (override toward more aggressive forbidden)`,
+      };
+    }
+    return { ok: true };
+  }
+
+  if (recommendation.recommendedAction === "EmergencyDeleverage") {
+    // Recommendation is a defensive trim/deleverage. LLM may go further or hold.
+    // (Hold is already allowed at the top of the function.)
+    if (decision.action !== "EmergencyDeleverage") {
+      return {
+        ok: false,
+        reason: `recommended EmergencyDeleverage(${recommendation.recommendedAmountBps}bps); LLM picked ${decision.action} which is less defensive`,
+      };
+    }
+    if (decision.amount_bps < recommendation.recommendedAmountBps) {
+      return {
+        ok: false,
+        reason: `LLM amount_bps=${decision.amount_bps} below recommended EmergencyDeleverage of ${recommendation.recommendedAmountBps}bps (under-trim of defensive recommendation forbidden)`,
+      };
+    }
+    return { ok: true };
+  }
+
+  // Recommendation was "hold". The LLM must also hold (already covered above).
+  return {
+    ok: false,
+    reason: `recommendation was hold; LLM proposed ${decision.action} ${decision.amount_bps}bps`,
+  };
+}
+
 function buildMarketPrompt(input: {
   baseBalance: string;
   riskBalance: string;
@@ -684,7 +780,7 @@ function buildMarketPrompt(input: {
     maxSlippageBps: number;
     cooldownPeriod: number;
   };
-}): string {
+}): { prompt: string; recommendation: StrategyRecommendation } {
   const baseN = Number(input.baseBalance);
   const riskN = Number(input.riskBalance);
   const tvlN = Number(input.tvl);
@@ -710,7 +806,7 @@ function buildMarketPrompt(input: {
     maxAllocationBps: input.policy.maxAllocationBps,
   });
 
-  return `Treasury state (computed):
+  const prompt = `Treasury state (computed):
 - ${baseSymbol} balance: ${baseN.toFixed(2)} ${baseSymbol}
 - ${riskSymbol} balance: ${riskN.toFixed(6)} ${riskSymbol}
 - ${riskSymbol} value at market: ${riskValueUsd.toFixed(2)} ${baseSymbol}
@@ -740,4 +836,6 @@ Strategy v2 recommendation (vol-adjusted regime-aware):
 Confirm the recommendation by returning the same action and amount_bps, OR
 override only if a critical reason justifies it (state your reason in
 short_reason). Respond with the JSON object only.`;
+
+  return { prompt, recommendation };
 }
