@@ -260,24 +260,28 @@ app.get("/vault/:address/state", async (req, res) => {
   const addr = req.params.address;
   const runtime = state.trackedVaults.get(addr.toLowerCase()) ?? null;
   const cache = readVaultStateFromCache(addr);
-  if (cache || runtime) {
-    res.json({ address: addr, runtime, portfolio: cache });
-    return;
+  // If the agent has runtime metadata but no portfolio cache (e.g. after a
+  // Render restart that wiped /tmp but tracked vaults populated on the next
+  // cycle), still try a chain fallback so the response carries portfolio
+  // data instead of `null`.
+  let portfolio: unknown = cache;
+  if (!portfolio && ctx) {
+    try {
+      portfolio = await readVaultStateFromChain(addr, ctx);
+    } catch {
+      portfolio = null;
+    }
   }
-  // Cache + runtime miss (typical after a Render restart on /tmp). Fall
-  // back to a direct chain read so the dashboard does not show "pending".
-  if (!ctx) {
+  if (!portfolio && !runtime) {
     res.status(404).json({ error: "Vault not tracked yet (no cycle has run on it)." });
     return;
   }
-  try {
-    const portfolio = await readVaultStateFromChain(addr, ctx);
-    res.json({ address: addr, runtime: null, portfolio, source: "chain-fallback" });
-  } catch (err) {
-    res
-      .status(404)
-      .json({ error: err instanceof Error ? err.message : String(err) });
-  }
+  res.json({
+    address: addr,
+    runtime,
+    portfolio,
+    source: cache ? "cache" : portfolio ? "chain-fallback" : "runtime-only",
+  });
 });
 
 app.get("/vault/:address/audit", async (req, res) => {

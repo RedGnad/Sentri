@@ -1,7 +1,13 @@
 "use client";
 
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
-import { TREASURY_VAULT_ABI, ERC20_ABI, BASE_TOKEN_ADDRESS } from "@/config/contracts";
+import {
+  TREASURY_VAULT_ABI,
+  ERC20_ABI,
+  BASE_TOKEN_ADDRESS,
+  PRICE_FEED_ADDRESS,
+  PRICE_FEED_ABI,
+} from "@/config/contracts";
 import { parseUnits } from "viem";
 import { galileo } from "@/config/wagmi";
 
@@ -53,6 +59,8 @@ export function useVaultData(vaultAddress: `0x${string}` | undefined) {
           { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "paused" },
           { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "owner" },
           { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "lastExecutionTime" },
+          { address: PRICE_FEED_ADDRESS, abi: PRICE_FEED_ABI, chainId: CHAIN_ID, functionName: "latestRoundData" },
+          { address: PRICE_FEED_ADDRESS, abi: PRICE_FEED_ABI, chainId: CHAIN_ID, functionName: "decimals" },
         ]
       : [],
     query: { enabled, refetchInterval: 10_000 },
@@ -62,12 +70,36 @@ export function useVaultData(vaultAddress: `0x${string}` | undefined) {
 export function useParsedVaultData(vaultAddress: `0x${string}` | undefined) {
   const { data, isLoading, isError } = useVaultData(vaultAddress);
 
+  // The on-chain totalValue() reverts when the oracle is stale (older than
+  // the policy's maxPriceStaleness). With a long agent interval the feed is
+  // stale most of the time, so a naive read makes the dashboard show $0.
+  // Fall back to (vaultBalance + riskBalance × latestPrice) using the raw
+  // price feed value, which has no freshness check at the read site. This
+  // matches the home Live System panel's fallback computation.
+  const baseBal = (data?.[0]?.result as bigint | undefined) ?? 0n;
+  const riskBal = (data?.[1]?.result as bigint | undefined) ?? 0n;
+  const onchainTotalValue = (data?.[2]?.result as bigint | undefined) ?? 0n;
+  const priceTuple = data?.[11]?.result as
+    | readonly [bigint, bigint, bigint, bigint, bigint]
+    | undefined;
+  const priceDecimals = data?.[12]?.result as number | undefined;
+
+  let totalValue = onchainTotalValue;
+  if (totalValue === 0n && (baseBal > 0n || riskBal > 0n)) {
+    if (priceTuple && priceDecimals !== undefined && priceTuple[1] > 0n) {
+      const riskQuoteDivisor = 10n ** BigInt(18 + Number(priceDecimals) - 6);
+      totalValue = baseBal + (riskBal * priceTuple[1]) / riskQuoteDivisor;
+    } else {
+      totalValue = baseBal;
+    }
+  }
+
   const parsed: VaultData | null = data && vaultAddress
     ? {
         address: vaultAddress,
-        balance: (data[0]?.result as bigint) ?? 0n,
-        riskBalance: (data[1]?.result as bigint) ?? 0n,
-        totalValue: (data[2]?.result as bigint) ?? 0n,
+        balance: baseBal,
+        riskBalance: riskBal,
+        totalValue,
         highWaterMark: (data[3]?.result as bigint) ?? 0n,
         logCount: (data[4]?.result as bigint) ?? 0n,
         policy: data[5]?.result
