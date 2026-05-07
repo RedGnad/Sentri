@@ -147,6 +147,9 @@ The matrix below is computed deterministically in TypeScript before the LLM call
 
 Hold band is ±3pp around the target (anti-flap). Outside the band the recommendation translates the gap into a concrete `amount_bps` using actual balances + price + TVL. Every step is reproducible off-chain by anyone with the same inputs.
 
+Why AI matters
+Deterministic engine computes the safe envelope. TeeML LLM acts as a defensive verifier. validateAgainstRecommendation machine-checks that the model cannot increase risk beyond the matrix. Vault still enforces on-chain.
+
 **The LLM's role is "defensive verifier", not "free trader".** Each cycle, the deterministic recommendation is computed, sent to the TEE provider as part of the user prompt, and the model returns either the same action and `amount_bps` (most common case) or a strictly more cautious decision. The agent then runs `validateAgainstRecommendation()` on the LLM output before any swap can fire:
 
 - In `crash` or `drawdown_breach` regimes, no Rebalance buy is permitted — period.
