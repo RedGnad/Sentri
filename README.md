@@ -359,16 +359,39 @@ Notable coverage:
 
 ## Demo
 
-Three-minute video walkthrough: record and submit a public Loom/YouTube link with the HackQuest entry.
+Three-minute video walkthrough: record and submit a public Loom/YouTube link with the HackQuest entry. The demo has two tracks.
 
-The demo covers one full lifecycle:
+### 1. Mainnet proof path (the verifiable story)
 
-1. Visitor lands on the public observatory, sees live protocol stats.
-2. Connects wallet, mints testnet USDC.
-3. Goes to **Deploy** → chooses Balanced → deposits 1,000 USDC → vault created in one TX.
-4. Watches the agent execute on the new vault on the next cycle (~5 min).
-5. Inspects `/v/[address]/audit` to see the on-chain intent hash, response hash, recovered TEE signer, provider metadata, storage tx/root hash, and hash-match status.
-6. Updates policy, then activates kill-switch — either all assets are returned instantly, or the owner uses the deleverage kill to attempt a base-stable-only exit with slippage protection.
+This is what the video leads with. Every artifact below exists on 0G mainnet right now and any judge can independently verify it on chainscan.0g.ai or by calling the contracts.
+
+| Artifact | Address / hash |
+|---|---|
+| `VaultFactory` (entry point) | [`0x1794AADef202E0f39494D27491752B06c0CC26BC`](https://chainscan.0g.ai/address/0x1794AADef202E0f39494D27491752B06c0CC26BC) |
+| `TreasuryVault` implementation | [`0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE`](https://chainscan.0g.ai/address/0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE) |
+| Demo vault (Aggressive preset) | [`0x87dA9a9A5fC6aA33a3379C026482704c41ECc676`](https://chainscan.0g.ai/address/0x87dA9a9A5fC6aA33a3379C026482704c41ECc676) |
+| Jaine `USDC.E/W0G` pool | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
+| `JaineV3PoolAdapter` | [`0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2`](https://chainscan.0g.ai/address/0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2) |
+| Recovered TEE signer | `0xA46EA4FC5889AD35A1487e1Ed04dCcfa872146B9` |
+| Reference tx — initial rehearsal (TEE-signed `EmergencyDeleverage`, W0G → USDC.E via Jaine) | [`0x30a2d51a…b675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675) |
+| Reference tx — Strategy v2 cycle (regime `up_tight`, target 28% Aggressive, LLM confirmed matrix, USDC.E → W0G via Jaine) | [`0x5bf6ab1b…39c4`](https://chainscan.0g.ai/tx/0x5bf6ab1b5bb8f200f6b1a076ca10bff131d2b539eef00e64c84af86e361739c4) |
+
+The video sequence:
+
+1. Open the dashboard, connect a wallet on 0G mainnet (chain 16661). Show the public observatory: live vault count, total TVL, total executions, agent status, model, factory address.
+2. Open the demo vault hub `/v/0x87dA9a…c676`. Show the per-vault state — base + risk balances, policy bounds, agent identity, recent execution count.
+3. Open the audit tab. Show the most recent execution: action, amount, intent hash, response hash, recovered TEE signer, TEE attestation, deadline, on-chain tx hash, and 0G Storage tx / root hash. Click the chainscan link to land on the real mainnet tx.
+4. Open the policy tab. Show the bounds the agent operates under: max risk exposure, drawdown freeze, slippage cap, action cadence, oracle staleness.
+5. Open the emergency tab. Show the three owner controls — pause, hard kill (`emergencyWithdraw`), and slippage-guarded deleverage exit (`emergencyDeleverageAndWithdraw`). Do not click; the buttons themselves are the proof of recourse.
+
+### 2. Reproducible rehearsal path (Galileo)
+
+Galileo (chain 16602) hosts an identical contract stack with `MockUSDC` / `MockWETH` AMM liquidity. Anyone can run the full loop end-to-end without depending on third-party mainnet liquidity:
+
+1. Connect a wallet on Galileo, mint test `MockUSDC` from the dashboard.
+2. Open `/deploy` → choose a preset → deposit → vault created in one transaction (`createVaultAndDeposit` atomic path).
+3. Watch the agent execute on the new vault on its next cycle. Same TEE provider, same regime classifier, same defensive verifier, same on-chain enforcement — just deterministic AMM liquidity instead of a real DEX route.
+4. Inspect `/v/[address]/audit`, update `/v/[address]/policy`, exercise `/v/[address]/emergency` controls.
 
 ---
 
