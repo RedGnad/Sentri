@@ -22,6 +22,19 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 ---
 
+## Judge summary
+
+| Question | Answer |
+|---|---|
+| What is Sentri? | A policy-first autonomous treasury vault on 0G. |
+| Is it live on mainnet? | Yes — deployed on 0G mainnet `16661`. |
+| Does it move real assets? | Yes — `USDC.E/W0G` through Jaine. |
+| What 0G components are used? | 0G Chain, Compute TeeML, Storage KV, Agent INFT. |
+| Is the AI trusted blindly? | No — the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
+| Can judges verify it? | Yes — public dashboard, chainscan links, execution txs, storage tx/root hashes. |
+
+---
+
 ## Features
 
 - **Multi-tenant factory.** Anyone deploys their own `TreasuryVault` clone (EIP-1167 minimal proxy) with their own risk policy. Per-vault registry, per-vault audit trail, per-vault kill controls.
