@@ -29,7 +29,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 | What is Sentri? | A policy-first autonomous treasury vault on 0G. |
 | Is it live on mainnet? | Yes — deployed on 0G mainnet `16661`. |
 | Does it move real assets? | Yes — `USDC.E/W0G` through Jaine. |
-| What 0G components are used? | 0G Chain, Compute TeeML, Storage KV, Agent INFT. |
+| What 0G components are used? | 4 core 0G components — Chain, Compute TeeML, Storage KV, Agent INFT — plus Jaine as the real 0G mainnet execution venue. |
 | Is the AI trusted blindly? | No — the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
 | Can judges verify it? | Yes — public dashboard, chainscan links, execution txs, storage tx/root hashes. |
 
@@ -39,19 +39,23 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 - **Multi-tenant factory.** Anyone deploys their own `TreasuryVault` clone (EIP-1167 minimal proxy) with their own risk policy. Per-vault registry, per-vault audit trail, per-vault kill controls.
 - **AI as defensive verifier.** A deterministic vol-adjusted regime-aware matrix computes the safe action envelope. The TeeML LLM may confirm the recommendation or pick a strictly more cautious one — never more aggressive. `validateAgainstRecommendation()` machine-checks this in the call path.
-- **Decentralised oracle path.** Each cycle requires Jaine V3 `slot0()` on-chain plus Pyth Network `0G/USD` via Hermes (Pyth is 0G's day-one official oracle integration). 2-of-2 quorum, spread-bounded, then keeper-pushed to `SentriPriceFeed`.
+- **Spread-bounded oracle path.** Each cycle requires Jaine V3 `slot0()` on-chain plus Pyth Network `0G/USD` via Hermes. 2-of-2 quorum, spread-bounded, then keeper-pushed to `SentriPriceFeed`.
 - **Real assets, real venue.** The mainnet stack uses `USDC.E` and `W0G`, with execution routed through the live Jaine V3 `USDC.E/W0G` pool via a hardened single-pool adapter.
 - **Owner recourse always available.** `pause` to freeze activity reversibly, `emergencyWithdraw` to return all assets immediately, `emergencyDeleverageAndWithdraw(minBaseOut)` to attempt a base-asset exit with slippage protection.
 
-## 0G integration (5 components used)
+## 0G integration
 
-- **0G Chain** — `VaultFactory` and `TreasuryVault` deployed natively on mainnet `16661`.
-- **0G Compute / Sealed Inference (TeeML)** — `processResponse()` fail-closed, then EIP-191 verification of the recovered TEE signer on-chain.
-- **0G Storage KV** — per-vault audit trail and portfolio state, namespaced by vault address.
-- **Agent INFT** — gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once.
-- **Real DEX integration** — `JaineV3PoolAdapter`, locked to the immutable Jaine pool address.
+Sentri uses 4 core 0G components plus one real 0G mainnet ecosystem venue.
 
-The Persistent Memory is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.
+| Layer | Usage |
+|---|---|
+| 0G Chain | `VaultFactory` and `TreasuryVault` deployed natively on mainnet `16661`. |
+| 0G Compute / Sealed Inference (TeeML) | `processResponse()` fail-closed, then EIP-191 verification of the recovered TEE signer on-chain. |
+| 0G Storage KV | Per-vault audit trail and portfolio state, namespaced by vault address. |
+| Agent INFT | Gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
+| 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
+
+Persistent Memory is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.
 
 ---
 
@@ -83,6 +87,8 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
 | Demo vault (Aggressive preset) | [`0x87dA9a9A5fC6aA33a3379C026482704c41ECc676`](https://chainscan.0g.ai/address/0x87dA9a9A5fC6aA33a3379C026482704c41ECc676) |
+| Reference tx — Strategy v2 rebalance (`USDC.E → W0G`) | [`0x5bf6ab1b…39c4`](https://chainscan.0g.ai/tx/0x5bf6ab1b5bb8f200f6b1a076ca10bff131d2b539eef00e64c84af86e361739c4) |
+| Reference tx — `EmergencyDeleverage` (`W0G → USDC.E`) | [`0x30a2d51a…b675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675) |
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on every successful execution: `0xA46EA4FC5889AD35A1487e1Ed04dCcfa872146B9`.
 
