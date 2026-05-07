@@ -446,6 +446,35 @@ The TEE story is now split honestly: 0G response verification and provider attes
 
 ---
 
+## Roadmap
+
+This is a forward-looking section — none of the items below are live in v1. The hackathon submission ships the closed loop (multi-tenant factory, TEE-verified inference, defensive-verifier strategy v2, real Jaine route, on-chain audit, owner kill-switch). What follows is the trajectory beyond submission, ordered by ambition.
+
+### v1.1 — post-hackathon hardening (weeks)
+
+- **Pyth on-chain pull integration.** Replace the keeper-pushed `SentriPriceFeed` with Pyth's standard pull model: each `executeStrategy` call carries a Pyth price update, which the vault submits via `updatePriceFeeds(...)` on the deployed Pyth contract (`0x2880ab155794e7179c9ee2e38200202908c17b43` on 0G mainnet) and reads with freshness check. Eliminates the "agent-pushed median" trust step and makes the oracle path verifiable in a single on-chain transaction.
+- **Jaine TWAP cross-check.** Once `observe()` cardinality on the Jaine pool permits a 30-minute window, add a TWAP vs spot deviation check inside the `slot0()` source. Manipulation guard becomes a flash-trade-resistant TWAP-bounded spot, on-chain.
+- **0G Storage Log Layer for audit.** Move the per-vault audit trail from KV (mutable, fast retrieval) to the append-only Log Layer for the proof-grade immutability semantics; KV remains the index for fast UI lookups.
+- **Third-party security audit.** Engage one of the Tier-1 auditors that already operates on 0G (e.g. Trail of Bits, Spearbit, ChainSecurity). Publish report.
+
+### v2 — productive treasury (months)
+
+- **Yield-bearing base asset.** Allow the base side of a vault to be `sUSDS`, `sUSDe`, `sFRAX`, or any 4626-compatible yield-bearing stable. Idle capital earns the staking rate while waiting for the agent to deploy productively. This matches the 2026 DAO treasury norm cited by Sky / Spark / Karpatkey.
+- **Multi-asset risk side.** Move from one risk asset per vault to a vol-weighted basket (W0G + ETH + tokenized RWAs once available on 0G). The vol-targeting matrix already supports this — the per-asset target becomes the global target divided by vol-contribution share.
+- **RWA exposure as a class.** Add tokenized T-bill positions as a third asset class once the major issuers (Ondo, Maple, Backed, Centrifuge) ship on 0G. The vault treats RWA exposure as a separate envelope with its own cap.
+- **Operator INFTs.** Open the agent role to multiple verified operators. Each operator publishes its decision matrix as an INFT (the strategy is public; the per-cycle signing key remains in the TEE). The vault owner picks an operator and can rotate without redeploying — the policy-enforcement layer never moves. This keeps Sentri's "agent proposes, vault disposes" framing while scaling beyond a single operator.
+
+### v3 — Sentri as a treasury primitive (vision)
+
+- **Composable risk envelopes.** Vault policies become composable building blocks: a DAO can require a Sentri-bounded vault for any treasury allocation regardless of which protocol holds the underlying. Lending positions, perp hedges, and LP exposure all consume the same envelope.
+- **Cross-chain coordination via 0G as the compute and audit layer.** Vault funds can live on any chain; the strategy decisions, oracle attestations, and audit trail are coordinated from 0G. The TEE proof remains the single source of truth.
+- **Treasury platform integrations.** Sentri vaults appear as managed accounts inside Karpatkey, Llama Risk, and Steakhouse Financial dashboards — DAOs that already trust those platforms can opt in to Sentri as a verifiable execution layer without changing tooling.
+- **Public on-chain track record per operator.** Every operator INFT accrues a permanent on-chain performance record (PnL, drawdown, slippage realised vs bound, frequency of defensive overrides). DAOs choose operators against that record, not against marketing.
+
+The thesis behind the roadmap: the treasury problem is not about clever trading — it is about **bounded productive capital with cryptographic recourse**. Every roadmap item makes that envelope more useful (yield-bearing base, multi-asset risk, RWA exposure) or more verifiable (Pyth on-chain, TWAP, Log Layer audit, operator track records), without ever making the agent more powerful relative to the vault.
+
+---
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
