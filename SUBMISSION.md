@@ -26,15 +26,17 @@ A multi-tenant treasury protocol where any DAO can deploy its own bounded vault 
 • Decentralised oracle path. Each cycle requires Jaine V3 slot0() on-chain plus Pyth Network 0G/USD via Hermes (Pyth is 0G's day-one official oracle integration with 100+ institutional publishers). 2-of-2 quorum, spread-bounded, then keeper-pushed to SentriPriceFeed.
 
 
-→ 0G integration (5 of 6 components used)
+→ 0G integration (5 highlighted surfaces)
 
 • 0G Chain — VaultFactory and TreasuryVault deployed natively on mainnet 16661.
-• 0G Compute / Sealed Inference — TeeML provider; processResponse fail-closed; vault verifies recovered TEE signer via EIP-191.
-• 0G Storage KV — per-vault audit log + portfolio state, every entry binds intent hash, response hash, tx hash, and storage root.
-• Agent INFT — gates executeStrategy on every vault; owner-revocable kill-switch across all vaults.
+• 0G Compute / Sealed Inference (TeeML) — processResponse fail-closed; vault verifies recovered TEE signer via EIP-191.
+• 0G TEE / Private Sandbox — strategy reasoning sealed inside the provider path; chatID, signed payload, and recovered signer propagated to the audit trail.
+• 0G Storage Log Layer (blob) — immutable canonical audit record uploaded per execution via MemData + Indexer.upload; merkle root and tx hash indexed in KV for tamper-evidence.
+• 0G Storage KV — fast per-vault audit index + portfolio state; manifest enables full enriched recovery after agent restart.
+• Agent INFT-style identity — gates executeStrategy on every vault; owner-revocable kill-switch across all vaults.
 • Real DEX integration — JaineV3PoolAdapter, locked to the immutable Jaine pool address, validates every callback.
 
-The 6th component (Persistent Memory) is intentionally not used: every decision is stateless and replayable from on-chain plus storage data.
+Persistent Memory is intentionally not used: every decision is stateless and replayable from on-chain plus storage data.
 
 
 → Live on 0G mainnet (chain 16661)
@@ -75,7 +77,7 @@ v1.1 — hardening (weeks):
 
 • Pyth on-chain pull integration — vault reads Pyth's deployed contract (0x2880ab15…7b43) directly via updatePriceFeeds, removing the keeper-pushed step.
 • Jaine TWAP cross-check on slot0() once observation cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
-• Move audit trail from 0G Storage KV to Log Layer for append-only semantics; KV stays as the fast UI index.
+• Complete canonical audit recovery from 0G Storage Log/blob + KV index: blob already written per execution; harden download path for full offline verification.
 • Third-party security audit.
 
 v2 — productive treasury (months):

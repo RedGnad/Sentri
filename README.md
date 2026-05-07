@@ -29,7 +29,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 | What is Sentri? | A policy-first autonomous treasury vault on 0G. |
 | Is it live on mainnet? | Yes, deployed on 0G mainnet `16661`. |
 | Does it move real assets? | Yes, `USDC.E/W0G` through Jaine. |
-| What 0G components are used? | 4 core 0G components: Chain, Compute TeeML, Storage KV, Agent INFT, + Jaine as the real 0G mainnet execution venue. |
+| What 0G components are used? | 5 highlighted 0G surfaces: Chain, Compute TeeML, TEE/Private Sandbox, Storage KV + Log Layer, Agent INFT-style identity — Jaine is the real 0G mainnet execution venue. |
 | Is the AI trusted blindly? | No, the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
 | Can judges verify it? | Yes, public dashboard, chainscan links, execution txs, storage tx/root hashes. |
 
@@ -45,13 +45,15 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 ## 0G integration
 
-Sentri uses 4 core 0G components + 1 real 0G mainnet ecosystem venue.
+Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
 
 | Layer | Usage |
 |---|---|
 | 0G Chain | `VaultFactory` and `TreasuryVault` deployed natively on mainnet `16661`. |
 | 0G Compute / Sealed Inference (TeeML) | `processResponse()` fail-closed, then EIP-191 verification of the recovered TEE signer on-chain. |
-| 0G Storage KV | Per-vault audit trail and portfolio state, namespaced by vault address. |
+| 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for full verifiability. |
+| 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; merkle root and tx hash stored on-chain KV index for tamper-evidence. |
+| 0G Storage KV | Fast per-vault audit index and portfolio state, namespaced by vault address; used as recovery layer after agent restart. |
 | Agent INFT | Gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
 | 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
 
@@ -183,7 +185,7 @@ This is a forward-looking section.
 
 - Pyth on-chain pull integration: vault reads the deployed Pyth contract (`0x2880ab15…7b43`) directly via `updatePriceFeeds`, removing the keeper-pushed step.
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
-- Migrate audit trail from 0G Storage KV to Log Layer for append-only semantics; KV stays as the fast UI index.
+- Complete canonical audit recovery from 0G Storage Log/blob + KV index: blob already written per execution; harden download path for full offline verification.
 - Third-party security audit.
 
 **v2 — productive treasury (months)**
