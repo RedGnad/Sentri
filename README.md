@@ -30,7 +30,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 - **Real assets, real venue.** The mainnet stack uses `USDC.E` and `W0G`, with execution routed through the live Jaine V3 `USDC.E/W0G` pool via a hardened single-pool adapter.
 - **Owner recourse always available.** `pause` to freeze activity reversibly, `emergencyWithdraw` to return all assets immediately, `emergencyDeleverageAndWithdraw(minBaseOut)` to attempt a base-asset exit with slippage protection.
 
-## 0G integration (5 of 6 components used)
+## 0G integration (5 components used)
 
 - **0G Chain** — `VaultFactory` and `TreasuryVault` deployed natively on mainnet `16661`.
 - **0G Compute / Sealed Inference (TeeML)** — `processResponse()` fail-closed, then EIP-191 verification of the recovered TEE signer on-chain.
@@ -38,7 +38,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 - **Agent INFT** — gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once.
 - **Real DEX integration** — `JaineV3PoolAdapter`, locked to the immutable Jaine pool address.
 
-The 6th component (Persistent Memory) is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.
+The Persistent Memory is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.
 
 ---
 
