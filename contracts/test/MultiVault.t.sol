@@ -71,7 +71,7 @@ contract MultiVaultTest is Test {
         router.addLiquidity(a0, a1, lper, block.timestamp + 1);
         vm.stopPrank();
 
-        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner, bytes32(0));
+        uint256 agentTokenId = agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner, bytes32(0));
 
         impl = new TreasuryVault();
         factory = new VaultFactory(
@@ -81,8 +81,10 @@ contract MultiVaultTest is Test {
             address(router),
             address(feed),
             address(usdc),
-            address(weth)
+            address(weth),
+            agentTokenId
         );
+        agentNFT.setAuthorizedFactory(address(factory), true);
 
         // ── Five vaults: 2 alice, 2 bob, 1 carol — across all preset tiers ──
         usdc.mint(alice, 200_000e6);
@@ -114,11 +116,11 @@ contract MultiVaultTest is Test {
         vCarolBalanced = factory.createVaultAndDeposit(VaultFactory.PresetTier.Balanced, 100_000e6);
         vm.stopPrank();
 
-        agentNFT.authorizeUsageAdmin(0, vAliceConservative);
-        agentNFT.authorizeUsageAdmin(0, vAliceBalanced);
-        agentNFT.authorizeUsageAdmin(0, vBobAggressive);
-        agentNFT.authorizeUsageAdmin(0, vBobCustom);
-        agentNFT.authorizeUsageAdmin(0, vCarolBalanced);
+        assertTrue(agentNFT.isAuthorizedForVault(agent, vAliceConservative));
+        assertTrue(agentNFT.isAuthorizedForVault(agent, vAliceBalanced));
+        assertTrue(agentNFT.isAuthorizedForVault(agent, vBobAggressive));
+        assertTrue(agentNFT.isAuthorizedForVault(agent, vBobCustom));
+        assertTrue(agentNFT.isAuthorizedForVault(agent, vCarolBalanced));
     }
 
     // ── Setup sanity ─────────────────────────────────────────────────────

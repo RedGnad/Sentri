@@ -31,6 +31,7 @@ contract AgentINFT is ERC721, Ownable {
     mapping(address => uint256[]) private _holderTokens;
     /// @dev Per-token per-vault authorization map (ERC-7857 authorizeUsage pattern)
     mapping(uint256 => mapping(address => bool)) private _authorizedVaults;
+    mapping(address => bool) public authorizedFactories;
 
     event AgentMinted(uint256 indexed tokenId, address indexed agent, bytes32 enclaveHash, address indexed teeSigner);
     event AgentRevoked(uint256 indexed tokenId);
@@ -39,12 +40,14 @@ contract AgentINFT is ERC721, Ownable {
     event UsageAuthorized(uint256 indexed tokenId, address indexed vault);
     event UsageRevoked(uint256 indexed tokenId, address indexed vault);
     event MetadataUpdated(uint256 indexed tokenId, bytes32 metadataRootHash);
+    event FactoryAuthorizationUpdated(address indexed factory, bool authorized);
 
     error AlreadyRevoked();
     error NotRevoked();
     error AgentTokenRevoked();
     error ZeroAddress();
     error NotTokenOwner();
+    error NotAuthorizedFactory();
 
     constructor() ERC721("Sentri Agent", "SAGENT") Ownable(msg.sender) {}
 
@@ -134,6 +137,19 @@ contract AgentINFT is ERC721, Ownable {
         external
         onlyOwner
     {
+        if (vault == address(0)) revert ZeroAddress();
+        _authorizedVaults[tokenId][vault] = true;
+        emit UsageAuthorized(tokenId, vault);
+    }
+
+    function setAuthorizedFactory(address factory, bool authorized) external onlyOwner {
+        if (factory == address(0)) revert ZeroAddress();
+        authorizedFactories[factory] = authorized;
+        emit FactoryAuthorizationUpdated(factory, authorized);
+    }
+
+    function authorizeUsageFromFactory(uint256 tokenId, address vault) external {
+        if (!authorizedFactories[msg.sender]) revert NotAuthorizedFactory();
         if (vault == address(0)) revert ZeroAddress();
         _authorizedVaults[tokenId][vault] = true;
         emit UsageAuthorized(tokenId, vault);

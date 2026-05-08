@@ -45,7 +45,7 @@ contract DeployMainnetReal is Script {
         console2.log("SentriPriceFeed:   ", address(feed));
 
         AgentINFT agentNFT = new AgentINFT();
-        agentNFT.mint(
+        uint256 agentTokenId = agentNFT.mint(
             agent,
             keccak256("sentri-enclave-v1-mainnet"),
             keccak256("0g-sealed-inference-attestation-mainnet"),
@@ -65,8 +65,10 @@ contract DeployMainnetReal is Script {
             address(adapter),
             address(feed),
             base,
-            risk
+            risk,
+            agentTokenId
         );
+        agentNFT.setAuthorizedFactory(address(factory), true);
         console2.log("VaultFactory:      ", address(factory));
 
         address demoVault = factory.createVault(VaultFactory.PresetTier.Balanced);

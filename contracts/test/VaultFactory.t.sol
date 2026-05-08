@@ -55,7 +55,7 @@ contract VaultFactoryTest is Test {
         router.addLiquidity(a0, a1, lper, block.timestamp + 1);
         vm.stopPrank();
 
-        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner, bytes32(0));
+        uint256 agentTokenId = agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner, bytes32(0));
 
         impl = new TreasuryVault();
         factory = new VaultFactory(
@@ -65,8 +65,10 @@ contract VaultFactoryTest is Test {
             address(router),
             address(feed),
             address(usdc),
-            address(weth)
+            address(weth),
+            agentTokenId
         );
+        agentNFT.setAuthorizedFactory(address(factory), true);
     }
 
     // ── Constructor / immutables ─────────────────────────────────────────
@@ -79,11 +81,12 @@ contract VaultFactoryTest is Test {
         assertEq(factory.priceFeed(), address(feed));
         assertEq(factory.base(), address(usdc));
         assertEq(factory.risk(), address(weth));
+        assertEq(factory.agentTokenId(), 0);
     }
 
     function test_constructor_revertsZeroAddress() public {
         vm.expectRevert(VaultFactory.ZeroAddress.selector);
-        new VaultFactory(address(0), agent, address(agentNFT), address(router), address(feed), address(usdc), address(weth));
+        new VaultFactory(address(0), agent, address(agentNFT), address(router), address(feed), address(usdc), address(weth), 0);
     }
 
     // ── Preset creation ──────────────────────────────────────────────────
@@ -103,6 +106,7 @@ contract VaultFactoryTest is Test {
         assertEq(address(v.base()), address(usdc));
         assertEq(address(v.risk()), address(weth));
         assertEq(v.agent(), agent);
+        assertTrue(agentNFT.isAuthorizedForVault(agent, vault));
     }
 
     function test_createVault_balanced_setsCorrectPolicy() public {

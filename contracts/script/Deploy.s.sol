@@ -59,7 +59,7 @@ contract Deploy is Script {
         // ── Agent identity ───────────────────────────────────────────────
         AgentINFT agentNFT = new AgentINFT();
         console2.log("AgentINFT:       ", address(agentNFT));
-        agentNFT.mint(
+        uint256 agentTokenId = agentNFT.mint(
             agent,
             keccak256("sentri-enclave-v1"),
             keccak256("0g-sealed-inference-attestation"),
@@ -80,8 +80,10 @@ contract Deploy is Script {
             address(router),
             address(feed),
             address(usdc),
-            address(weth)
+            address(weth),
+            agentTokenId
         );
+        agentNFT.setAuthorizedFactory(address(factory), true);
         console2.log("VaultFactory:    ", address(factory));
 
         // ── Demo vault owned by the deployer (Balanced preset) ───────────

@@ -19,6 +19,7 @@ contract AgentINFTTest is Test {
     bytes32 constant META_ROOT = keccak256("0G-storage-root-A");
     address vault1 = makeAddr("vault1");
     address vault2 = makeAddr("vault2");
+    address factory = makeAddr("factory");
 
     function setUp() public {
         inft = new AgentINFT();
@@ -220,6 +221,21 @@ contract AgentINFTTest is Test {
         vm.prank(attacker);
         vm.expectRevert();
         inft.authorizeUsageAdmin(id, vault1);
+    }
+
+    function test_authorizeUsageFromFactory_byAuthorizedFactory() public {
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
+        inft.setAuthorizedFactory(factory, true);
+        vm.prank(factory);
+        inft.authorizeUsageFromFactory(id, vault1);
+        assertTrue(inft.isAuthorizedForVault(agentA, vault1));
+    }
+
+    function test_authorizeUsageFromFactory_revertsIfFactoryNotAuthorized() public {
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
+        vm.prank(factory);
+        vm.expectRevert(AgentINFT.NotAuthorizedFactory.selector);
+        inft.authorizeUsageFromFactory(id, vault1);
     }
 
     function test_isAuthorizedForVault_revokedTokenReturnsFalse() public {

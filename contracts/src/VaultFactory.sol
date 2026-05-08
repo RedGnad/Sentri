@@ -5,6 +5,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {TreasuryVault} from "./TreasuryVault.sol";
+import {AgentINFT} from "./AgentINFT.sol";
 
 /// @title VaultFactory — Deploys per-user TreasuryVault clones (EIP-1167)
 /// @notice Anyone can deploy their own treasury vault via this factory. Each
@@ -39,6 +40,7 @@ contract VaultFactory {
     address public immutable priceFeed;
     address public immutable base;
     address public immutable risk;
+    uint256 public immutable agentTokenId;
 
     // ── Mutable registry (factory owns no funds, only emits + tracks) ────
 
@@ -71,7 +73,8 @@ contract VaultFactory {
         address _router,
         address _priceFeed,
         address _base,
-        address _risk
+        address _risk,
+        uint256 _agentTokenId
     ) {
         if (
             _implementation == address(0) ||
@@ -90,6 +93,7 @@ contract VaultFactory {
         priceFeed = _priceFeed;
         base = _base;
         risk = _risk;
+        agentTokenId = _agentTokenId;
     }
 
     // ── Vault creation ───────────────────────────────────────────────────
@@ -150,6 +154,7 @@ contract VaultFactory {
             policy: pol
         });
         TreasuryVault(vault).initialize(params);
+        AgentINFT(agentNFT).authorizeUsageFromFactory(agentTokenId, vault);
 
         uint256 index = allVaults.length;
         allVaults.push(vault);

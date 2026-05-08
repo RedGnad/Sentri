@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {TreasuryVault} from "../src/TreasuryVault.sol";
 import {VaultFactory} from "../src/VaultFactory.sol";
+import {AgentINFT} from "../src/AgentINFT.sol";
 
 /// @notice Lightweight redeploy of just TreasuryVault impl + VaultFactory.
 ///         Reuses existing AgentINFT, PriceFeed, Router/Adapter, base/risk
@@ -32,6 +33,7 @@ contract RedeployFactory is Script {
         address priceFeed = vm.envAddress("PRICE_FEED_ADDRESS");
         address base = vm.envAddress("BASE_TOKEN_ADDRESS");
         address risk = vm.envAddress("RISK_TOKEN_ADDRESS");
+        uint256 agentTokenId = vm.envOr("AGENT_TOKEN_ID", uint256(0));
 
         vm.startBroadcast(deployerKey);
 
@@ -45,8 +47,10 @@ contract RedeployFactory is Script {
             router,
             priceFeed,
             base,
-            risk
+            risk,
+            agentTokenId
         );
+        AgentINFT(agentNFT).setAuthorizedFactory(address(factory), true);
         console2.log("VaultFactory:      ", address(factory));
 
         address demoVault = factory.createVault(VaultFactory.PresetTier.Aggressive);
