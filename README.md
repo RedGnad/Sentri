@@ -52,7 +52,7 @@ Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
 | 0G Chain | `VaultFactory` and `TreasuryVault` deployed natively on mainnet `16661`. |
 | 0G Compute / Sealed Inference (TeeML) | `processResponse()` fail-closed, then EIP-191 verification of the recovered TEE signer on-chain. |
 | 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for full verifiability. |
-| 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; merkle root and tx hash stored on-chain KV index for tamper-evidence. |
+| 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; Merkle root and storage tx hash are indexed through 0G Storage KV for recovery and tamper-evidence. |
 | 0G Storage KV | Fast per-vault audit index and portfolio state, namespaced by vault address; used as recovery layer after agent restart. |
 | Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
 | 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
