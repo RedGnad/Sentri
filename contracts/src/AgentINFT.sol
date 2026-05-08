@@ -48,6 +48,7 @@ contract AgentINFT is ERC721, Ownable {
     error ZeroAddress();
     error NotTokenOwner();
     error NotAuthorizedFactory();
+    error NonexistentToken();
 
     constructor() ERC721("Sentri Agent", "SAGENT") Ownable(msg.sender) {}
 
@@ -151,6 +152,7 @@ contract AgentINFT is ERC721, Ownable {
     function authorizeUsageFromFactory(uint256 tokenId, address vault) external {
         if (!authorizedFactories[msg.sender]) revert NotAuthorizedFactory();
         if (vault == address(0)) revert ZeroAddress();
+        if (_ownerOf(tokenId) == address(0)) revert NonexistentToken();
         _authorizedVaults[tokenId][vault] = true;
         emit UsageAuthorized(tokenId, vault);
     }

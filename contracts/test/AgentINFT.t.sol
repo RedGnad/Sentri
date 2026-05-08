@@ -238,6 +238,13 @@ contract AgentINFTTest is Test {
         inft.authorizeUsageFromFactory(id, vault1);
     }
 
+    function test_authorizeUsageFromFactory_revertsIfTokenDoesNotExist() public {
+        inft.setAuthorizedFactory(factory, true);
+        vm.prank(factory);
+        vm.expectRevert(AgentINFT.NonexistentToken.selector);
+        inft.authorizeUsageFromFactory(999, vault1);
+    }
+
     function test_isAuthorizedForVault_revokedTokenReturnsFalse() public {
         uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
         vm.prank(agentA);

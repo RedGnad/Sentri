@@ -33,7 +33,8 @@ contract RedeployFactory is Script {
         address priceFeed = vm.envAddress("PRICE_FEED_ADDRESS");
         address base = vm.envAddress("BASE_TOKEN_ADDRESS");
         address risk = vm.envAddress("RISK_TOKEN_ADDRESS");
-        uint256 agentTokenId = vm.envOr("AGENT_TOKEN_ID", uint256(0));
+        uint256 agentTokenId = vm.envUint("AGENT_TOKEN_ID");
+        require(AgentINFT(agentNFT).ownerOf(agentTokenId) == agent, "wrong agent token");
 
         vm.startBroadcast(deployerKey);
 
