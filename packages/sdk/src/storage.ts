@@ -418,8 +418,9 @@ async function _readKv<T = unknown>(
 ): Promise<T | null> {
   const kvClient = new KvClient(kvNodeUrl);
   const keyBytes = encodeKey(key);
+  const encodedKey = ethers.encodeBase64(keyBytes) as unknown as Uint8Array;
   try {
-    const val = await kvClient.getValue(streamId, keyBytes);
+    const val = await kvClient.getValue(streamId, encodedKey);
     if (!val) return null;
     const raw = typeof val === "object" && "data" in val
       ? Buffer.from(String((val as { data: string }).data), "base64").toString("utf-8")
