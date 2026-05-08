@@ -88,7 +88,7 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 | `SentriPriceFeed` | [`0x1289638A90da7F24DB069168648819607A7377e6`](https://chainscan.0g.ai/address/0x1289638A90da7F24DB069168648819607A7377e6) |
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
-| Demo vault (Aggressive preset) | [`0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982`](https://chainscan.0g.ai/address/0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982) |
+| Demo vault | [`0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982`](https://chainscan.0g.ai/address/0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982) |
 | Primary v2 execution tx — `EmergencyDeleverage` (`W0G → USDC.E`) | [`0xc404f865…53df`](https://chainscan.0g.ai/tx/0xc404f865e38a456b2861c8663e43390c26748a122761180cf97537e5acf253df) |
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on every successful execution: `0xA46EA4FC5889AD35A1487e1Ed04dCcfa872146B9`.
@@ -114,7 +114,7 @@ Previous mainnet rehearsal transactions remain useful for audit history but are 
 | `SentriPriceFeed` | [`0x0e75243d34E904Ab925064c8297b36484Ce2aB5E`](https://chainscan-galileo.0g.ai/address/0x0e75243d34E904Ab925064c8297b36484Ce2aB5E) |
 | `MockUSDC` | [`0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3`](https://chainscan-galileo.0g.ai/address/0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3) |
 | `MockWETH` | [`0x246e6080D736A217C151C3b88890C08e2C249d5E`](https://chainscan-galileo.0g.ai/address/0x246e6080D736A217C151C3b88890C08e2C249d5E) |
-| Demo vault (Aggressive preset) | [`0x5Aa3a7083915F6213238fc8c7461be969d5504e2`](https://chainscan-galileo.0g.ai/address/0x5Aa3a7083915F6213238fc8c7461be969d5504e2) |
+| Demo vault  | [`0x5Aa3a7083915F6213238fc8c7461be969d5504e2`](https://chainscan-galileo.0g.ai/address/0x5Aa3a7083915F6213238fc8c7461be969d5504e2) |
 
 ---
 
@@ -193,7 +193,7 @@ This is a forward-looking section.
 
 - Pyth on-chain pull integration: vault reads the deployed Pyth contract (`0x2880ab15…7b43`) directly via `updatePriceFeeds`, removing the keeper-pushed step.
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
-- Complete canonical audit recovery from 0G Storage Log/blob + KV index: blob already written per execution; harden download path for full offline verification.
+- - Harden canonical audit recovery from 0G Storage Log/blob + KV index: canonical blobs and root-based recovery are live; next step is full generic offline verification and restart-proof indexing without demo recovery records.
 - Third-party security audit.
 
 **Future productive treasury extensions (months)**

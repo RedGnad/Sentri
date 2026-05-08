@@ -29,6 +29,15 @@ function executionVenue(chainId: number): string {
     : "SentriPair mock AMM";
 }
 
+function formatCompactNumber(num: number): string {
+  if (num < 1000) return num.toString();
+  if (num < 1000000)
+    return `${(num / 1000).toFixed(num % 1000 === 0 ? 0 : 1)}k`;
+  if (num < 1000000000)
+    return `${(num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1)}M`;
+  return `${(num / 1000000000).toFixed(num % 1000000000 === 0 ? 0 : 1)}B`;
+}
+
 function mechanism(chainId: number) {
   return [
     {
@@ -58,24 +67,12 @@ function mechanism(chainId: number) {
 
 export default async function LandingPage() {
   const snapshot = await getLiveSnapshot();
-  const chainLabel = networkLabel(snapshot.chain.id);
   const mechanismRows = mechanism(snapshot.chain.id);
   const isMainnet = snapshot.chain.id === 16661;
   const demoVaultHref = `/v/${DEMO_VAULT_ADDRESS}`;
 
   return (
     <div className="relative">
-      {/* Meta bar */}
-      <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-kicker text-ink-faint pb-5 border-b border-hairline">
-        <span>Sentri · Treasury Vaults</span>
-        <span className="hidden sm:inline">
-          Private agent decisions · public risk controls
-        </span>
-        <span>
-          {chainLabel} · {snapshot.chain.id}
-        </span>
-      </div>
-
       {/* Hero + Live panel */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-10 pb-12">
         <div className="lg:col-span-8 animate-fade-up">
@@ -127,7 +124,7 @@ export default async function LandingPage() {
 
       {/* Trust ticker — single dense row */}
       <section
-        className="border-y border-hairline animate-fade-up"
+        className="mt-20 border-y border-hairline animate-fade-up"
         style={{ animationDelay: "160ms" }}
       >
         <div className="px-5 py-3 overflow-x-auto">
@@ -286,7 +283,7 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
       key: "Agent",
       value:
         snapshot.agent.status === "ready"
-          ? `${snapshot.agent.cycles ?? 0} cycles · ${formatRelative(snapshot.agent.lastCycleAt)}`
+          ? `${formatCompactNumber(snapshot.agent.cycles ?? 0)} cycles · ${formatRelative(snapshot.agent.lastCycleAt)}`
           : snapshot.agent.status === "initializing"
             ? "Initializing"
             : snapshot.agent.status === "error"

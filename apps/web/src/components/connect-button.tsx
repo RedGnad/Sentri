@@ -17,7 +17,12 @@ import { shortenAddress } from "@/lib/utils";
 import { LogOut, Copy, Check, ExternalLink, AlertTriangle } from "lucide-react";
 
 export function ConnectButton() {
-  const { address, isConnected, chainId: walletChainId, connector } = useAccount();
+  const {
+    address,
+    isConnected,
+    chainId: walletChainId,
+    connector,
+  } = useAccount();
   const { data: balanceData } = useBalance({
     address,
     chainId: galileo.id,
@@ -60,7 +65,16 @@ export function ConnectButton() {
       await switchChainAsync({ chainId: galileo.id });
       toast.success(`Switched to ${galileo.name}`);
     } catch (err: unknown) {
-      const eth = (window as unknown as { ethereum?: { request: (a: { method: string; params: unknown[] }) => Promise<unknown> } }).ethereum;
+      const eth = (
+        window as unknown as {
+          ethereum?: {
+            request: (a: {
+              method: string;
+              params: unknown[];
+            }) => Promise<unknown>;
+          };
+        }
+      ).ethereum;
       if (eth) {
         try {
           await eth.request({
@@ -78,7 +92,8 @@ export function ConnectButton() {
           toast.success(`${galileo.name} added to wallet`);
           return;
         } catch (addErr: unknown) {
-          const msg = addErr instanceof Error ? addErr.message : "Unknown error";
+          const msg =
+            addErr instanceof Error ? addErr.message : "Unknown error";
           toast.error("Failed to add network", { description: msg });
           return;
         }
@@ -110,57 +125,57 @@ export function ConnectButton() {
           Connect Wallet
         </Button>
 
-        {showConnect && mounted && createPortal(
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg-sunk/80 backdrop-blur-sm p-4"
-            onClick={() => setShowConnect(false)}
-          >
+        {showConnect &&
+          mounted &&
+          createPortal(
             <div
-              className="bg-bg-elev border border-hairline-strong w-full max-w-sm"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg-sunk/80 backdrop-blur-sm p-4"
+              onClick={() => setShowConnect(false)}
             >
-              <div className="flex items-center justify-between px-5 h-11 border-b border-hairline">
-                <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
-                  Select wallet
-                </span>
-                <button
-                  onClick={() => setShowConnect(false)}
-                  className="font-mono text-xs text-ink-dim hover:text-amber transition-colors"
-                  aria-label="Close"
-                >
-                  [ esc ]
-                </button>
+              <div
+                className="bg-bg-elev border border-hairline-strong w-full max-w-sm"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 h-11 border-b border-hairline">
+                  <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+                    Select wallet
+                  </span>
+                  <button
+                    onClick={() => setShowConnect(false)}
+                    className="font-mono text-xs text-ink-dim hover:text-amber transition-colors"
+                    aria-label="Close"
+                  >
+                    [ esc ]
+                  </button>
+                </div>
+                <ul className="divide-y divide-hairline">
+                  {connectors.map((c) => (
+                    <li key={c.uid}>
+                      <button
+                        onClick={() => {
+                          connect({ connector: c });
+                          setShowConnect(false);
+                        }}
+                        className="w-full flex items-center gap-4 px-5 h-14 hover:bg-bg-elev/40 transition-colors text-left group"
+                      >
+                        {c.icon ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={c.icon} alt={c.name} className="w-6 h-6" />
+                        ) : null}
+                        <span className="font-mono text-[11px] uppercase tracking-kicker text-ink flex-1 group-hover:text-amber transition-colors">
+                          {c.name === "Injected" ? "Browser wallet" : c.name}
+                        </span>
+                        <span className="font-mono text-[10px] text-ink-faint group-hover:text-amber transition-colors">
+                          →
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="divide-y divide-hairline">
-                {connectors.map((c) => (
-                  <li key={c.uid}>
-                    <button
-                      onClick={() => {
-                        connect({ connector: c });
-                        setShowConnect(false);
-                      }}
-                      className="w-full flex items-center gap-4 px-5 h-14 hover:bg-bg-elev/40 transition-colors text-left group"
-                    >
-                      {c.icon ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={c.icon} alt={c.name} className="w-6 h-6" />
-                      ) : (
-                        <div className="w-6 h-6 border border-hairline-strong" />
-                      )}
-                      <span className="font-mono text-[11px] uppercase tracking-kicker text-ink flex-1 group-hover:text-amber transition-colors">
-                        {c.name}
-                      </span>
-                      <span className="font-mono text-[10px] text-ink-faint group-hover:text-amber transition-colors">
-                        →
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>,
-          document.body
-        )}
+            </div>,
+            document.body,
+          )}
       </>
     );
   }
@@ -223,13 +238,19 @@ export function ConnectButton() {
               Address
             </div>
             <div className="flex items-center justify-between">
-              <span className="font-mono text-[13px] text-ink tabular">{shortenAddress(address!)}</span>
+              <span className="font-mono text-[13px] text-ink tabular">
+                {shortenAddress(address!)}
+              </span>
               <button
                 onClick={handleCopy}
                 className="text-ink-faint hover:text-amber transition-colors"
                 aria-label="Copy address"
               >
-                {copied ? <Check className="h-3.5 w-3.5 text-phosphor" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? (
+                  <Check className="h-3.5 w-3.5 text-phosphor" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
               </button>
             </div>
           </div>
@@ -237,7 +258,8 @@ export function ConnectButton() {
           {wrongNetwork && (
             <div className="px-5 py-4 border-b border-hairline">
               <p className="font-mono text-[10px] text-alert leading-relaxed mb-3">
-                Wallet on chain {walletChainId}. Sentri requires {galileo.name} ({galileo.id}).
+                Wallet on chain {walletChainId}. Sentri requires {galileo.name}{" "}
+                ({galileo.id}).
               </p>
               <Button
                 size="sm"
@@ -255,7 +277,11 @@ export function ConnectButton() {
             <Row label="Wallet" value={connector?.name ?? "—"} />
             <Row
               label="Network"
-              value={wrongNetwork ? `Chain ${walletChainId}` : `${galileo.name} ${galileo.id}`}
+              value={
+                wrongNetwork
+                  ? `Chain ${walletChainId}`
+                  : `${galileo.name} ${galileo.id}`
+              }
               valueClass={wrongNetwork ? "text-alert" : "text-ink"}
             />
             <Row label="Balance" value={balanceFormatted} />

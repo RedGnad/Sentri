@@ -2,7 +2,7 @@
 
 import { http, createConfig } from "wagmi";
 import { defineChain } from "viem";
-import { injected, coinbaseWallet, safe } from "wagmi/connectors";
+import { injected, walletConnect } from "wagmi/connectors";
 
 const selectedRpc =
   process.env.NEXT_PUBLIC_RPC_URL ??
@@ -28,16 +28,18 @@ export const galileo = defineChain({
   testnet: process.env.NEXT_PUBLIC_SENTRI_NETWORK !== "mainnet",
 });
 
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+
 export const config = createConfig({
   chains: [galileo],
   connectors: [
     injected(),
-    coinbaseWallet({ appName: "Sentri" }),
-    safe(),
+    ...(projectId ? [walletConnect({ projectId, showQrModal: false })] : []),
   ],
   transports: {
     [16602]: http(galileo.id === 16602 ? selectedRpc : "https://evmrpc-testnet.0g.ai"),
     [16661]: http(galileo.id === 16661 ? selectedRpc : "https://evmrpc.0g.ai"),
   },
   ssr: true,
+  multiInjectedProviderDiscovery: true,
 });

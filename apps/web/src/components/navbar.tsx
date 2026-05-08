@@ -33,7 +33,7 @@ export function Navbar() {
                 Sentri
               </span>
               <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-                [v2]
+                [v1.0]
               </span>
             </Link>
             <div className="hidden md:flex items-center gap-0 border-l border-hairline pl-8">
