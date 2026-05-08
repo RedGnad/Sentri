@@ -306,6 +306,63 @@ export async function readAuditFromKv(
   return entries.filter((e): e is CachedAuditEntry => e !== null);
 }
 
+interface AuditRecoveryRecord {
+  rootHash: string;
+  txHash?: string;
+  referenceTxHash?: string;
+  kvIndexRootHash?: string;
+  kvIndexTxHash?: string;
+}
+
+function auditRecoveryRecords(): AuditRecoveryRecord[] {
+  const raw = process.env.SENTRI_AUDIT_RECOVERY_RECORDS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((record): record is AuditRecoveryRecord => {
+      return Boolean(record && typeof record === "object" && typeof (record as AuditRecoveryRecord).rootHash === "string");
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function readAuditFromRecoveryRecords(
+  vaultAddr: string,
+  limit = 50,
+): Promise<CachedAuditEntry[]> {
+  const records = auditRecoveryRecords().slice(-limit);
+  if (records.length === 0) return [];
+  const entries: CachedAuditEntry[] = [];
+  for (const record of records) {
+    try {
+      const file = path.join(CACHE_DIR, "recovery", `${record.rootHash}.json`);
+      ensureDir(path.dirname(file));
+      const err = await getIndexer().download(record.rootHash, file, false);
+      if (err !== null) continue;
+      const canonical = JSON.parse(fs.readFileSync(file, "utf-8")) as CanonicalAuditRecord;
+      if (canonical.vault.toLowerCase() !== vaultAddr.toLowerCase()) continue;
+      const cached: CachedAuditEntry = {
+        ...canonical.entry,
+        canonicalRootHash: record.rootHash,
+        canonicalStorageTxHash: record.txHash ?? canonical.entry.canonicalStorageTxHash,
+        txHash: canonical.entry.txHash || record.referenceTxHash,
+        canonicalRecordHash: ethers.keccak256(ethers.toUtf8Bytes(canonicalJson(canonical))),
+        kvIndexRootHash: record.kvIndexRootHash,
+        kvIndexTxHash: record.kvIndexTxHash,
+        storageRootHash: record.rootHash,
+        storageTxHash: record.txHash,
+      };
+      writeCacheFile(path.join("vaults", vaultAddr.toLowerCase(), "audit", `${cached.timestamp}.json`), cached);
+      entries.push(cached);
+    } catch {
+      continue;
+    }
+  }
+  return entries.sort((a, b) => b.timestamp - a.timestamp);
+}
+
 // ── Internal KV primitives ───────────────────────────────────────────────
 
 async function _writeKv(
@@ -364,7 +421,10 @@ async function _readKv<T = unknown>(
   try {
     const val = await kvClient.getValue(streamId, keyBytes);
     if (!val) return null;
-    return JSON.parse(val.toString()) as T;
+    const raw = typeof val === "object" && "data" in val
+      ? Buffer.from(String((val as { data: string }).data), "base64").toString("utf-8")
+      : String(val);
+    return JSON.parse(raw) as T;
   } catch {
     return null;
   }

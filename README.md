@@ -29,9 +29,9 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 | What is Sentri? | A policy-first autonomous treasury vault on 0G. |
 | Is it live on mainnet? | Yes, deployed on 0G mainnet `16661`. |
 | Does it move real assets? | Yes, `USDC.E/W0G` through Jaine. |
-| What 0G components are used? | 5 highlighted 0G surfaces: Chain, Compute TeeML, TEE/Private Sandbox, Storage KV + Log Layer, ERC-7857-aligned Agentic ID execution profile — Jaine is the real 0G mainnet execution venue. |
+| What 0G components are used? | 5 highlighted 0G surfaces: Chain, Compute TeeML, TEE/Private Sandbox, Storage KV + Log Layer, Agent INFT-style identity profile — Jaine is the real 0G mainnet execution venue. |
 | Is the AI trusted blindly? | No, the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
-| Can judges verify it? | Yes, public dashboard, chainscan links, execution txs, storage tx/root hashes. |
+| Can judges verify it? | Yes, public dashboard, chainscan links, execution txs, storage root hashes, and storage tx links when available. |
 
 ---
 
@@ -51,10 +51,10 @@ Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
 |---|---|
 | 0G Chain | `VaultFactory` and `TreasuryVault` deployed natively on mainnet `16661`. |
 | 0G Compute / Sealed Inference (TeeML) | `processResponse()` fail-closed, then EIP-191 verification of the recovered TEE signer on-chain. |
-| 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for full verifiability. |
-| 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; Merkle root and storage tx hash are indexed through 0G Storage KV for recovery and tamper-evidence. |
+| 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for verifiable review. |
+| 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; root hash and optional storage tx metadata are mirrored into the per-vault KV/cache index for tamper-evidence. |
 | 0G Storage KV | Fast per-vault audit index and portfolio state, namespaced by vault address; used as recovery layer after agent restart. |
-| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
+| Agent INFT | ERC-7857-inspired Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
 | 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
 
 Persistent Memory is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.

@@ -97,11 +97,13 @@ export function useVaultStateFromAgent(address: `0x${string}` | undefined) {
     queryFn: async () => {
       if (!address) return null;
       const res = await fetch(`/api/vault-state?address=${address}`, { cache: "no-store" });
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error(`Failed to fetch vault state: ${res.status}`);
       return res.json();
     },
     enabled: !!address,
     refetchInterval: 15_000,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
   });
 }
 

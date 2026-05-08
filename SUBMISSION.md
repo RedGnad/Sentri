@@ -7,12 +7,12 @@ Track 2 — Agentic Trading Arena (Verifiable Finance).
 
 → The problem
 
-DAOs, protocols, and foundations hold ~$26B of stablecoin reserves on-chain, mostly idle. Manual deployment is slow and emotional. Trading bots are opaque and frontrunnable. Neither works for a treasury that needs both autonomy and auditability.
+DAOs, protocols, and foundations hold Billions of stablecoin reserves on-chain, mostly idle. Manual deployment is slow and emotional. Trading bots are opaque and frontrunnable. Neither works for a treasury that needs both autonomy and auditability.
 
 
 → What we built
 
-A multi-tenant treasury protocol where any DAO can deploy its own bounded vault (EIP-1167 clone) with its own risk policy. A shared agent reasons about strategy privately inside a 0G TEE, and the vault enforces every cryptographic and economic check on-chain before any swap can fire. Every decision is TEE-signed. Every audit entry is on 0G Storage. The vault owner can pause, reconfigure, or hard-kill at any moment.
+A multi-tenant treasury protocol where any DAO can deploy its own bounded vault (EIP-1167 aligned) with its own risk policy. A shared agent reasons about strategy privately inside a 0G TEE, and the vault enforces every cryptographic and economic check on-chain before any swap can fire. Every decision is TEE-signed. Every audit entry is on 0G Storage. The vault owner can pause, reconfigure, or hard-kill at any moment.
 
 
 → Why this is different

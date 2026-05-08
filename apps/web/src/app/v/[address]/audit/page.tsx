@@ -67,7 +67,7 @@ export default function VaultAuditPage() {
         <h2 className="font-serif text-2xl text-ink">
           {logCount} execution{logCount === 1 ? "" : "s"}
         </h2>
-        <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+        <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
           Public · no wallet required · verifiable on-chain
         </span>
       </div>
@@ -203,7 +203,7 @@ function AuditEntry({
     <article className="border border-hairline bg-bg-elev/20 hover:bg-bg-elev/40 transition-colors">
       <header className="flex items-center justify-between px-5 h-10 border-b border-hairline">
         <div className="flex items-center gap-4">
-          <span className="font-mono text-[10px] text-ink-faint tabular">
+          <span className="font-mono text-[10px] text-ink-dim tabular">
             log/{logId}
           </span>
           <Badge variant={variant as "default" | "success" | "destructive"}>
@@ -297,7 +297,7 @@ function AuditEntry({
 
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-5 h-10 border-t border-hairline font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber transition-colors"
+        className="w-full flex items-center justify-between px-5 h-12 border-t border-hairline font-mono text-[11px] uppercase tracking-kicker text-amber hover:text-ink transition-colors"
       >
         <span>∎ {expanded ? "Hide" : "Reveal"} TEE reasoning</span>
         {expanded ? (
@@ -503,7 +503,7 @@ function AuditEntry({
           href={`${EXPLORER}/address/${vaultAddress}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint hover:text-amber transition-colors flex items-center gap-1.5"
+          className="font-mono text-[11px] uppercase tracking-kicker text-amber hover:text-ink transition-colors flex items-center gap-1.5"
         >
           View on explorer <ExternalLink className="h-3 w-3" />
         </a>

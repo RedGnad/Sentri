@@ -31,6 +31,7 @@ import {
   findClosestVaultAudit,
   listKnownVaultsFromCache,
   readAuditFromKv,
+  readAuditFromRecoveryRecords,
   listVaultRejectionsFromCache,
   readVaultRejectionFromCache,
   readRejectionsFromKv,
@@ -317,6 +318,15 @@ app.get("/vault/:address/audit", async (req, res) => {
   } catch {
     // KV unreachable — continue to chain fallback below.
   }
+  try {
+    const recoveredEntries = await readAuditFromRecoveryRecords(addr, 50);
+    if (recoveredEntries.length > 0) {
+      res.json({ address: addr, count: recoveredEntries.length, entries: recoveredEntries, source: "cache" });
+      return;
+    }
+  } catch {
+    // Recovery unavailable — continue to chain fallback below.
+  }
   if (!ctx) {
     res.json({ address: addr, count: 0, entries: [], source: "no-context" });
     return;
@@ -372,6 +382,28 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
     }
   } catch {
     // KV unreachable — continue to chain fallback below.
+  }
+  try {
+    const recoveredEntries = await readAuditFromRecoveryRecords(addr, 50);
+    if (recoveredEntries.length > 0) {
+      const requested = Number(ts);
+      const recoveredMatch =
+        recoveredEntries.find((e) => String(e.timestamp) === ts) ??
+        recoveredEntries.reduce<typeof recoveredEntries[number] | null>(
+          (closest, e) =>
+            closest === null ||
+            Math.abs(e.timestamp - requested) < Math.abs(closest.timestamp - requested)
+              ? e
+              : closest,
+          null,
+        );
+      if (recoveredMatch) {
+        res.json({ ...recoveredMatch, source: "cache" });
+        return;
+      }
+    }
+  } catch {
+    // Recovery unavailable — continue to chain fallback below.
   }
   // KV miss. Fall back to on-chain log lookup so the detail view still has something to show.
   if (!ctx) {

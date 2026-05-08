@@ -16,8 +16,8 @@ const config: Config = {
         },
         ink: {
           DEFAULT: "#F2EFE6",
-          dim: "#A8A49A",
-          faint: "#595650",
+          dim: "#C6C0B2",
+          faint: "#7E786C",
           mute: "#3A3834",
         },
         hairline: {

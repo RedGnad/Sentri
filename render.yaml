@@ -62,6 +62,8 @@ services:
         value: "0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526"
       - key: STORAGE_SUBMIT_FEE_WEI
         value: "1000000000000000"
+      - key: SENTRI_AUDIT_RECOVERY_RECORDS
+        value: '[{"rootHash":"0x798021b4951989d374ead511ba8f4ff5fee29305c19dc89530d95224b61501bd","referenceTxHash":"0xc404f865e38a456b2861c8663e43390c26748a122761180cf97537e5acf253df","kvIndexRootHash":"0xfedf8792560bee375ab9102fc419e69621849dd40cd9df4e7266947ae99f099d"}]'
       - key: AGENT_INTERVAL_MS
         value: "60000"
       - key: SENTRI_CACHE_DIR
