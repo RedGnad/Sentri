@@ -86,6 +86,7 @@ contract TreasuryVaultTest is Test {
         }));
 
         agentNFT.mint(agent, keccak256("enclave-v1"), keccak256("att-v1"), "0G Sealed Inference", teeSigner, bytes32(0));
+        agentNFT.authorizeUsageAdmin(0, address(vault));
 
         usdc.mint(alice, 100_000e6);
     }
@@ -418,6 +419,15 @@ contract TreasuryVaultTest is Test {
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.AgentNotVerified.selector);
         _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "p");
+    }
+
+    function test_executeStrategy_revertsIfAgentNotAuthorizedForVault() public {
+        _depositAs(alice, 10_000e6);
+        vm.prank(agent);
+        agentNFT.revokeAuthorization(0, address(vault));
+        vm.prank(agent);
+        vm.expectRevert(TreasuryVault.AgentNotAuthorizedForVault.selector);
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "unauth");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

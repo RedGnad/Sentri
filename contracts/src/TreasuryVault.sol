@@ -136,12 +136,14 @@ contract TreasuryVault is
     error IntentAlreadyUsed();
     error ResponseAlreadyUsed();
     error ExpiredIntent();
+    error AgentNotAuthorizedForVault();
 
     // ── Modifiers ────────────────────────────────────────────────────────
 
     modifier onlyAgent() {
         if (msg.sender != agent) revert NotAgent();
         if (!agentNFT.isActiveAgent(msg.sender)) revert AgentNotVerified();
+        if (!agentNFT.isAuthorizedForVault(msg.sender, address(this))) revert AgentNotAuthorizedForVault();
         _;
     }
 

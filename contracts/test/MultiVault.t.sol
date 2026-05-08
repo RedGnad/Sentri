@@ -113,6 +113,12 @@ contract MultiVaultTest is Test {
         usdc.approve(address(factory), 100_000e6);
         vCarolBalanced = factory.createVaultAndDeposit(VaultFactory.PresetTier.Balanced, 100_000e6);
         vm.stopPrank();
+
+        agentNFT.authorizeUsageAdmin(0, vAliceConservative);
+        agentNFT.authorizeUsageAdmin(0, vAliceBalanced);
+        agentNFT.authorizeUsageAdmin(0, vBobAggressive);
+        agentNFT.authorizeUsageAdmin(0, vBobCustom);
+        agentNFT.authorizeUsageAdmin(0, vCarolBalanced);
     }
 
     // ── Setup sanity ─────────────────────────────────────────────────────

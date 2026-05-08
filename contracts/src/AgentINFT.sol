@@ -128,6 +128,17 @@ contract AgentINFT is ERC721, Ownable {
         emit UsageAuthorized(tokenId, vault);
     }
 
+    /// @notice Admin-authorized vault binding. Used by VaultFactory at creation
+    ///         time so the newly deployed vault is immediately authorized.
+    function authorizeUsageAdmin(uint256 tokenId, address vault)
+        external
+        onlyOwner
+    {
+        if (vault == address(0)) revert ZeroAddress();
+        _authorizedVaults[tokenId][vault] = true;
+        emit UsageAuthorized(tokenId, vault);
+    }
+
     /// @notice Revoke a vault's authorisation for this agent token.
     ///         Only the token owner can revoke.
     function revokeAuthorization(uint256 tokenId, address vault)
@@ -157,10 +168,11 @@ contract AgentINFT is ERC721, Ownable {
     }
 
     /// @notice Rotate the TEE signer address for a token.
-    ///         Only the token owner can rotate (agent key rotation).
+    ///         Admin-only: a compromised agent wallet must not be able to
+    ///         replace the TEE signer that constrains it.
     function rotateSigner(uint256 tokenId, address newSigner)
         external
-        onlyTokenOwner(tokenId)
+        onlyOwner
     {
         if (newSigner == address(0)) revert ZeroAddress();
         address oldSigner = agentMetadata[tokenId].teeSignerAddress;
@@ -169,10 +181,11 @@ contract AgentINFT is ERC721, Ownable {
     }
 
     /// @notice Update the 0G Storage metadata root hash for a token.
-    ///         Called when the agent uploads new identity data to 0G Storage.
+    ///         Admin-only: metadata root is used as identity proof and must
+    ///         not be rotatable by the agent wallet alone.
     function updateMetadataRoot(uint256 tokenId, bytes32 newMetadataRootHash)
         external
-        onlyTokenOwner(tokenId)
+        onlyOwner
     {
         agentMetadata[tokenId].metadataRootHash = newMetadataRootHash;
         emit MetadataUpdated(tokenId, newMetadataRootHash);

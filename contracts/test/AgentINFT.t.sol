@@ -161,20 +161,26 @@ contract AgentINFTTest is Test {
         assertEq(root, bytes32(0));
     }
 
-    function test_updateMetadataRoot_byTokenHolder() public {
+    function test_updateMetadataRoot_byAdmin() public {
         uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
         bytes32 newRoot = keccak256("new-0g-root");
-        vm.prank(agentA);
         inft.updateMetadataRoot(id, newRoot);
         (bytes32 root,,) = inft.intelligentDataOf(id);
         assertEq(root, newRoot);
     }
 
-    function test_updateMetadataRoot_revertsIfNotHolder() public {
+    function test_updateMetadataRoot_revertsIfNotAdmin() public {
         uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
         vm.prank(attacker);
-        vm.expectRevert(AgentINFT.NotTokenOwner.selector);
+        vm.expectRevert();
         inft.updateMetadataRoot(id, keccak256("x"));
+    }
+
+    function test_updateMetadataRoot_agentWalletCannotSelfUpdate() public {
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
+        vm.prank(agentA);
+        vm.expectRevert();
+        inft.updateMetadataRoot(id, keccak256("rogue"));
     }
 
     function test_authorizeUsage_byTokenHolder() public {
@@ -203,6 +209,19 @@ contract AgentINFTTest is Test {
         vm.stopPrank();
     }
 
+    function test_authorizeUsageAdmin_byAdmin() public {
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
+        inft.authorizeUsageAdmin(id, vault1);
+        assertTrue(inft.isAuthorizedForVault(agentA, vault1));
+    }
+
+    function test_authorizeUsageAdmin_revertsIfNotAdmin() public {
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
+        vm.prank(attacker);
+        vm.expectRevert();
+        inft.authorizeUsageAdmin(id, vault1);
+    }
+
     function test_isAuthorizedForVault_revokedTokenReturnsFalse() public {
         uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
         vm.prank(agentA);
@@ -212,25 +231,30 @@ contract AgentINFTTest is Test {
         assertFalse(inft.isAuthorizedForVault(agentA, vault1));
     }
 
-    function test_rotateSigner_byTokenHolder() public {
+    function test_rotateSigner_byAdmin() public {
         uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
         assertTrue(inft.isActiveAgentWithSigner(agentA, teeSignerA));
-        vm.prank(agentA);
         inft.rotateSigner(id, teeSignerB);
         assertFalse(inft.isActiveAgentWithSigner(agentA, teeSignerA));
         assertTrue(inft.isActiveAgentWithSigner(agentA, teeSignerB));
     }
 
-    function test_rotateSigner_revertsIfNotHolder() public {
+    function test_rotateSigner_revertsIfNotAdmin() public {
         uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
         vm.prank(attacker);
-        vm.expectRevert(AgentINFT.NotTokenOwner.selector);
+        vm.expectRevert();
+        inft.rotateSigner(id, teeSignerB);
+    }
+
+    function test_rotateSigner_agentWalletCannotSelfRotate() public {
+        uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
+        vm.prank(agentA);
+        vm.expectRevert();
         inft.rotateSigner(id, teeSignerB);
     }
 
     function test_rotateSigner_revertsOnZeroAddress() public {
         uint256 id = inft.mint(agentA, ENCLAVE, ATTEST, "p", teeSignerA, bytes32(0));
-        vm.prank(agentA);
         vm.expectRevert(AgentINFT.ZeroAddress.selector);
         inft.rotateSigner(id, address(0));
     }
