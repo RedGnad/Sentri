@@ -18,7 +18,8 @@ export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   function isActive(href: string): boolean {
-    if (href === "/vaults") return pathname === "/vaults" || pathname.startsWith("/v/");
+    if (href === "/vaults")
+      return pathname === "/vaults" || pathname.startsWith("/v/");
     return pathname === href;
   }
 
@@ -32,7 +33,7 @@ export function Navbar() {
                 Sentri
               </span>
               <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-                [v1.0]
+                [v2]
               </span>
             </Link>
             <div className="hidden md:flex items-center gap-0 border-l border-hairline pl-8">
@@ -50,7 +51,9 @@ export function Navbar() {
                   >
                     <span className="text-ink-faint">{item.num}</span>
                     <span>{item.label}</span>
-                    {active && <span className="absolute bottom-0 left-4 right-4 h-px bg-amber" />}
+                    {active && (
+                      <span className="absolute bottom-0 left-4 right-4 h-px bg-amber" />
+                    )}
                   </Link>
                 );
               })}
@@ -63,7 +66,11 @@ export function Navbar() {
               onClick={() => setMobileOpen(!mobileOpen)}
               aria-label="Toggle menu"
             >
-              {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+              {mobileOpen ? (
+                <X className="h-4 w-4" />
+              ) : (
+                <Menu className="h-4 w-4" />
+              )}
             </button>
           </div>
         </div>

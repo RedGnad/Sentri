@@ -31,6 +31,16 @@ const MAINNET_CONTRACTS = {
 } as const;
 
 const SELECTED_CONTRACTS = IS_MAINNET ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
+const DEPRECATED_MAINNET_ADDRESSES = new Set(
+  [
+    "0x1794AADef202E0f39494D27491752B06c0CC26BC",
+    "0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE",
+    "0x83C375F3808efAB339276E98C20dddfa69Af3659",
+    "0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2",
+    "0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6",
+    "0x87dA9a9A5fC6aA33a3379C026482704c41ECc676",
+  ].map((address) => address.toLowerCase()),
+);
 
 // viem rejects mixed-case addresses with an invalid EIP-55 checksum. We
 // lowercase whatever comes in from env (Vercel/Render dashboards routinely
@@ -40,40 +50,47 @@ function normalizeAddress(value: string | undefined): `0x${string}` | undefined 
   return value ? (value.toLowerCase() as `0x${string}`) : undefined;
 }
 
+function configuredAddress(value: string | undefined): `0x${string}` | undefined {
+  const normalized = normalizeAddress(value);
+  if (!normalized) return undefined;
+  if (IS_MAINNET && DEPRECATED_MAINNET_ADDRESSES.has(normalized)) return undefined;
+  return normalized;
+}
+
 export const VAULT_FACTORY_ADDRESS =
-  normalizeAddress(process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS) ??
+  configuredAddress(process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS) ??
   (SELECTED_CONTRACTS.vaultFactory as `0x${string}`);
 
 export const AGENT_INFT_ADDRESS =
-  normalizeAddress(process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS) ??
+  configuredAddress(process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS) ??
   (SELECTED_CONTRACTS.agentINFT as `0x${string}`);
 
 export const SWAP_ROUTER_ADDRESS =
-  normalizeAddress(process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS) ??
+  configuredAddress(process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS) ??
   (SELECTED_CONTRACTS.swapRouter as `0x${string}`);
 
 export const PRICE_FEED_ADDRESS =
-  normalizeAddress(process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS) ??
+  configuredAddress(process.env.NEXT_PUBLIC_PRICE_FEED_ADDRESS) ??
   (SELECTED_CONTRACTS.priceFeed as `0x${string}`);
 
 // Base stable asset token (USDC.E on mainnet, MockUSDC on Galileo).
 // Reads NEXT_PUBLIC_BASE_TOKEN_ADDRESS first, falls back to legacy
 // NEXT_PUBLIC_MOCK_USDC_ADDRESS for compat with un-migrated env files.
 export const BASE_TOKEN_ADDRESS =
-  normalizeAddress(process.env.NEXT_PUBLIC_BASE_TOKEN_ADDRESS) ??
-  normalizeAddress(process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS) ??
+  configuredAddress(process.env.NEXT_PUBLIC_BASE_TOKEN_ADDRESS) ??
+  (IS_MAINNET ? undefined : configuredAddress(process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS)) ??
   (SELECTED_CONTRACTS.baseToken as `0x${string}`);
 
 // Risk asset token (W0G on mainnet, MockWETH on Galileo).
 // Reads NEXT_PUBLIC_RISK_TOKEN_ADDRESS first, falls back to legacy
 // NEXT_PUBLIC_MOCK_WETH_ADDRESS for compat.
 export const RISK_TOKEN_ADDRESS =
-  normalizeAddress(process.env.NEXT_PUBLIC_RISK_TOKEN_ADDRESS) ??
-  normalizeAddress(process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS) ??
+  configuredAddress(process.env.NEXT_PUBLIC_RISK_TOKEN_ADDRESS) ??
+  (IS_MAINNET ? undefined : configuredAddress(process.env.NEXT_PUBLIC_MOCK_WETH_ADDRESS)) ??
   (SELECTED_CONTRACTS.riskToken as `0x${string}`);
 
 export const DEMO_VAULT_ADDRESS =
-  normalizeAddress(process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS) ??
+  configuredAddress(process.env.NEXT_PUBLIC_DEMO_VAULT_ADDRESS) ??
   (SELECTED_CONTRACTS.demoVault as `0x${string}`);
 
 // Preset tier enum mirrors VaultFactory.PresetTier solidity enum.
