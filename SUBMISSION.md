@@ -33,25 +33,24 @@ A multi-tenant treasury protocol where any DAO can deploy its own bounded vault 
 • 0G TEE / Private Sandbox — strategy reasoning sealed inside the provider path; chatID, signed payload, and recovered signer propagated to the audit trail.
 • 0G Storage Log Layer (blob) — immutable canonical audit record uploaded per execution via MemData + Indexer.upload; merkle root and tx hash indexed in KV for tamper-evidence.
 • 0G Storage KV — fast per-vault audit index + portfolio state; manifest enables full enriched recovery after agent restart.
-• Agent INFT-style identity — gates executeStrategy on every vault; owner-revocable kill-switch across all vaults.
+• ERC-7857-aligned Agentic ID execution profile — gates executeStrategy on every vault; owner-revocable kill-switch across all vaults.
 • Real DEX integration — JaineV3PoolAdapter, locked to the immutable Jaine pool address, validates every callback.
 
 Persistent Memory is intentionally not used: every decision is stateless and replayable from on-chain plus storage data.
 
 
-→ Live on 0G mainnet (chain 16661)
+→ Official v2 stack live on 0G mainnet (chain 16661)
 
-• VaultFactory: 0x1794AADef202E0f39494D27491752B06c0CC26BC
-• TreasuryVault impl: 0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE
-• AgentINFT: 0x83C375F3808efAB339276E98C20dddfa69Af3659
-• JaineV3PoolAdapter: 0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2
-• SentriPriceFeed: 0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6
-• Demo vault (Aggressive): 0x87dA9a9A5fC6aA33a3379C026482704c41ECc676
+• VaultFactory: 0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7
+• TreasuryVault impl: 0xf86013C68811047F6dEc98c4ED6601C80B720668
+• AgentINFT: 0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951
+• JaineV3PoolAdapter: 0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4
+• SentriPriceFeed: 0x1289638A90da7F24DB069168648819607A7377e6
+• Demo vault (Aggressive): 0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982
 
-The demo vault has executed multiple TEE-signed strategy decisions on mainnet. Reference transactions:
+The v2 demo vault has executed a TEE-signed strategy decision on mainnet. Primary reference transaction:
 
-• 0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675 — first mainnet rehearsal: TEE-signed EmergencyDeleverage W0G → USDC.E via Jaine.
-• 0x5bf6ab1b5bb8f200f6b1a076ca10bff131d2b539eef00e64c84af86e361739c4 — Strategy v2 cycle: regime classified up_tight, target 28% W0G for Aggressive, LLM confirmed, vault swapped USDC.E → W0G.
+• 0xc404f865e38a456b2861c8663e43390c26748a122761180cf97537e5acf253df — official v2 DemoVault execution: TEE-signed EmergencyDeleverage W0G → USDC.E via Jaine.
 
 Recovered TEE signer on every execution: 0xA46EA4FC5889AD35A1487e1Ed04dCcfa872146B9.
 
@@ -68,7 +67,9 @@ Recovered TEE signer on every execution: 0xA46EA4FC5889AD35A1487e1Ed04dCcfa87214
 
 → Stack
 
-Solidity 0.8.24 + Foundry + OpenZeppelin v5. 86 tests passing across 6 suites. TypeScript agent runtime using @0glabs/0g-serving-broker (TeeML) and @0gfoundation/0g-ts-sdk (Storage). Next.js 14 + wagmi v2 + viem dashboard, editorial Bloomberg-meets-academic-paper design.
+Solidity 0.8.24 + Foundry + OpenZeppelin v5. 105 tests passing across 6 suites. TypeScript agent runtime using @0glabs/0g-serving-broker (TeeML) and @0gfoundation/0g-ts-sdk (Storage). Next.js 14 + wagmi v2 + viem dashboard, editorial Bloomberg-meets-academic-paper design.
+
+Pyth on-chain pull evidence path is implemented; trading still uses SentriPriceFeed enforcement. The owner has slippage-guarded deleverage recourse through emergencyDeleverageAndWithdraw(minBaseOut).
 
 
 → Roadmap (forward-looking — not live in v1)

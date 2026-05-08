@@ -3,8 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Solidity](https://img.shields.io/badge/solidity-0.8.24-363636.svg)](./contracts/foundry.toml)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-43853d.svg)](./package.json)
-[![Tests](https://img.shields.io/badge/forge%20tests-86%20passing-brightgreen.svg)](./contracts/test)
-[![0G Mainnet](https://img.shields.io/badge/0G-mainnet%2016661-FFB300.svg)](https://chainscan.0g.ai/address/0x1794AADef202E0f39494D27491752B06c0CC26BC)
+[![Tests](https://img.shields.io/badge/forge%20tests-105%20passing-brightgreen.svg)](./contracts/test)
+[![0G Mainnet](https://img.shields.io/badge/0G-mainnet%2016661-FFB300.svg)](https://chainscan.0g.ai/address/0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7)
 
 **Verifiable autonomous treasury for stablecoin reserves on 0G.**
 Private strategy, verifiable results. The agent proposes, the vault disposes.
@@ -54,7 +54,7 @@ Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
 | 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for full verifiability. |
 | 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; merkle root and tx hash stored on-chain KV index for tamper-evidence. |
 | 0G Storage KV | Fast per-vault audit index and portfolio state, namespaced by vault address; used as recovery layer after agent restart. |
-| Agent INFT | Gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
+| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
 | 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
 
 Persistent Memory is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.
@@ -76,23 +76,31 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 ## Deployed contracts
 
-### 0G Mainnet (chain `16661`)
+### 0G Mainnet official v2 stack (chain `16661`)
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0x1794AADef202E0f39494D27491752B06c0CC26BC`](https://chainscan.0g.ai/address/0x1794AADef202E0f39494D27491752B06c0CC26BC) |
-| `TreasuryVault` impl | [`0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE`](https://chainscan.0g.ai/address/0x539ad624e9Be34db7369C6ee0fB22A6dF01C7BEE) |
-| `AgentINFT` | [`0x83C375F3808efAB339276E98C20dddfa69Af3659`](https://chainscan.0g.ai/address/0x83C375F3808efAB339276E98C20dddfa69Af3659) |
-| `JaineV3PoolAdapter` | [`0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2`](https://chainscan.0g.ai/address/0x27647dB3F250EF843BAa7d06F50Bb2648F34c1E2) |
+| `VaultFactory` (entry point) | [`0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7`](https://chainscan.0g.ai/address/0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7) |
+| `TreasuryVault` impl | [`0xf86013C68811047F6dEc98c4ED6601C80B720668`](https://chainscan.0g.ai/address/0xf86013C68811047F6dEc98c4ED6601C80B720668) |
+| `AgentINFT` | [`0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951`](https://chainscan.0g.ai/address/0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951) |
+| `JaineV3PoolAdapter` | [`0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4`](https://chainscan.0g.ai/address/0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4) |
 | Jaine `USDC.E/W0G` pool, 0.3% | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
-| `SentriPriceFeed` | [`0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6`](https://chainscan.0g.ai/address/0x13a37CC2D39B9615A7e0B773f869AD3998dba0b6) |
+| `SentriPriceFeed` | [`0x1289638A90da7F24DB069168648819607A7377e6`](https://chainscan.0g.ai/address/0x1289638A90da7F24DB069168648819607A7377e6) |
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
-| Demo vault (Aggressive preset) | [`0x87dA9a9A5fC6aA33a3379C026482704c41ECc676`](https://chainscan.0g.ai/address/0x87dA9a9A5fC6aA33a3379C026482704c41ECc676) |
-| Reference tx — Strategy v2 rebalance (`USDC.E → W0G`) | [`0x5bf6ab1b…39c4`](https://chainscan.0g.ai/tx/0x5bf6ab1b5bb8f200f6b1a076ca10bff131d2b539eef00e64c84af86e361739c4) |
-| Reference tx — `EmergencyDeleverage` (`W0G → USDC.E`) | [`0x30a2d51a…b675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675) |
+| Demo vault (Aggressive preset) | [`0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982`](https://chainscan.0g.ai/address/0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982) |
+| Primary v2 execution tx — `EmergencyDeleverage` (`W0G → USDC.E`) | [`0xc404f865…53df`](https://chainscan.0g.ai/tx/0xc404f865e38a456b2861c8663e43390c26748a122761180cf97537e5acf253df) |
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on every successful execution: `0xA46EA4FC5889AD35A1487e1Ed04dCcfa872146B9`.
+
+### Historical v1 mainnet references
+
+Previous mainnet rehearsal transactions remain useful for audit history but are no longer the official live stack:
+
+| Reference | Tx |
+|---|---|
+| Strategy v1/v1.1 rebalance (`USDC.E → W0G`) | [`0x5bf6ab1b…39c4`](https://chainscan.0g.ai/tx/0x5bf6ab1b5bb8f200f6b1a076ca10bff131d2b539eef00e64c84af86e361739c4) |
+| v1 `EmergencyDeleverage` (`W0G → USDC.E`) | [`0x30a2d51a…b675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675) |
 
 ### 0G Galileo Testnet (chain `16602`)
 
@@ -151,7 +159,7 @@ The agent wallet must be (1) registered as `agent` on the `VaultFactory`, (2) ho
 cd contracts && forge test
 ```
 
-86 tests passing across 6 suites: `TreasuryVault` (27), `VaultFactory` (21), `MultiVault` (13), `AgentINFT` (12), `SentriPair` (8), `JaineV3PoolAdapter` (5). See [`docs/architecture.md`](./docs/architecture.md#test-coverage) for coverage detail.
+105 tests passing across 6 suites: `TreasuryVault` (30), `VaultFactory` (21), `MultiVault` (13), `AgentINFT` (28), `SentriPair` (8), `JaineV3PoolAdapter` (5). See [`docs/architecture.md`](./docs/architecture.md#test-coverage) for coverage detail.
 
 ---
 
@@ -171,7 +179,7 @@ The chain verifies: registered agent caller, active Agent INFT bound to the reco
 
 The chain does **not** verify the full TEE attestation report, does not parse the model JSON, and does not compute the strategy itself. The agent decides; the contract enforces bounds. A malicious agent inside the bounded envelope can still pick the worst-of-allowed actions, but cannot exceed risk exposure, drawdown, slippage, or cooldown.
 
-The market price uses a 2-source minimum: on mainnet the agent fetches Jaine `slot0()` on-chain plus Pyth `0G/USD` via Hermes, both must succeed and agree within the spread bound, and the median is keeper-pushed to `SentriPriceFeed`. CoinGecko is opportunistic for 24h change only and never gates trading.
+The market price uses a 2-source minimum: on mainnet the agent fetches Jaine `slot0()` on-chain plus Pyth `0G/USD` via Hermes, both must succeed and agree within the spread bound, and the median is keeper-pushed to `SentriPriceFeed`. Pyth on-chain pull evidence path is implemented; trading still uses `SentriPriceFeed` enforcement. CoinGecko is opportunistic for 24h change only and never gates trading.
 
 For the complete enumeration, see [`docs/architecture.md#trust-boundary`](./docs/architecture.md#trust-boundary).
 
@@ -181,14 +189,14 @@ For the complete enumeration, see [`docs/architecture.md#trust-boundary`](./docs
 
 This is a forward-looking section.
 
-**v1.1 — hardening (weeks)**
+**Next hardening (weeks)**
 
 - Pyth on-chain pull integration: vault reads the deployed Pyth contract (`0x2880ab15…7b43`) directly via `updatePriceFeeds`, removing the keeper-pushed step.
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
 - Complete canonical audit recovery from 0G Storage Log/blob + KV index: blob already written per execution; harden download path for full offline verification.
 - Third-party security audit.
 
-**v2 — productive treasury (months)**
+**Future productive treasury extensions (months)**
 
 - Yield-bearing base asset (`sUSDS` / `sUSDe` / `sFRAX` / any 4626-compatible) — idle capital earns the staking rate.
 - Multi-asset risk side: vol-weighted basket (W0G + ETH + tokenized RWAs) instead of one risk asset per vault.

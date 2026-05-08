@@ -61,7 +61,7 @@ services:
       - key: STORAGE_FLOW_CONTRACT
         value: "0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526"
       - key: STORAGE_SUBMIT_FEE_WEI
-        value: "0"
+        value: "1000000000000000"
       - key: AGENT_INTERVAL_MS
         value: "60000"
       - key: SENTRI_CACHE_DIR
