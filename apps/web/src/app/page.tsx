@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { getLiveSnapshot, formatRelative, type LiveSnapshot } from "@/lib/live-state";
+import {
+  getLiveSnapshot,
+  formatRelative,
+  type LiveSnapshot,
+} from "@/lib/live-state";
 import { DEMO_VAULT_ADDRESS } from "@/config/contracts";
 
 export const dynamic = "force-dynamic";
@@ -8,10 +12,10 @@ export const revalidate = 0;
 
 const TRUST_TICKER = [
   "TEE-verified inference",
-  "INFT-bound signer",
+  "Agentic ID signer",
   "Single-use intent + deadline",
   "On-chain policy gate",
-  "0G Storage audit",
+  "0G Storage Log/KV audit",
   "Slippage-guarded swap",
 ];
 
@@ -20,15 +24,35 @@ function networkLabel(chainId: number): string {
 }
 
 function executionVenue(chainId: number): string {
-  return chainId === 16661 ? "Jaine USDC.E/W0G pool via adapter" : "SentriPair mock AMM";
+  return chainId === 16661
+    ? "Jaine USDC.E/W0G pool via adapter"
+    : "SentriPair mock AMM";
 }
 
 function mechanism(chainId: number) {
   return [
-    { id: "01", label: "Market + vault state", detail: "Fresh risk/base price and per-vault policy" },
-    { id: "02", label: "0G sealed inference", detail: "Private decision, verified before execution" },
-    { id: "03", label: "On-chain gate", detail: "TEE signer, deadline, replay, exposure, drawdown, slippage" },
-    { id: "04", label: "Swap + audit", detail: `${executionVenue(chainId)} · event + 0G Storage KV` },
+    {
+      id: "01",
+      label: "Market + vault state",
+      detail: "Fresh risk/base price and per-vault policy from 0G Chain",
+    },
+    {
+      id: "02",
+      label: "0G Compute + TEE",
+      detail:
+        "Private TeeML decision, verified with processResponse before execution",
+    },
+    {
+      id: "03",
+      label: "On-chain gate",
+      detail:
+        "Agentic ID, TEE signer, deadline, replay, exposure, drawdown, slippage",
+    },
+    {
+      id: "04",
+      label: "Swap + 0G Storage audit",
+      detail: `${executionVenue(chainId)} · canonical Storage root + KV recovery index`,
+    },
   ];
 }
 
@@ -44,8 +68,12 @@ export default async function LandingPage() {
       {/* Meta bar */}
       <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-kicker text-ink-faint pb-5 border-b border-hairline">
         <span>Sentri · Treasury Vaults</span>
-        <span className="hidden sm:inline">Private agent decisions · public risk controls</span>
-        <span>{chainLabel} · {snapshot.chain.id}</span>
+        <span className="hidden sm:inline">
+          Private agent decisions · public risk controls
+        </span>
+        <span>
+          {chainLabel} · {snapshot.chain.id}
+        </span>
       </div>
 
       {/* Hero + Live panel */}
@@ -68,8 +96,9 @@ export default async function LandingPage() {
             Stables-first · Bounded risk · Owner-controlled
           </p>
           <p className="text-[16px] text-ink-dim max-w-xl mt-8 leading-relaxed">
-            Sentri turns treasury reserves into bounded productive capital: privately
-            decided in a TEE, executed only when on-chain policy allows it.
+            Sentri turns treasury reserves into bounded productive capital:
+            privately decided in a TEE, executed only when on-chain policy
+            allows it.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-8">
             <Link href="/deploy">
@@ -88,26 +117,40 @@ export default async function LandingPage() {
           </div>
         </div>
 
-        <div className="lg:col-span-4 animate-fade-up" style={{ animationDelay: "120ms" }}>
+        <div
+          className="lg:col-span-4 animate-fade-up"
+          style={{ animationDelay: "120ms" }}
+        >
           <LiveSystemPanel snapshot={snapshot} />
         </div>
       </section>
 
       {/* Trust ticker — single dense row */}
-      <section className="border-y border-hairline animate-fade-up" style={{ animationDelay: "160ms" }}>
-        <div className="px-5 py-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-kicker">
-          <span className="text-amber">Trust path</span>
-          {TRUST_TICKER.map((item, i) => (
-            <span key={item} className="flex items-center gap-x-5">
-              <span className="text-ink">{item}</span>
-              {i < TRUST_TICKER.length - 1 && <span className="text-ink-faint">·</span>}
-            </span>
-          ))}
+      <section
+        className="border-y border-hairline animate-fade-up"
+        style={{ animationDelay: "160ms" }}
+      >
+        <div className="px-5 py-3 overflow-x-auto">
+          <div className="inline-flex min-w-max items-center gap-4 font-mono text-[10px] uppercase tracking-kicker whitespace-nowrap">
+            <span className="text-amber shrink-0">Trust path</span>
+            <span className="text-ink-faint">·</span>
+            {TRUST_TICKER.map((item, i) => (
+              <span key={item} className="inline-flex items-center gap-4">
+                <span className="text-ink">{item}</span>
+                {i < TRUST_TICKER.length - 1 && (
+                  <span className="text-ink-faint">·</span>
+                )}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* Execution path */}
-      <section className="mt-8 mb-10 animate-fade-up" style={{ animationDelay: "220ms" }}>
+      <section
+        className="mt-8 mb-10 animate-fade-up"
+        style={{ animationDelay: "220ms" }}
+      >
         <div className="border border-hairline bg-bg-elev/20">
           <div className="flex items-center justify-between px-5 h-9 border-b border-hairline">
             <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
@@ -123,7 +166,9 @@ export default async function LandingPage() {
                 key={step.id}
                 className="grid grid-cols-[48px_1fr] sm:grid-cols-[48px_1fr_1.6fr] items-center gap-4 px-5 min-h-14 py-3 hover:bg-bg-elev/40 transition-colors group"
               >
-                <span className="font-mono text-[10px] text-ink-faint tabular">{step.id}</span>
+                <span className="font-mono text-[10px] text-ink-faint tabular">
+                  {step.id}
+                </span>
                 <span className="font-mono text-[11px] uppercase tracking-kicker text-ink group-hover:text-amber transition-colors">
                   {step.label}
                 </span>
@@ -143,14 +188,26 @@ export default async function LandingPage() {
 
       <footer className="border-t border-hairline pt-8 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
         <span>© MMXXVI · Sentri · MIT License</span>
-        <span>{isMainnet ? "0G mainnet · USDC.E/W0G" : "Galileo rehearsal · MockUSDC/MockWETH"}</span>
+        <span>
+          {isMainnet
+            ? "0G mainnet · USDC.E/W0G"
+            : "Galileo rehearsal · MockUSDC/MockWETH"}
+        </span>
         <FooterStatus snapshot={snapshot} />
       </footer>
     </div>
   );
 }
 
-function ProtocolRow({ label, value, state }: { label: string; value: string; state: "ok" | "warn" | "off" }) {
+function ProtocolRow({
+  label,
+  value,
+  state,
+}: {
+  label: string;
+  value: string;
+  state: "ok" | "warn" | "off";
+}) {
   return (
     <li className="flex items-center justify-between px-4 h-11 gap-3">
       <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint shrink-0">
@@ -158,7 +215,9 @@ function ProtocolRow({ label, value, state }: { label: string; value: string; st
       </span>
       <span className="font-mono text-[10px] uppercase tracking-kicker text-ink flex items-center gap-2 truncate">
         <span className="truncate">{value}</span>
-        <span className={`inline-block w-1 h-1 rounded-full shrink-0 ${dotClass(state)}`} />
+        <span
+          className={`inline-block w-1 h-1 rounded-full shrink-0 ${dotClass(state)}`}
+        />
       </span>
     </li>
   );
@@ -200,20 +259,28 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
     },
     {
       key: "Vaults",
-      value: snapshot.protocol.vaultsCount !== null ? `${snapshot.protocol.vaultsCount} live` : "protocol read failed",
+      value:
+        snapshot.protocol.vaultsCount !== null
+          ? `${snapshot.protocol.vaultsCount} live`
+          : "protocol read failed",
       state: snapshot.protocol.vaultsCount !== null ? "ok" : ("warn" as const),
     },
     {
       key: "Total TVL",
-      value: snapshot.protocol.totalTVL !== null ? `$${snapshot.protocol.totalTVL}` : "on-chain read pending",
+      value:
+        snapshot.protocol.totalTVL !== null
+          ? `$${snapshot.protocol.totalTVL}`
+          : "on-chain read pending",
       state: snapshot.protocol.totalTVL !== null ? "ok" : ("warn" as const),
     },
     {
       key: "Executions",
-      value: snapshot.protocol.totalExecutions !== null
-        ? `${snapshot.protocol.totalExecutions.toLocaleString()} total`
-        : "on-chain read pending",
-      state: snapshot.protocol.totalExecutions !== null ? "ok" : ("warn" as const),
+      value:
+        snapshot.protocol.totalExecutions !== null
+          ? `${snapshot.protocol.totalExecutions.toLocaleString()} total`
+          : "on-chain read pending",
+      state:
+        snapshot.protocol.totalExecutions !== null ? "ok" : ("warn" as const),
     },
     {
       key: "Agent",
@@ -221,16 +288,17 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
         snapshot.agent.status === "ready"
           ? `${snapshot.agent.cycles ?? 0} cycles · ${formatRelative(snapshot.agent.lastCycleAt)}`
           : snapshot.agent.status === "initializing"
-          ? "Initializing"
-          : snapshot.agent.status === "error"
-          ? "Setup error"
-          : "Unreachable",
+            ? "Initializing"
+            : snapshot.agent.status === "error"
+              ? "Setup error"
+              : "Unreachable",
       state: a,
     },
     {
       key: "Model",
       value: snapshot.agent.model
-        ? snapshot.agent.model.slice(0, 22) + (snapshot.agent.model.length > 22 ? "…" : "")
+        ? snapshot.agent.model.slice(0, 22) +
+          (snapshot.agent.model.length > 22 ? "…" : "")
         : "—",
       state: (snapshot.agent.model ? "ok" : "off") as "ok" | "off",
     },
@@ -240,8 +308,8 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
     c === "ok" && a === "ok" && snapshot.protocol.vaultsCount !== null
       ? "ok"
       : c === "off" && a === "off"
-      ? "off"
-      : "warn";
+        ? "off"
+        : "warn";
 
   return (
     <div className="border border-hairline bg-bg-elev/30">
@@ -251,16 +319,31 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
         </span>
         <span
           className={`font-mono text-[9px] uppercase tracking-kicker flex items-center gap-1.5 ${
-            overall === "ok" ? "text-phosphor" : overall === "warn" ? "text-amber" : "text-ink-faint"
+            overall === "ok"
+              ? "text-phosphor"
+              : overall === "warn"
+                ? "text-amber"
+                : "text-ink-faint"
           }`}
         >
-          <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotClass(overall)}`} />
-          {overall === "ok" ? "Operational" : overall === "warn" ? "Degraded" : "Offline"}
+          <span
+            className={`inline-block w-1.5 h-1.5 rounded-full ${dotClass(overall)}`}
+          />
+          {overall === "ok"
+            ? "Operational"
+            : overall === "warn"
+              ? "Degraded"
+              : "Offline"}
         </span>
       </div>
       <ul className="divide-y divide-hairline">
         {rows.map((row) => (
-          <ProtocolRow key={row.key} label={row.key} value={row.value} state={row.state} />
+          <ProtocolRow
+            key={row.key}
+            label={row.key}
+            value={row.value}
+            state={row.state}
+          />
         ))}
       </ul>
       <div className="px-4 py-3 border-t border-hairline">
@@ -273,7 +356,8 @@ function LiveSystemPanel({ snapshot }: { snapshot: LiveSnapshot }) {
           rel="noopener noreferrer"
           className="font-mono text-[10px] text-ink hover:text-amber transition-colors tabular truncate block"
         >
-          {snapshot.protocol.factoryAddress.slice(0, 10)}…{snapshot.protocol.factoryAddress.slice(-8)} ↗
+          {snapshot.protocol.factoryAddress.slice(0, 10)}…
+          {snapshot.protocol.factoryAddress.slice(-8)} ↗
         </a>
       </div>
     </div>
@@ -288,10 +372,17 @@ function FooterStatus({ snapshot }: { snapshot: LiveSnapshot }) {
         ? "ok"
         : "warn"
       : "off";
-  const label = overall === "ok" ? "Live" : overall === "warn" ? "Degraded" : "Chain unreachable";
+  const label =
+    overall === "ok"
+      ? "Live"
+      : overall === "warn"
+        ? "Degraded"
+        : "Chain unreachable";
   return (
     <span className="flex items-center gap-1.5">
-      <span className={`inline-block w-1 h-1 rounded-full ${dotClass(overall)}`} />
+      <span
+        className={`inline-block w-1 h-1 rounded-full ${dotClass(overall)}`}
+      />
       {label} · {chainLabel} {snapshot.chain.id}
     </span>
   );
