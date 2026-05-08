@@ -9,8 +9,12 @@ import { formatUSDC } from "@/lib/utils";
 import { BASE_SYMBOL, RISK_SYMBOL } from "@/config/contracts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useParsedVaultData } from "@/hooks/use-vault";
-import { useVaultAuditDetail } from "@/hooks/use-vault-runtime";
-import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import {
+  useVaultAuditDetail,
+  useVaultRejections,
+  type VaultRejectionEntry,
+} from "@/hooks/use-vault-runtime";
+import { ChevronDown, ChevronUp, ExternalLink, ShieldX } from "lucide-react";
 import { galileo } from "@/config/wagmi";
 
 const ACTION_LABELS = [
@@ -28,6 +32,8 @@ export default function VaultAuditPage() {
 
   const { data: vault, isLoading: vaultLoading } = useParsedVaultData(address);
   const logCount = vault ? Number(vault.logCount) : 0;
+  const { data: rejectionsData } = useVaultRejections(address);
+  const [rejectionsExpanded, setRejectionsExpanded] = useState(false);
 
   const logContracts = Array.from(
     { length: Math.min(logCount, 50) },
@@ -65,6 +71,33 @@ export default function VaultAuditPage() {
           Public · no wallet required · verifiable on-chain
         </span>
       </div>
+
+      {(rejectionsData?.count ?? 0) > 0 && (
+        <div className="border border-hairline bg-bg-elev/10 mb-4">
+          <button
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+            onClick={() => setRejectionsExpanded((v) => !v)}
+          >
+            <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-alert">
+              <ShieldX className="h-3.5 w-3.5" />
+              {rejectionsData!.count} blocked action
+              {rejectionsData!.count === 1 ? "" : "s"}
+            </span>
+            {rejectionsExpanded ? (
+              <ChevronUp className="h-4 w-4 text-ink-dim" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-ink-dim" />
+            )}
+          </button>
+          {rejectionsExpanded && (
+            <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
+              {rejectionsData!.entries.map((r, i) => (
+                <RejectionRow key={i} entry={r} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {logCount === 0 ? (
         <div className="border border-hairline bg-bg-elev/20 py-20 text-center">
@@ -364,7 +397,7 @@ function AuditEntry({
                 <Field label="Market quorum">
                   <span className="font-mono text-[11px] text-ink-dim tabular">
                     {detail.marketSourceCount != null
-                      ? `${detail.marketSourceCount}/2`
+                      ? `${detail.marketSourceCount}/${detail.marketRequiredSourceCount ?? 2}`
                       : "-"}
                   </span>
                 </Field>
@@ -476,6 +509,44 @@ function AuditEntry({
         </a>
       </footer>
     </article>
+  );
+}
+
+const REJECTION_TYPE_LABEL: Record<string, string> = {
+  "defensive-override": "Defensive override",
+  "onchain-revert": "On-chain revert",
+  "agent-sizing": "Agent sizing",
+};
+
+function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
+  const date = new Date(entry.timestamp);
+  return (
+    <div className="py-2.5 grid grid-cols-[auto_1fr_auto] gap-3 items-start">
+      <ShieldX className="h-3.5 w-3.5 text-alert mt-0.5 shrink-0" />
+      <div>
+        <p className="font-mono text-[11px] text-ink leading-snug">
+          {entry.reason}
+        </p>
+        {entry.errorCode && (
+          <code className="font-mono text-[10px] text-alert/80">
+            {entry.errorCode}
+          </code>
+        )}
+        {entry.action && (
+          <span className="ml-2 font-mono text-[10px] text-ink-dim">
+            action: {entry.action}
+          </span>
+        )}
+      </div>
+      <div className="text-right shrink-0">
+        <p className="font-mono text-[9px] text-ink-faint">
+          {REJECTION_TYPE_LABEL[entry.type] ?? entry.type}
+        </p>
+        <p className="font-mono text-[9px] text-ink-faint">
+          {date.toLocaleTimeString()}
+        </p>
+      </div>
+    </div>
   );
 }
 

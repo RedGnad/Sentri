@@ -85,7 +85,7 @@ contract TreasuryVaultTest is Test {
             policy: defaultPolicy
         }));
 
-        agentNFT.mint(agent, keccak256("enclave-v1"), keccak256("att-v1"), "0G Sealed Inference", teeSigner);
+        agentNFT.mint(agent, keccak256("enclave-v1"), keccak256("att-v1"), "0G Sealed Inference", teeSigner, bytes32(0));
 
         usdc.mint(alice, 100_000e6);
     }

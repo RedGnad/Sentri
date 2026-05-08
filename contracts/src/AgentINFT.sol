@@ -4,9 +4,12 @@ pragma solidity ^0.8.24;
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @title AgentINFT — On-chain identity for TEE-attested agents
-/// @notice Each INFT represents a verified agent with TEE attestation metadata.
-///         Only INFT holders can execute strategies on TreasuryVault.
+/// @title AgentINFT v2 — ERC-7857-style Agentic Identity for TEE-attested agents
+/// @notice Each INFT represents a verified agent with TEE attestation metadata
+///         and an optional 0G Storage metadata root.
+///         v2 adds: metadataRootHash (0G Storage blob root), intelligentDataOf,
+///         per-vault authorizeUsage / revokeAuthorization, and signer rotation.
+///         Pattern aligned with ERC-7857 intelligentDataOf / authorizeUsage.
 contract AgentINFT is ERC721, Ownable {
 
     struct AgentMetadata {
@@ -16,6 +19,7 @@ contract AgentINFT is ERC721, Ownable {
         address teeSignerAddress;  // TEE signer that signs per-chat responses
         uint256 issuedAt;          // Timestamp of minting
         bool    revoked;           // Revocation flag (soft kill)
+        bytes32 metadataRootHash;  // 0G Storage blob root for agent identity data
     }
 
     uint256 private _nextTokenId;
@@ -25,17 +29,29 @@ contract AgentINFT is ERC721, Ownable {
     ///      mint/transfer so `isActiveAgent` is O(k) where k = tokens held by the
     ///      address (typically 1), not O(n) over the entire supply.
     mapping(address => uint256[]) private _holderTokens;
+    /// @dev Per-token per-vault authorization map (ERC-7857 authorizeUsage pattern)
+    mapping(uint256 => mapping(address => bool)) private _authorizedVaults;
 
     event AgentMinted(uint256 indexed tokenId, address indexed agent, bytes32 enclaveHash, address indexed teeSigner);
     event AgentRevoked(uint256 indexed tokenId);
     event AgentReinstated(uint256 indexed tokenId);
+    event SignerRotated(uint256 indexed tokenId, address indexed oldSigner, address indexed newSigner);
+    event UsageAuthorized(uint256 indexed tokenId, address indexed vault);
+    event UsageRevoked(uint256 indexed tokenId, address indexed vault);
+    event MetadataUpdated(uint256 indexed tokenId, bytes32 metadataRootHash);
 
     error AlreadyRevoked();
     error NotRevoked();
     error AgentTokenRevoked();
     error ZeroAddress();
+    error NotTokenOwner();
 
     constructor() ERC721("Sentri Agent", "SAGENT") Ownable(msg.sender) {}
+
+    modifier onlyTokenOwner(uint256 tokenId) {
+        if (_ownerOf(tokenId) != msg.sender) revert NotTokenOwner();
+        _;
+    }
 
     /// @notice Mint a new Agent INFT with TEE attestation metadata
     /// @param to Agent wallet address
@@ -43,13 +59,15 @@ contract AgentINFT is ERC721, Ownable {
     /// @param attestationHash TEE attestation hash (proves enclave integrity)
     /// @param provider TEE provider name
     /// @param teeSignerAddress TEE signer expected to sign per-chat responses
+    /// @param metadataRootHash 0G Storage blob root for agent identity data (bytes32(0) if none)
     /// @return tokenId The minted token ID
     function mint(
         address to,
         bytes32 enclaveHash,
         bytes32 attestationHash,
         string calldata provider,
-        address teeSignerAddress
+        address teeSignerAddress,
+        bytes32 metadataRootHash
     ) external onlyOwner returns (uint256 tokenId) {
         if (to == address(0) || teeSignerAddress == address(0)) revert ZeroAddress();
         tokenId = _nextTokenId++;
@@ -61,7 +79,8 @@ contract AgentINFT is ERC721, Ownable {
             provider: provider,
             teeSignerAddress: teeSignerAddress,
             issuedAt: block.timestamp,
-            revoked: false
+            revoked: false,
+            metadataRootHash: metadataRootHash
         });
 
         emit AgentMinted(tokenId, to, enclaveHash, teeSignerAddress);
@@ -81,6 +100,82 @@ contract AgentINFT is ERC721, Ownable {
         if (!agentMetadata[tokenId].revoked) revert NotRevoked();
         agentMetadata[tokenId].revoked = false;
         emit AgentReinstated(tokenId);
+    }
+
+    // ── ERC-7857-style Agentic ID extensions ─────────────────────────────────
+
+    /// @notice Returns the agent's intelligent data: 0G Storage metadata root,
+    ///         active TEE signer, and provider name.
+    ///         Inspired by ERC-7857 intelligentDataOf.
+    function intelligentDataOf(uint256 tokenId)
+        external
+        view
+        returns (bytes32 metadataRootHash, address teeSignerAddress, string memory provider)
+    {
+        AgentMetadata storage meta = agentMetadata[tokenId];
+        return (meta.metadataRootHash, meta.teeSignerAddress, meta.provider);
+    }
+
+    /// @notice Authorise a vault address to use this agent token.
+    ///         Only the token owner (the agent wallet) can authorise.
+    ///         Inspired by ERC-7857 authorizeUsage.
+    function authorizeUsage(uint256 tokenId, address vault)
+        external
+        onlyTokenOwner(tokenId)
+    {
+        if (vault == address(0)) revert ZeroAddress();
+        _authorizedVaults[tokenId][vault] = true;
+        emit UsageAuthorized(tokenId, vault);
+    }
+
+    /// @notice Revoke a vault's authorisation for this agent token.
+    ///         Only the token owner can revoke.
+    function revokeAuthorization(uint256 tokenId, address vault)
+        external
+        onlyTokenOwner(tokenId)
+    {
+        _authorizedVaults[tokenId][vault] = false;
+        emit UsageRevoked(tokenId, vault);
+    }
+
+    /// @notice Returns true if `agent` holds an active, non-revoked INFT
+    ///         explicitly authorized for `vault`.
+    function isAuthorizedForVault(address agent, address vault) external view returns (bool) {
+        uint256[] storage tokens = _holderTokens[agent];
+        uint256 len = tokens.length;
+        for (uint256 i = 0; i < len; i++) {
+            uint256 id = tokens[i];
+            if (
+                _ownerOf(id) == agent &&
+                !agentMetadata[id].revoked &&
+                _authorizedVaults[id][vault]
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// @notice Rotate the TEE signer address for a token.
+    ///         Only the token owner can rotate (agent key rotation).
+    function rotateSigner(uint256 tokenId, address newSigner)
+        external
+        onlyTokenOwner(tokenId)
+    {
+        if (newSigner == address(0)) revert ZeroAddress();
+        address oldSigner = agentMetadata[tokenId].teeSignerAddress;
+        agentMetadata[tokenId].teeSignerAddress = newSigner;
+        emit SignerRotated(tokenId, oldSigner, newSigner);
+    }
+
+    /// @notice Update the 0G Storage metadata root hash for a token.
+    ///         Called when the agent uploads new identity data to 0G Storage.
+    function updateMetadataRoot(uint256 tokenId, bytes32 newMetadataRootHash)
+        external
+        onlyTokenOwner(tokenId)
+    {
+        agentMetadata[tokenId].metadataRootHash = newMetadataRootHash;
+        emit MetadataUpdated(tokenId, newMetadataRootHash);
     }
 
     /// @notice Check if an address holds an active (non-revoked) Agent INFT.

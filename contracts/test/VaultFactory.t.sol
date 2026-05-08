@@ -55,7 +55,7 @@ contract VaultFactoryTest is Test {
         router.addLiquidity(a0, a1, lper, block.timestamp + 1);
         vm.stopPrank();
 
-        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner);
+        agentNFT.mint(agent, keccak256("enclave"), keccak256("att"), "0G Sealed Inference", teeSigner, bytes32(0));
 
         impl = new TreasuryVault();
         factory = new VaultFactory(

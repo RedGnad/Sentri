@@ -17,6 +17,7 @@ export interface MarketSnapshot {
   health: "fresh" | "degraded" | "external-only";
   tradingAllowed: boolean;
   failures: string[];
+  requiredSourceCount: number;  // MIN_QUORUM threshold applied to this snapshot
 }
 
 interface SourceResult {
@@ -45,6 +46,16 @@ const ZERO_G_MAINNET_USDCE =
 // Feed id `Crypto.0G/USD` is the canonical 0G token price (publishers include
 // Cboe, Binance, OKX, Jane Street, etc. — fully decentralised).
 const PYTH_HERMES_BASE = process.env.PYTH_HERMES_BASE ?? "https://hermes.pyth.network";
+// When PYTH_ONCHAIN_ADDRESS is set, the agent submits the Pyth VAA on-chain
+// (Pyth pull model) instead of relying solely on keeper-pushed SentriPriceFeed.
+// See: https://docs.pyth.network/price-feeds/use-real-time-data/evm
+const PYTH_ONCHAIN_ADDRESS = process.env.PYTH_ONCHAIN_ADDRESS ?? "";
+
+const IPYTH_ABI = [
+  "function getUpdateFee(bytes[] calldata updateData) view returns (uint256)",
+  "function updatePriceFeeds(bytes[] calldata updateData) payable",
+  "function getPriceNoOlderThan(bytes32 id, uint age) view returns (tuple(int64 price, uint64 conf, int32 expo, uint publishTime) price)",
+] as const;
 const PYTH_FEED_W0G_USD =
   process.env.PYTH_FEED_W0G_USD ??
   "fa9e8d4591613476ad0961732475dc08969d248faca270cc6c47efe009ea3070";
@@ -103,6 +114,34 @@ async function fetchKraken(): Promise<SourceResult> {
   const tickers = Object.values(data.result);
   if (tickers.length === 0) throw new Error("Kraken empty result");
   return { source: "kraken", priceUsd: Number(tickers[0].c[0]) };
+}
+
+/**
+ * Pyth on-chain pull model — submits the latest VAA to the deployed Pyth
+ * contract so any subsequent reader can call getPriceNoOlderThan on-chain
+ * without keeper trust. Gated by PYTH_ONCHAIN_ADDRESS env var.
+ *
+ * Pattern: https://docs.pyth.network/price-feeds/use-real-time-data/evm
+ * 1. Fetch VAA bytes from Hermes (binary/hex encoding).
+ * 2. Call getUpdateFee to compute required fee.
+ * 3. Submit updatePriceFeeds(vaas, {value: fee}) on-chain — agent wallet pays.
+ * 4. Callers can now read getPriceNoOlderThan(feedId, maxAge) trustlessly.
+ */
+export async function updatePythOnChain(signer: ethers.Signer): Promise<void> {
+  if (!PYTH_ONCHAIN_ADDRESS) return;
+  const url = `${PYTH_HERMES_BASE}/v2/updates/price/latest?ids[]=${PYTH_FEED_W0G_USD}&encoding=hex`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`Pyth Hermes VAA fetch failed: ${res.status}`);
+  const data = (await res.json()) as {
+    binary: { data: string[] };
+    parsed: Array<{ price: { price: string; expo: number; publish_time: number } }>;
+  };
+  const vaas = (data.binary?.data ?? []).map((d: string) => `0x${d}` as `0x${string}`);
+  if (vaas.length === 0) throw new Error("Pyth on-chain pull: no VAA bytes returned by Hermes");
+  const pyth = new ethers.Contract(PYTH_ONCHAIN_ADDRESS, IPYTH_ABI, signer);
+  const fee: bigint = await (pyth.getUpdateFee(vaas) as Promise<bigint>);
+  const tx = await (pyth.updatePriceFeeds(vaas, { value: fee }) as Promise<ethers.TransactionResponse>);
+  await tx.wait();
 }
 
 /**
@@ -292,5 +331,6 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     health,
     tradingAllowed,
     failures,
+    requiredSourceCount: MIN_QUORUM,
   };
 }

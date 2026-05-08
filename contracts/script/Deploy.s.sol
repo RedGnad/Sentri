@@ -64,7 +64,8 @@ contract Deploy is Script {
             keccak256("sentri-enclave-v1"),
             keccak256("0g-sealed-inference-attestation"),
             "0G Sealed Inference",
-            teeSigner
+            teeSigner,
+            bytes32(0)
         );
 
         // ── Vault implementation (master, never used directly) ───────────

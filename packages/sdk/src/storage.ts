@@ -44,6 +44,10 @@ function auditManifestKey(vaultAddr: string): string {
   return `audit:manifest:${vaultAddr.toLowerCase()}`;
 }
 
+function rejectionStreamId(vaultAddr: string): string {
+  return ethers.keccak256(ethers.toUtf8Bytes(`sentri:rejections:${vaultAddr.toLowerCase()}`));
+}
+
 let _indexer: Indexer | null = null;
 let _signer: ethers.Wallet | null = null;
 let _flowContract: FixedPriceFlow | null = null;
@@ -176,6 +180,7 @@ export interface AuditEntry {
   marketSource?: string;
   marketSpreadPct?: number;
   marketSourceCount?: number;
+  marketRequiredSourceCount?: number;
   marketRawSources?: Array<{ source: string; ethUsd: number }>;
   priceAttestationPayload?: unknown;
   storageError?: string;
@@ -437,6 +442,60 @@ export function findClosestVaultAudit(
     }
   }
   return closest;
+}
+
+// ── Rejection log (blocked unsafe actions) ──────────────────────────────
+
+export interface RejectionEntry {
+  timestamp: number;
+  type: "defensive-override" | "onchain-revert" | "agent-sizing";
+  reason: string;
+  errorCode?: string;
+  action?: string;
+  intentHash?: string;
+  vaultAddress: string;
+}
+
+/**
+ * Persist a blocked-action entry to KV (non-blocking) and local cache.
+ * Used to provide a visible "Blocked Actions" proof feed in the audit UI.
+ */
+export function appendRejectionLog(
+  vaultAddr: string,
+  entry: RejectionEntry,
+): void {
+  const key = `rejection:${vaultAddr.toLowerCase()}:${entry.timestamp}:${entry.type}`;
+  void _writeKv(rejectionStreamId(vaultAddr), key, entry).catch(() => {
+    // Non-fatal — rejection log write failure does not block the agent.
+  });
+  writeCacheFile(
+    path.join("vaults", vaultAddr.toLowerCase(), "rejections", `${entry.timestamp}.json`),
+    entry,
+  );
+}
+
+export function listVaultRejectionsFromCache(vaultAddr: string, limit = 50): string[] {
+  const dir = path.join(vaultDir(vaultAddr), "rejections");
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => f.replace(".json", ""))
+    .sort((a, b) => Number(b) - Number(a))
+    .slice(0, limit);
+}
+
+export function readVaultRejectionFromCache(
+  vaultAddr: string,
+  timestamp: string,
+): RejectionEntry | null {
+  const file = path.join(vaultDir(vaultAddr), "rejections", `${timestamp}.json`);
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8")) as RejectionEntry;
+  } catch {
+    return null;
+  }
 }
 
 export function listKnownVaultsFromCache(): string[] {

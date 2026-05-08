@@ -50,7 +50,8 @@ contract DeployMainnetReal is Script {
             keccak256("sentri-enclave-v1-mainnet"),
             keccak256("0g-sealed-inference-attestation-mainnet"),
             "0G Sealed Inference",
-            teeSigner
+            teeSigner,
+            bytes32(0)
         );
         console2.log("AgentINFT:         ", address(agentNFT));
 

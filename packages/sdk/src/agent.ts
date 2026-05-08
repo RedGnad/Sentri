@@ -16,8 +16,8 @@ import {
   requestInference,
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
-import { initStorage, appendAuditLog, savePortfolioState } from "./storage.js";
-import { getMarketSnapshot, type MarketSnapshot } from "./market.js";
+import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog } from "./storage.js";
+import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -287,6 +287,13 @@ export async function executeOneIterationForVault(
   const validation = validateAgainstRecommendation(decision, recommendation);
   if (!validation.ok) {
     log(`LLM override rejected (defensive contract violated): ${validation.reason}`);
+    appendRejectionLog(vaultAddress, {
+      timestamp: Date.now(),
+      type: "defensive-override",
+      reason: `Defensive override violation: ${validation.reason}`,
+      action: decision.action,
+      vaultAddress,
+    });
     return { status: "skipped", reason: `defensive override violation: ${validation.reason}` };
   }
 
@@ -419,6 +426,7 @@ export async function executeOneIterationForVault(
       marketSource: market.source,
       marketSpreadPct: market.spreadPct,
       marketSourceCount: market.sourceCount,
+      marketRequiredSourceCount: market.requiredSourceCount,
       marketRawSources: market.rawSources,
       priceAttestationPayload,
     });
@@ -458,17 +466,34 @@ export async function executeOneIterationForVault(
     const ALLOCATION = "0xc630a00d";
     const DRAWDOWN = "0x4f3a5fbf";
     const STALE = "PriceStale";
+    const mkRejection = (reason: string, errorCode: string) => {
+      appendRejectionLog(vaultAddress, {
+        timestamp: Date.now(),
+        type: "onchain-revert",
+        reason,
+        errorCode,
+        action: decision.action,
+        intentHash,
+        vaultAddress,
+      });
+    };
     if (msg.includes("CooldownNotElapsed") || msg.includes(COOLDOWN)) {
+      mkRejection("On-chain revert: cooldown not elapsed", "CooldownNotElapsed");
       return { status: "skipped", reason: "cooldown not elapsed" };
     } else if (msg.includes("AllocationExceeded") || msg.includes(ALLOCATION)) {
+      mkRejection("On-chain revert: allocation cap exceeded", "AllocationExceeded");
       return { status: "skipped", reason: "allocation exceeded" };
     } else if (msg.includes("DrawdownBreached") || msg.includes(DRAWDOWN)) {
+      mkRejection("On-chain revert: drawdown bound breached", "DrawdownBreached");
       return { status: "skipped", reason: "drawdown breached" };
     } else if (msg.includes(STALE)) {
+      mkRejection("On-chain revert: oracle price stale", "PriceStale");
       return { status: "skipped", reason: "oracle price stale" };
     } else if (msg.includes("InsufficientAmountOut")) {
+      mkRejection("On-chain revert: swap slippage guard triggered", "InsufficientAmountOut");
       return { status: "skipped", reason: "swap reverted on slippage guard" };
     } else if (msg.includes("VaultKilled")) {
+      mkRejection("On-chain revert: vault killed", "VaultKilled");
       return { status: "killed", reason: "vault killed mid-iteration" };
     }
     throw err; // re-throw unknown errors so the server logs them

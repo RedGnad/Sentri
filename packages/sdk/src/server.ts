@@ -31,8 +31,11 @@ import {
   findClosestVaultAudit,
   listKnownVaultsFromCache,
   readAuditFromKv,
+  listVaultRejectionsFromCache,
+  readVaultRejectionFromCache,
 } from "./storage.js";
 import { AGENT, TREASURY_VAULT_ABI } from "./constants.js";
+import { updatePythOnChain } from "./market.js";
 
 const ACTION_LABELS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"] as const;
 
@@ -161,6 +164,14 @@ async function runCycle(): Promise<void> {
   }
   cycleInProgress = true;
   state.totalCycles++;
+
+  // Pyth on-chain pull (if PYTH_ONCHAIN_ADDRESS is configured): submit the
+  // latest 0G/USD VAA on-chain so any reader can call getPriceNoOlderThan
+  // trustlessly without keeper dependency. Non-blocking — failure does not
+  // stop the cycle. Pattern: https://docs.pyth.network/price-feeds/use-real-time-data/evm
+  void updatePythOnChain(ctx.wallet).catch((e: unknown) => {
+    log(`[server] Pyth on-chain pull skipped: ${e instanceof Error ? e.message : e}`);
+  });
 
   try {
     const market = await pushPrice(ctx);
@@ -389,6 +400,15 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+app.get("/vault/:address/rejections", (req, res) => {
+  const addr = req.params.address;
+  const timestamps = listVaultRejectionsFromCache(addr, 50);
+  const entries = timestamps
+    .map((ts) => readVaultRejectionFromCache(addr, ts))
+    .filter((e): e is NonNullable<typeof e> => e !== null);
+  res.json({ address: addr, count: entries.length, entries });
 });
 
 app.get("/", (_req, res) => res.redirect("/healthz"));

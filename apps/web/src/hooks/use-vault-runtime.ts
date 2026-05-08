@@ -72,8 +72,19 @@ export interface VaultAuditEntry {
   kvIndexError?: string;
   marketSpreadPct?: number;
   marketSourceCount?: number;
+  marketRequiredSourceCount?: number;
   marketRawSources?: Array<{ source: string; priceUsd?: number; ethUsd: number }>;
   priceAttestationPayload?: unknown;
+}
+
+export interface VaultRejectionEntry {
+  timestamp: number;
+  type: "defensive-override" | "onchain-revert" | "agent-sizing";
+  reason: string;
+  errorCode?: string;
+  action?: string;
+  intentHash?: string;
+  vaultAddress: string;
 }
 
 /**
@@ -91,6 +102,23 @@ export function useVaultStateFromAgent(address: `0x${string}` | undefined) {
     },
     enabled: !!address,
     refetchInterval: 15_000,
+  });
+}
+
+/**
+ * Blocked-action log: rejected executions (on-chain reverts + agent-side defensive overrides).
+ */
+export function useVaultRejections(address: `0x${string}` | undefined) {
+  return useQuery<{ count: number; entries: VaultRejectionEntry[] } | null>({
+    queryKey: ["vault-rejections", address?.toLowerCase()],
+    queryFn: async () => {
+      if (!address) return null;
+      const res = await fetch(`/api/vault-rejections?address=${address}`, { cache: "no-store" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!address,
+    refetchInterval: 30_000,
   });
 }
 
