@@ -33,6 +33,7 @@ import {
   readAuditFromKv,
   listVaultRejectionsFromCache,
   readVaultRejectionFromCache,
+  readRejectionsFromKv,
 } from "./storage.js";
 import { AGENT, TREASURY_VAULT_ABI } from "./constants.js";
 import { updatePythOnChain } from "./market.js";
@@ -402,12 +403,16 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
   }
 });
 
-app.get("/vault/:address/rejections", (req, res) => {
+app.get("/vault/:address/rejections", async (req, res) => {
   const addr = req.params.address;
   const timestamps = listVaultRejectionsFromCache(addr, 50);
-  const entries = timestamps
+  let entries = timestamps
     .map((ts) => readVaultRejectionFromCache(addr, ts))
     .filter((e): e is NonNullable<typeof e> => e !== null);
+  // Fallback to KV manifest if cache is empty (e.g. after restart).
+  if (entries.length === 0) {
+    entries = await readRejectionsFromKv(addr);
+  }
   res.json({ address: addr, count: entries.length, entries });
 });
 

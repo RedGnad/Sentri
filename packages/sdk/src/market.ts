@@ -117,10 +117,16 @@ async function fetchKraken(): Promise<SourceResult> {
 }
 
 /**
- * Pyth on-chain pull model — submits the latest VAA to the deployed Pyth
- * contract so any subsequent reader can call getPriceNoOlderThan on-chain
- * without keeper trust. Gated by PYTH_ONCHAIN_ADDRESS env var.
+ * Pyth on-chain pull model (evidence-only) — submits the latest VAA to the
+ * deployed Pyth contract so any subsequent reader can call
+ * getPriceNoOlderThan on-chain without keeper trust.
  *
+ * ⚠️  Currently NON-BLOCKING / evidence-only: the vault does not yet gate
+ * execution on a fresh Pyth read. SentriPriceFeed remains the execution
+ * oracle. This provides auditable on-chain price evidence alongside the
+ * keeper-pushed feed, but is not yet enforcement-level.
+ *
+ * Gated by PYTH_ONCHAIN_ADDRESS env var.
  * Pattern: https://docs.pyth.network/price-feeds/use-real-time-data/evm
  * 1. Fetch VAA bytes from Hermes (binary/hex encoding).
  * 2. Call getUpdateFee to compute required fee.

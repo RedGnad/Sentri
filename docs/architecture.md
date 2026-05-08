@@ -11,7 +11,9 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
   src/
     VaultFactory.sol              EIP-1167 clone factory + presets + per-owner registry
     TreasuryVault.sol             Per-user clone (init pattern). Funds, policy, execution, audit log
-    AgentINFT.sol                 Shared agent identity (enclave measurement + revocation)
+    AgentINFT.sol                 Agentic ID v2 (ERC-7857-style: metadataRoot, intelligentDataOf,
+                                    authorizeUsage, rotateSigner admin-only). Source-ready;
+                                    mainnet contract is still v1 — v2 requires redeploy.
     SentriSwapRouter.sol          Uniswap v2-style router (single-pair, 0.3% fee) for Galileo
     JaineV3PoolAdapter.sol        Mainnet adapter for the Jaine USDC.E/W0G V3 pool
     SentriPair.sol                Constant-product AMM (MockUSDC ↔ MockWETH on Galileo)
@@ -22,10 +24,10 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     TreasuryVault.t.sol           27 tests (init pattern, deposit/withdraw, strategy, HWM)
     VaultFactory.t.sol            21 tests (presets, custom policy, registry, atomic deposit)
     MultiVault.t.sol              13 tests (multi-vault isolation, agent across owners)
-    AgentINFT.t.sol               12 tests (mint, revoke, O(k) gas scaling)
+    AgentINFT.t.sol               25 tests (mint, revoke, O(k) gas, v2 authorize, signer rotation admin)
     SentriPair.t.sol              8 tests (swap, K invariant, slippage)
     JaineV3PoolAdapter.t.sol      5 tests (callback validation, path safety)
-                                  Total: 86 unit + integration tests, 0 failing
+                                  Total: 102 unit + integration tests, 0 failing
 
 packages/sdk/                    TypeScript multi-vault agent runtime
   src/

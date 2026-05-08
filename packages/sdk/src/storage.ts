@@ -454,24 +454,67 @@ export interface RejectionEntry {
   action?: string;
   intentHash?: string;
   vaultAddress: string;
+  kvTxHash?: string;
+  kvRootHash?: string;
+}
+
+function rejectionManifestKey(vaultAddr: string): string {
+  return `rejection:manifest:${vaultAddr.toLowerCase()}`;
 }
 
 /**
- * Persist a blocked-action entry to KV (non-blocking) and local cache.
- * Used to provide a visible "Blocked Actions" proof feed in the audit UI.
+ * Persist a blocked-action entry to KV and local cache.
+ * Captures the KV tx/root hash and maintains a manifest for recovery after
+ * cache wipe — same pattern as the canonical audit log.
  */
 export function appendRejectionLog(
   vaultAddr: string,
   entry: RejectionEntry,
 ): void {
   const key = `rejection:${vaultAddr.toLowerCase()}:${entry.timestamp}:${entry.type}`;
-  void _writeKv(rejectionStreamId(vaultAddr), key, entry).catch(() => {
-    // Non-fatal — rejection log write failure does not block the agent.
-  });
+  void (async () => {
+    try {
+      const result = await _writeKv(rejectionStreamId(vaultAddr), key, entry);
+      entry.kvTxHash = result?.txHash;
+      entry.kvRootHash = result?.rootHash;
+      // Update manifest with this key so we can recover after cache wipe.
+      const manifestStreamId = rejectionStreamId(vaultAddr);
+      const manifest = await _readKv(manifestStreamId, rejectionManifestKey(vaultAddr), STORAGE.kvNodeUrl);
+      const keys: string[] = Array.isArray(manifest) ? (manifest as string[]) : [];
+      keys.push(key);
+      await _writeKv(manifestStreamId, rejectionManifestKey(vaultAddr), keys);
+    } catch {
+      // Non-fatal — rejection log write failure does not block the agent.
+    }
+  })();
   writeCacheFile(
     path.join("vaults", vaultAddr.toLowerCase(), "rejections", `${entry.timestamp}.json`),
     entry,
   );
+}
+
+/**
+ * Read rejections from KV manifest (fallback after cache wipe).
+ */
+export async function readRejectionsFromKv(vaultAddr: string): Promise<RejectionEntry[]> {
+  try {
+    const streamId = rejectionStreamId(vaultAddr);
+    const manifest = await _readKv(streamId, rejectionManifestKey(vaultAddr), STORAGE.kvNodeUrl);
+    if (!Array.isArray(manifest)) return [];
+    const keys = manifest as string[];
+    const entries = await Promise.all(
+      keys.map(async (k) => {
+        try {
+          return (await _readKv(streamId, k, STORAGE.kvNodeUrl)) as RejectionEntry | null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return entries.filter((e): e is RejectionEntry => e !== null);
+  } catch {
+    return [];
+  }
 }
 
 export function listVaultRejectionsFromCache(vaultAddr: string, limit = 50): string[] {
