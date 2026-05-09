@@ -7,11 +7,11 @@
   --bg-elev: #0f0e0c;
   --ink: #f2efe6;
   --ink-dim: #c6c0b2;
-  --hairline: #1a1917;
+  --hairline: #26231f;
 }
 
 * {
-  border-color: #1a1917;
+  border-color: #26231f;
 }
 
 html,
@@ -74,7 +74,7 @@ body::after {
 .rule {
   position: relative;
   height: 1px;
-  background: #1a1917;
+  background: #26231f;
 }
 
 /* Selection */
@@ -92,7 +92,7 @@ body::after {
   background: #0a0908;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1a1917;
+  background: #26231f;
   border: 2px solid #0a0908;
 }
 ::-webkit-scrollbar-thumb:hover {
