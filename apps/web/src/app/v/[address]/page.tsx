@@ -189,29 +189,23 @@ export default function VaultOverviewPage() {
               </p>
             )
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
               <Field
-                label="Last action"
-                value={
-                  agentState?.portfolio?.lastAction ??
-                  agentState?.runtime?.lastOutcome?.status ??
-                  "—"
-                }
+                label="Last cycle"
+                value={agentState?.runtime?.lastOutcome?.status ?? "—"}
               />
               <Field
-                label="Last iter"
-                value={
-                  agentState?.runtime?.lastIterationAt
-                    ? new Date(
-                        agentState.runtime.lastIterationAt,
-                      ).toLocaleTimeString()
-                    : "—"
-                }
+                label="Latest execution"
+                value={agentState?.portfolio?.lastAction ?? "—"}
+              />
+              <Field
+                label="Cycles"
+                value={String(agentState?.runtime?.totalIterations ?? 0)}
                 tabular
               />
               <Field
-                label="Total iters"
-                value={String(agentState?.runtime?.totalIterations ?? 0)}
+                label="Executions"
+                value={`${vault?.logCount ?? 0} on-chain`}
                 tabular
               />
               <Field
@@ -540,7 +534,7 @@ function AgentDot({
     return (
       <span className="font-mono text-[9px] uppercase tracking-kicker text-phosphor flex items-center gap-1.5">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
-        Last: executed
+        Cycle: executed
       </span>
     );
   }
@@ -548,7 +542,7 @@ function AgentDot({
     return (
       <span className="font-mono text-[9px] uppercase tracking-kicker text-amber flex items-center gap-1.5">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />
-        Last: skipped
+        Cycle: skipped
       </span>
     );
   }
