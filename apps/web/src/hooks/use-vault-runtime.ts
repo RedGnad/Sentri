@@ -102,9 +102,7 @@ export function useVaultStateFromAgent(address: `0x${string}` | undefined) {
     },
     enabled: !!address,
     refetchInterval: 15_000,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
-    staleTime: 10_000,
+    staleTime: 30_000,
     placeholderData: (previous) => previous,
   });
 }

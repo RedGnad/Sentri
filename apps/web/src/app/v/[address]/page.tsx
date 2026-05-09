@@ -189,14 +189,10 @@ export default function VaultOverviewPage() {
               </p>
             )
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
               <Field
                 label="Last cycle"
                 value={agentState?.runtime?.lastOutcome?.status ?? "—"}
-              />
-              <Field
-                label="Latest execution"
-                value={agentState?.portfolio?.lastAction ?? "—"}
               />
               <Field
                 label="Cycles"
