@@ -494,9 +494,9 @@ function AuditEntry({
             </div>
           ) : (
             <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
-              ∅ No enriched data found in 0G Storage cache for this entry. The
-              agent writes reasoning asynchronously after each on-chain
-              execution; cache may have been wiped on service restart.
+              On-chain proof verified. Enriched TEE reasoning is not indexed for
+              this legacy execution, but the vault log, hashes, signer, and
+              attestation remain verifiable on-chain.
             </p>
           )}
         </div>
