@@ -46,13 +46,13 @@ Persistent Memory is intentionally not used: every decision is stateless and rep
 • AgentINFT: 0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951
 • JaineV3PoolAdapter: 0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4
 • SentriPriceFeed: 0x1289638A90da7F24DB069168648819607A7377e6
-• Demo vault (Aggressive): 0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982
+• Demo vault (Aggressive): 0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E
 
 The v2 demo vault has executed a TEE-signed strategy decision on mainnet. Primary reference transaction:
 
-• 0xc404f865e38a456b2861c8663e43390c26748a122761180cf97537e5acf253df — official v2 DemoVault execution: TEE-signed EmergencyDeleverage W0G → USDC.E via Jaine.
+• 0x4b44c5063ca3b7f618a6dab5c20e840cb7d605e761162b6fbe847995df3d9ac4 — official v2 DemoVault execution: TEE-signed EmergencyDeleverage W0G → USDC.E via Jaine.
 
-Recovered TEE signer on every execution: 0xA46EA4FC5889AD35A1487e1Ed04dCcfa872146B9.
+Recovered TEE signer on the current demo execution: 0x4386909Ef321651ab78298Ae454A05FF5d354118.
 
 
 → Risk presets at vault creation

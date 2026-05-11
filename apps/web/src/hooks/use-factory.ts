@@ -1,10 +1,11 @@
 "use client";
 
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { parseUnits } from "viem";
 import {
   VAULT_FACTORY_ADDRESS,
   VAULT_FACTORY_ABI,
+  TREASURY_VAULT_ABI,
 } from "@/config/contracts";
 import { galileo } from "@/config/wagmi";
 import type { Policy } from "./use-vault";
@@ -37,6 +38,28 @@ export function useVaultsPage(start: bigint, limit: bigint) {
     args: [start, limit],
     query: { refetchInterval: 30_000 },
   });
+}
+
+export function useActiveVaultsPage(start: bigint, limit: bigint) {
+  const page = useVaultsPage(start, limit);
+  const vaults = (page.data as readonly `0x${string}`[] | undefined) ?? [];
+  const statuses = useReadContracts({
+    contracts: vaults.flatMap((address) => [
+      { address, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "killed" as const },
+      { address, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "paused" as const },
+    ]),
+    query: { enabled: vaults.length > 0, refetchInterval: 30_000 },
+  });
+  const activeVaults = vaults.filter((_, i) => {
+    const killed = statuses.data?.[i * 2]?.result as boolean | undefined;
+    const paused = statuses.data?.[i * 2 + 1]?.result as boolean | undefined;
+    return killed !== true && paused !== true;
+  });
+  return {
+    data: activeVaults,
+    isLoading: page.isLoading || statuses.isLoading,
+    totalRaw: page.data ? vaults.length : 0,
+  };
 }
 
 /**

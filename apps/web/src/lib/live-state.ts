@@ -99,6 +99,7 @@ async function probeChainAndProtocol(): Promise<{
       let successfulTvlReads = 0;
       let fallbackTotalTVL = 0n;
       let successfulFallbackTvlReads = 0;
+      let activeVaultsCount = 0;
       if (vaultsCount > 0) {
         const limit = Math.min(vaultsCount, 50);
         const addrs = (await client.readContract({
@@ -108,21 +109,44 @@ async function probeChainAndProtocol(): Promise<{
           args: [0n, BigInt(limit)],
         })) as readonly `0x${string}`[];
 
-        const tvlReads = addrs.map((addr) =>
+        const statusReads = addrs.flatMap((addr) => [
+          client.readContract({
+            address: addr,
+            abi: TREASURY_VAULT_ABI,
+            functionName: "killed",
+          }) as Promise<boolean>,
+          client.readContract({
+            address: addr,
+            abi: TREASURY_VAULT_ABI,
+            functionName: "paused",
+          }) as Promise<boolean>,
+        ]);
+        const statusResults = await Promise.allSettled(statusReads);
+        const activeAddrs = addrs.filter((_, i) => {
+          const killed = statusResults[i * 2];
+          const paused = statusResults[i * 2 + 1];
+          return !(
+            (killed?.status === "fulfilled" && killed.value) ||
+            (paused?.status === "fulfilled" && paused.value)
+          );
+        });
+        activeVaultsCount = activeAddrs.length;
+
+        const tvlReads = activeAddrs.map((addr) =>
           client.readContract({
             address: addr,
             abi: TREASURY_VAULT_ABI,
             functionName: "totalValue",
           }) as Promise<bigint>,
         );
-        const logReads = addrs.map((addr) =>
+        const logReads = activeAddrs.map((addr) =>
           client.readContract({
             address: addr,
             abi: TREASURY_VAULT_ABI,
             functionName: "executionLogCount",
           }) as Promise<bigint>,
         );
-        const balanceReads = addrs.flatMap((addr) => [
+        const balanceReads = activeAddrs.flatMap((addr) => [
           client.readContract({
             address: addr,
             abi: TREASURY_VAULT_ABI,
@@ -170,7 +194,7 @@ async function probeChainAndProtocol(): Promise<{
           const decimals = decimalsRaw.value;
           if (price > 0n) {
             const riskQuoteDivisor = 10n ** BigInt(18 + Number(decimals) - 6);
-            for (let i = 0; i < addrs.length; i += 1) {
+            for (let i = 0; i < activeAddrs.length; i += 1) {
               const baseResult = balanceResults[i * 2];
               const riskResult = balanceResults[i * 2 + 1];
               if (baseResult?.status === "fulfilled" && riskResult?.status === "fulfilled") {
@@ -190,9 +214,9 @@ async function probeChainAndProtocol(): Promise<{
         chain,
         protocol: {
           factoryAddress: VAULT_FACTORY_ADDRESS,
-          vaultsCount,
+          vaultsCount: activeVaultsCount,
           totalTVL:
-            vaultsCount === 0 || successfulDisplayTvlReads > 0
+            activeVaultsCount === 0 || successfulDisplayTvlReads > 0
               ? (Number(tvlForDisplay) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 })
               : null,
           totalExecutions,

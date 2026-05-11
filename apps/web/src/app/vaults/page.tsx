@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useVaultsCount, useVaultsPage } from "@/hooks/use-factory";
+import { useActiveVaultsPage } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 const PAGE_SIZE = 24n;
 
 export default function VaultsPage() {
-  const { data: countRaw, isLoading: countLoading } = useVaultsCount();
-  const total = countRaw !== undefined ? Number(countRaw) : 0;
-  const { data: addresses, isLoading: pageLoading } = useVaultsPage(0n, PAGE_SIZE);
+  const { data: vaults, isLoading } = useActiveVaultsPage(0n, PAGE_SIZE);
 
-  const vaults = (addresses as readonly `0x${string}`[] | undefined) ?? [];
-  const isLoading = countLoading || pageLoading;
+  const total = vaults.length;
 
   return (
     <div className="space-y-10">
@@ -23,7 +20,7 @@ export default function VaultsPage() {
         num="01"
         section="Vaults"
         title="Directory"
-        subtitle={`${total} vault${total === 1 ? "" : "s"} live · all public · audit readable without a wallet`}
+        subtitle={`${total} active vault${total === 1 ? "" : "s"} · public audit readable without a wallet`}
         right={
           <Link href="/deploy">
             <Button>Deploy a vault →</Button>
@@ -56,11 +53,6 @@ export default function VaultsPage() {
               <VaultCard key={addr} address={addr} />
             ))}
           </div>
-          {total > vaults.length && (
-            <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint text-center">
-              Showing first {vaults.length} of {total}
-            </p>
-          )}
         </>
       )}
     </div>
