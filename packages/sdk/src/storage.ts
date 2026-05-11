@@ -218,6 +218,8 @@ export async function appendAuditLog(
   entry: AuditEntry,
 ): Promise<{ txHash: string; rootHash: string } | null> {
   const logKey = auditKey(vaultAddr, entry);
+  const cachePath = path.join("vaults", vaultAddr.toLowerCase(), "audit", `${entry.timestamp}.json`);
+  writeCacheFile(cachePath, entry);
   const canonicalRecord: CanonicalAuditRecord = {
     schema: "sentri.audit.v1",
     chainId: CHAIN.id,
@@ -265,15 +267,12 @@ export async function appendAuditLog(
   } catch {
     // Non-fatal: manifest update failure does not block the audit write.
   }
-  writeCacheFile(
-    path.join("vaults", vaultAddr.toLowerCase(), "audit", `${entry.timestamp}.json`),
-    {
-      ...indexedEntry,
-      storageTxHash: canonicalResult?.txHash ?? kvResult?.txHash,
-      storageRootHash: canonicalResult?.rootHash ?? kvResult?.rootHash,
-      storageError: canonicalStorageError ?? kvIndexError,
-    },
-  );
+  writeCacheFile(cachePath, {
+    ...indexedEntry,
+    storageTxHash: canonicalResult?.txHash ?? kvResult?.txHash,
+    storageRootHash: canonicalResult?.rootHash ?? kvResult?.rootHash,
+    storageError: canonicalStorageError ?? kvIndexError,
+  });
   return canonicalResult ?? kvResult;
 }
 
