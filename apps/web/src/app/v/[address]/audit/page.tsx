@@ -33,6 +33,10 @@ export default function VaultAuditPage() {
   const { data: vault, isLoading: vaultLoading } = useParsedVaultData(address);
   const logCount = vault ? Number(vault.logCount) : 0;
   const { data: rejectionsData } = useVaultRejections(address);
+  const visibleRejections =
+    rejectionsData?.entries.filter(
+      (entry) => entry.errorCode !== "CooldownNotElapsed",
+    ) ?? [];
   const [rejectionsExpanded, setRejectionsExpanded] = useState(false);
 
   const logContracts = Array.from(
@@ -72,7 +76,7 @@ export default function VaultAuditPage() {
         </span>
       </div>
 
-      {(rejectionsData?.count ?? 0) > 0 && (
+      {visibleRejections.length > 0 && (
         <div className="border border-hairline bg-bg-elev/10 mb-4">
           <button
             className="w-full flex items-center justify-between px-4 py-3 text-left"
@@ -80,8 +84,8 @@ export default function VaultAuditPage() {
           >
             <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-alert">
               <ShieldX className="h-3.5 w-3.5" />
-              {rejectionsData!.count} blocked action
-              {rejectionsData!.count === 1 ? "" : "s"}
+              {visibleRejections.length} blocked action
+              {visibleRejections.length === 1 ? "" : "s"}
             </span>
             {rejectionsExpanded ? (
               <ChevronUp className="h-4 w-4 text-ink-dim" />
@@ -91,7 +95,7 @@ export default function VaultAuditPage() {
           </button>
           {rejectionsExpanded && (
             <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
-              {rejectionsData!.entries.map((r, i) => (
+              {visibleRejections.map((r, i) => (
                 <RejectionRow key={i} entry={r} />
               ))}
             </div>
