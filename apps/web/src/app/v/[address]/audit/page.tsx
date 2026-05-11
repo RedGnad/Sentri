@@ -332,9 +332,9 @@ function AuditEntry({
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
-                <Field label="Confidence">
+                <Field label="Decision score">
                   <span className="font-serif text-2xl text-amber tabular">
-                    {detail.confidence}%
+                    {Math.min(detail.confidence, 95)}%
                   </span>
                 </Field>
                 <Field label="Hash match">

@@ -345,7 +345,7 @@ Respond with ONLY a valid JSON object (no markdown, no prose):
   "action": "Rebalance" | "EmergencyDeleverage",
   "amount_bps": <integer 0–10000>,
   "rule_id": "<regime label, e.g. up_tight>",
-  "confidence": <integer 0–100>,
+  "confidence": <integer 0–95; decision confidence score, never 100>,
   "short_reason": "<one sentence: regime, current_share %, target %, action chosen, why>"
 }
 `;

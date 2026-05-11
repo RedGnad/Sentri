@@ -277,7 +277,8 @@ export async function executeOneIterationForVault(
   const validationError = validateDecision(decision);
   if (validationError) return { status: "skipped", reason: validationError };
   const reasoning = decision.short_reason ?? decision.reasoning ?? "";
-  log(`Decision: ${decision.action} | ${decision.amount_bps}bps | conf ${decision.confidence}%`);
+  const confidenceScore = Math.min(decision.confidence, 95);
+  log(`Decision: ${decision.action} | ${decision.amount_bps}bps | score ${confidenceScore}%`);
   log(`Reasoning: ${reasoning}`);
 
   // Defensive verifier: the LLM is allowed to be MORE cautious than the
@@ -420,7 +421,7 @@ export async function executeOneIterationForVault(
       verifiability: inference.verifiability,
       chatID: inference.chatID,
       reasoning,
-      confidence: decision.confidence,
+      confidence: confidenceScore,
       txHash: receipt.hash,
       marketPrice: market.priceUsd,
       marketSource: market.source,
