@@ -142,5 +142,9 @@ export function useVaultAuditDetail(address: `0x${string}` | undefined, timestam
       return res.json();
     },
     enabled: !!address && timestamp !== null,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => (query.state.data?.reasoning ? false : 3_000),
   });
 }
