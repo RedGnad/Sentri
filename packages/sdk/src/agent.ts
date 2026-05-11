@@ -647,6 +647,7 @@ function computeStrategy(input: {
   tvl: number;
   priceUsd: number;
   maxAllocationBps: number;
+  rebalanceThresholdBps: number;
 }): StrategyRecommendation {
   const regime = classifyRegime({
     drawdownPct: input.drawdownPct,
@@ -655,6 +656,7 @@ function computeStrategy(input: {
   });
   const targetShare = targetShareForRegime(regime, input.maxAllocationBps);
   const drift = input.currentShare - targetShare;
+  const holdBandPct = Math.max(3, input.rebalanceThresholdBps / 100);
 
   // Hard regime: drawdown breach or 24h crash → full deleverage.
   if (regime === "drawdown_breach" || regime === "crash") {
@@ -671,14 +673,13 @@ function computeStrategy(input: {
     };
   }
 
-  // Within ±3pp of target → hold (anti-flap band).
-  if (Math.abs(drift) < 3) {
+  if (Math.abs(drift) < holdBandPct) {
     return {
       regime,
       targetShare,
       recommendedAction: "hold",
       recommendedAmountBps: 0,
-      rationale: `regime=${regime}, share=${input.currentShare.toFixed(1)}% ≈ target=${targetShare}% (drift ${drift.toFixed(1)}pp)`,
+      rationale: `regime=${regime}, share=${input.currentShare.toFixed(1)}% ≈ target=${targetShare}% (drift ${drift.toFixed(1)}pp within ${holdBandPct.toFixed(1)}pp hold band)`,
     };
   }
 
@@ -836,6 +837,7 @@ function buildMarketPrompt(input: {
     tvl: tvlN,
     priceUsd: input.market.priceUsd,
     maxAllocationBps: input.policy.maxAllocationBps,
+    rebalanceThresholdBps: input.policy.rebalanceThresholdBps,
   });
 
   const prompt = `Treasury state (computed):
@@ -855,6 +857,7 @@ Market (${input.market.source}):
 Policy bounds:
 - Max post-trade ${riskSymbol} exposure: ${input.policy.maxAllocationBps / 100}% of TVL
 - Max drawdown from HWM: ${input.policy.maxDrawdownBps / 100}%
+- Rebalance hold band: ${input.policy.rebalanceThresholdBps / 100}pp around target
 - Max slippage: ${input.policy.maxSlippageBps / 100}%
 - Cooldown between actions: ${input.policy.cooldownPeriod}s
 

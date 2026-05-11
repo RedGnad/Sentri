@@ -295,7 +295,7 @@ function resolveTeeSignerAddress(serviceSigner: string, additionalInfo: Record<s
  *   flat              22%
  *   up_wide           20%
  *   up_tight          25% / 28%
- * Hold band = ±3pp around target. Drift outside the band drives a
+ * Hold band = policy-defined rebalance threshold around target. Drift outside the band drives a
  * Rebalance (deploy base) or EmergencyDeleverage (trim risk).
  *
  * The user-prompt body contains the regime classification, target share,
@@ -327,7 +327,8 @@ ACTION SEMANTICS
 - Hold = action "Rebalance" with amount_bps = 0.
 
 YOUR TASK
-The user prompt includes a "Strategy v2 recommendation" block with regime, target share, recommended action and recommended amount_bps. The math behind it (drift = current_share − target_share, with a ±3pp hold band) is reproducible by anyone with the same inputs.
+The user prompt includes a "Strategy v2 recommendation" block with regime, target share,
+recommended action and recommended amount_bps. The math behind it (drift = current_share − target_share, with the policy-defined hold band) is reproducible by anyone with the same inputs.
 
 Default behaviour: CONFIRM by echoing the recommended action + amount_bps.
 
