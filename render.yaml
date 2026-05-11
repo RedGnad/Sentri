@@ -55,7 +55,7 @@ services:
       - key: NEXT_PUBLIC_RISK_TOKEN_ADDRESS
         value: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c"
       - key: NEXT_PUBLIC_DEMO_VAULT_ADDRESS
-        value: "0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982"
+        value: "0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E"
       - key: STORAGE_INDEXER_URL
         value: "https://indexer-storage-turbo.0g.ai"
       - key: STORAGE_FLOW_CONTRACT
