@@ -72,7 +72,6 @@ export default function VaultOverviewPage() {
   const withdrawRef = useRef(withdrawAmount);
   withdrawRef.current = withdrawAmount;
   const runtime = agentState?.runtime;
-  const runtimeErrorCount = runtime?.totalErrors ?? 0;
   const runtimeHasCurrentError = runtime?.lastOutcome?.status === "error";
 
   useEffect(() => {
@@ -208,20 +207,8 @@ export default function VaultOverviewPage() {
                 tabular
               />
               <Field
-                label={
-                  runtimeHasCurrentError
-                    ? "Current error"
-                    : runtimeErrorCount > 0
-                      ? "Recovered"
-                      : "Errors"
-                }
-                value={
-                  runtimeHasCurrentError
-                    ? String(runtimeErrorCount)
-                    : runtimeErrorCount > 0
-                      ? `${runtimeErrorCount} past`
-                      : "0"
-                }
+                label="Errors"
+                value={runtimeHasCurrentError ? "1 active" : "0"}
                 valueClass={
                   runtimeHasCurrentError ? "text-alert" : "text-ink-dim"
                 }
