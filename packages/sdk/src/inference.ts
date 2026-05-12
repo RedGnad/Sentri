@@ -123,6 +123,12 @@ export async function acknowledgeProvider(providerAddress?: string): Promise<voi
     await broker.inference.acknowledgeProviderSigner(addr);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("InsufficientAvailableBalance")) {
+      console.warn(
+        `Provider acknowledgement skipped: compute ledger has insufficient available balance for ${addr}.`,
+      );
+      return;
+    }
     if (!msg.includes("already") && !msg.includes("Acknowledge")) {
       throw err;
     }
