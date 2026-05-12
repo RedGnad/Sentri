@@ -261,6 +261,10 @@ export async function executeOneIterationForVault(
       `action=${recommendation.recommendedAction} amount_bps=${recommendation.recommendedAmountBps}`,
   );
 
+  if (recommendation.recommendedAmountBps === 0) {
+    return { status: "skipped", reason: "no action needed (deterministic hold)" };
+  }
+
   log("Requesting Sealed Inference (TEE)...");
   const inference = await requestInference(prompt, TREASURY_SYSTEM_PROMPT);
   log(

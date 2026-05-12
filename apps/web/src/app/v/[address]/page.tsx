@@ -71,6 +71,9 @@ export default function VaultOverviewPage() {
   depositRef.current = depositAmount;
   const withdrawRef = useRef(withdrawAmount);
   withdrawRef.current = withdrawAmount;
+  const runtime = agentState?.runtime;
+  const runtimeErrorCount = runtime?.totalErrors ?? 0;
+  const runtimeHasCurrentError = runtime?.lastOutcome?.status === "error";
 
   useEffect(() => {
     if (mintSuccess) toast.success(`10,000 ${BASE_SYMBOL} minted`);
@@ -192,11 +195,11 @@ export default function VaultOverviewPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
               <Field
                 label="Last cycle"
-                value={agentState?.runtime?.lastOutcome?.status ?? "—"}
+                value={runtime?.lastOutcome?.status ?? "—"}
               />
               <Field
                 label="Cycles"
-                value={String(agentState?.runtime?.totalIterations ?? 0)}
+                value={String(runtime?.totalIterations ?? 0)}
                 tabular
               />
               <Field
@@ -205,12 +208,22 @@ export default function VaultOverviewPage() {
                 tabular
               />
               <Field
-                label="Errors"
-                value={String(agentState?.runtime?.totalErrors ?? 0)}
+                label={
+                  runtimeHasCurrentError
+                    ? "Current error"
+                    : runtimeErrorCount > 0
+                      ? "Recovered"
+                      : "Errors"
+                }
+                value={
+                  runtimeHasCurrentError
+                    ? String(runtimeErrorCount)
+                    : runtimeErrorCount > 0
+                      ? `${runtimeErrorCount} past`
+                      : "0"
+                }
                 valueClass={
-                  (agentState?.runtime?.totalErrors ?? 0) > 0
-                    ? "text-alert"
-                    : "text-ink-dim"
+                  runtimeHasCurrentError ? "text-alert" : "text-ink-dim"
                 }
               />
             </div>
