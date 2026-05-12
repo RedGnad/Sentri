@@ -25,14 +25,21 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 ## Judge summary
 
 Video demo:https://www.youtube.com/watch?v=8eVnhSPZd_4
+
 Live demo:https://sentri-web-dusky.vercel.app/
 
 Mainnet deployment:
+
 • VaultFactory: 0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7
+
 • TreasuryVault impl: 0xf86013C68811047F6dEc98c4ED6601C80B720668
+
 • AgentINFT: 0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951
+
 • JaineV3PoolAdapter: 0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4
+
 • SentriPriceFeed: 0x1289638A90da7F24DB069168648819607A7377e6
+
 • Demo vault (Aggressive): 0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E
 
 | Question | Answer |
