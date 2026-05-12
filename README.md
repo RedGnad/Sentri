@@ -24,6 +24,17 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 ## Judge summary
 
+Video demo:
+Live demo:https://sentri-web-dusky.vercel.app/
+
+Mainnet deployment:
+• VaultFactory: 0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7
+• TreasuryVault impl: 0xf86013C68811047F6dEc98c4ED6601C80B720668
+• AgentINFT: 0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951
+• JaineV3PoolAdapter: 0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4
+• SentriPriceFeed: 0x1289638A90da7F24DB069168648819607A7377e6
+• Demo vault (Aggressive): 0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E
+
 | Question | Answer |
 |---|---|
 | What is Sentri? | A policy-first autonomous treasury vault on 0G. |
@@ -114,7 +125,7 @@ Previous mainnet rehearsal transactions remain useful for audit history but are 
 | `SentriPriceFeed` | [`0x0e75243d34E904Ab925064c8297b36484Ce2aB5E`](https://chainscan-galileo.0g.ai/address/0x0e75243d34E904Ab925064c8297b36484Ce2aB5E) |
 | `MockUSDC` | [`0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3`](https://chainscan-galileo.0g.ai/address/0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3) |
 | `MockWETH` | [`0x246e6080D736A217C151C3b88890C08e2C249d5E`](https://chainscan-galileo.0g.ai/address/0x246e6080D736A217C151C3b88890C08e2C249d5E) |
-| Demo vault(Agressive preset) | [`0x5Aa3a7083915F6213238fc8c7461be969d5504e2`](https://chainscan-galileo.0g.ai/address/0x5Aa3a7083915F6213238fc8c7461be969d5504e2) |
+| Demo vault(Agressive preset) | [`0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E`](https://chainscan-galileo.0g.ai/address/0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E) |
 
 ---
 
