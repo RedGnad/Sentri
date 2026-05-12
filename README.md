@@ -28,6 +28,7 @@ Demo video: https://www.youtube.com/watch?v=8eVnhSPZd_4
 
 Demo live: https://sentri-web-dusky.vercel.app/
 
+
 Mainnet deployment:
 
 • VaultFactory: 0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7
@@ -41,6 +42,7 @@ Mainnet deployment:
 • SentriPriceFeed: 0x1289638A90da7F24DB069168648819607A7377e6
 
 • Demo vault (Aggressive): 0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E
+
 
 | Question | Answer |
 |---|---|
