@@ -24,7 +24,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 ## Judge summary
 
-Video demo:
+Video demo:https://www.youtube.com/watch?v=8eVnhSPZd_4
 Live demo:https://sentri-web-dusky.vercel.app/
 
 Mainnet deployment:
