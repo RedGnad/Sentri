@@ -113,7 +113,6 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on the current demo execution: `0x4386909Ef321651ab78298Ae454A05FF5d354118`.
 
----
 
 ### 0G Galileo Testnet (chain `16602`)
 
