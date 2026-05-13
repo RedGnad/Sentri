@@ -117,10 +117,7 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 Previous mainnet rehearsal transactions remain useful for audit history but are no longer the official live stack:
 
-| Reference | Tx |
-|---|---|
-| Strategy v1/v1.1 rebalance (`USDC.E → W0G`) | [`0x5bf6ab1b…39c4`](https://chainscan.0g.ai/tx/0x5bf6ab1b5bb8f200f6b1a076ca10bff131d2b539eef00e64c84af86e361739c4) |
-| v1 `EmergencyDeleverage` (`W0G → USDC.E`) | [`0x30a2d51a…b675`](https://chainscan.0g.ai/tx/0x30a2d51a2802fefdea4c5135dc3ea2f33fa4218ed0b360f9cc4610aa7db3f675) |
+---
 
 ### 0G Galileo Testnet (chain `16602`)
 
