@@ -215,7 +215,7 @@ This is a forward-looking section.
 - RWA exposure as a third class once major issuers (Ondo, Maple, Backed) ship on 0G.
 - Operator INFTs — open the agent role to multiple verified operators; vault owners pick and rotate without redeploying.
 
-**v3 — Sentri as a treasury primitive (vision)**
+**v2.0 — Sentri as a treasury primitive (vision)**
 
 - Composable risk envelopes across lending, perps, LP — bounded by the same Sentri policy.
 - Cross-chain coordination: vault funds on any chain, decisions and proofs on 0G.
