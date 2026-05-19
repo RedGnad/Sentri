@@ -313,18 +313,47 @@ interface AuditRecoveryRecord {
   kvIndexTxHash?: string;
 }
 
+const DEFAULT_AUDIT_RECOVERY_RECORDS: AuditRecoveryRecord[] = [
+  {
+    rootHash: "0x537c8a51055496bd2df34e6976ab5f11e849cd501ce689a05ae063057eb9f9ca",
+    txHash: "0x34cfe5b5d7843f9e18c2bb0b5325aa01af569cb76e93afed35b2a5b9b67a61c0",
+    referenceTxHash: "0x4b44c5063ca3b7f618a6dab5c20e840cb7d605e761162b6fbe847995df3d9ac4",
+  },
+  {
+    rootHash: "0x71a0a3723e089a2ebb44e5b76e78aae9cb02cacf5a96275663e49ad48f24a08d",
+    referenceTxHash: "0x68b8de37976587a18a0cefb7f97ffe348e3ee1cadf4db3cfa99be7b2cb9bb894",
+  },
+  {
+    rootHash: "0x06cf6c24ce1eeccb6091bef0b7d888d92f6765a3dd74337e2051e3df3334a060",
+    txHash: "0x6e8876a529de615bd2cb2f759eee5a375e15083c122718b953797e97751db2f8",
+    referenceTxHash: "0x7702193a46aff156fd24d125c86c2369fcdda7803d7271227a44ec76786a9784",
+  },
+  {
+    rootHash: "0x23debac69cad09cf1c754428ef5fbe3e26ba4dc51e8933e9d984a92efeea60f8",
+    referenceTxHash: "0x8d199f655c99e43d9c9f5cf4d3b2ca03590fe74bcf1bebf8a20258fd9e08fbe4",
+  },
+];
+
 function auditRecoveryRecords(): AuditRecoveryRecord[] {
   const raw = process.env.SENTRI_AUDIT_RECOVERY_RECORDS;
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((record): record is AuditRecoveryRecord => {
-      return Boolean(record && typeof record === "object" && typeof (record as AuditRecoveryRecord).rootHash === "string");
-    });
-  } catch {
-    return [];
+  let configured: AuditRecoveryRecord[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        configured = parsed.filter((record): record is AuditRecoveryRecord => {
+          return Boolean(record && typeof record === "object" && typeof (record as AuditRecoveryRecord).rootHash === "string");
+        });
+      }
+    } catch {
+      configured = [];
+    }
   }
+  const byRoot = new Map<string, AuditRecoveryRecord>();
+  for (const record of [...DEFAULT_AUDIT_RECOVERY_RECORDS, ...configured]) {
+    byRoot.set(record.rootHash.toLowerCase(), record);
+  }
+  return Array.from(byRoot.values());
 }
 
 export async function readAuditFromRecoveryRecords(
@@ -338,9 +367,19 @@ export async function readAuditFromRecoveryRecords(
     try {
       const file = path.join(CACHE_DIR, "recovery", `${record.rootHash}.json`);
       ensureDir(path.dirname(file));
-      const err = await getIndexer().download(record.rootHash, file, false);
-      if (err !== null) continue;
-      const canonical = JSON.parse(fs.readFileSync(file, "utf-8")) as CanonicalAuditRecord;
+      let canonical: CanonicalAuditRecord | null = null;
+      for (let attempt = 0; attempt < 2 && !canonical; attempt++) {
+        if (!fs.existsSync(file)) {
+          const err = await getIndexer().download(record.rootHash, file, false);
+          if (err !== null) break;
+        }
+        try {
+          canonical = JSON.parse(fs.readFileSync(file, "utf-8")) as CanonicalAuditRecord;
+        } catch {
+          try { fs.unlinkSync(file); } catch {}
+        }
+      }
+      if (!canonical) continue;
       if (canonical.vault.toLowerCase() !== vaultAddr.toLowerCase()) continue;
       const cached: CachedAuditEntry = {
         ...canonical.entry,
