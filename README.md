@@ -1,6 +1,5 @@
 # Sentri
 ## AI agents are getting wallets. Sentri keeps them on a leash. 
-Verified AI treasury execution with hard on-chain limits.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Solidity](https://img.shields.io/badge/solidity-0.8.24-363636.svg)](./contracts/foundry.toml)
@@ -8,7 +7,7 @@ Verified AI treasury execution with hard on-chain limits.
 [![Tests](https://img.shields.io/badge/forge%20tests-105%20passing-brightgreen.svg)](./contracts/test)
 [![0G Mainnet](https://img.shields.io/badge/0G-mainnet%2016661-FFB300.svg)](https://chainscan.0g.ai/address/0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7)
 
-**Verifiable autonomous treasury for stablecoin reserves on 0G.**
+**Verified AI treasury execution with hard on-chain limits, for stablecoin reserves on 0G.**
 Private strategy, verifiable results. The agent proposes, the vault disposes.
 
 Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded vault from a public factory, with their own risk policy. A shared agent operates across every vault: it requests strategy through a verifiable 0G Sealed Inference TEE provider path, and the vault enforces every cryptographic and economic check on-chain before any swap can fire. The vault owner can pause, reconfigure, or hard-kill at any moment.
