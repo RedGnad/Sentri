@@ -112,12 +112,14 @@ async function readVaultStateFromChain(
 
 const PORT = Number(process.env.PORT ?? 8080);
 const CYCLE_INTERVAL_MS = Number(process.env.AGENT_INTERVAL_MS ?? AGENT.cycleIntervalMs);
+const INFERENCE_FUNDING_BACKOFF_MS = Number(process.env.INFERENCE_FUNDING_BACKOFF_MS ?? 15 * 60_000);
 
 interface VaultState {
   totalIterations: number;
   totalErrors: number;
   lastIterationAt: number | null;
   lastOutcome: IterationOutcome | null;
+  inferenceFundingBackoffUntil: number | null;
 }
 
 interface ServerState {
@@ -149,10 +151,23 @@ function getOrInitVault(address: string): VaultState {
   const key = address.toLowerCase();
   let s = state.trackedVaults.get(key);
   if (!s) {
-    s = { totalIterations: 0, totalErrors: 0, lastIterationAt: null, lastOutcome: null };
+    s = {
+      totalIterations: 0,
+      totalErrors: 0,
+      lastIterationAt: null,
+      lastOutcome: null,
+      inferenceFundingBackoffUntil: null,
+    };
     state.trackedVaults.set(key, s);
   }
   return s;
+}
+
+function isInferenceFundingError(reason: string): boolean {
+  return reason.includes("InsufficientAvailableBalance")
+    || reason.includes("insufficient balance")
+    || reason.includes("Please add more funds")
+    || reason.includes("transfer-fund --provider");
 }
 
 async function runCycle(): Promise<void> {
@@ -184,8 +199,19 @@ async function runCycle(): Promise<void> {
     for (const vaultAddr of vaults) {
       const v = getOrInitVault(vaultAddr);
       v.totalIterations++;
+      if (v.inferenceFundingBackoffUntil && Date.now() < v.inferenceFundingBackoffUntil) {
+        const seconds = Math.ceil((v.inferenceFundingBackoffUntil - Date.now()) / 1000);
+        v.lastOutcome = {
+          status: "skipped",
+          reason: `inference funding backoff (${seconds}s remaining)`,
+        };
+        v.lastIterationAt = Date.now();
+        log(`  ${vaultAddr.slice(0, 10)}... → skipped (${v.lastOutcome.reason})`);
+        continue;
+      }
       try {
         const outcome = await executeOneIterationForVault(ctx, vaultAddr, market);
+        v.inferenceFundingBackoffUntil = null;
         v.lastOutcome = outcome;
         log(`  ${vaultAddr.slice(0, 10)}... → ${outcome.status}${
           outcome.status === "executed"
@@ -197,6 +223,9 @@ async function runCycle(): Promise<void> {
       } catch (err) {
         v.totalErrors++;
         const reason = err instanceof Error ? err.message : String(err);
+        if (isInferenceFundingError(reason)) {
+          v.inferenceFundingBackoffUntil = Date.now() + INFERENCE_FUNDING_BACKOFF_MS;
+        }
         v.lastOutcome = { status: "error", reason };
         log(`  ${vaultAddr.slice(0, 10)}... → ERROR: ${reason}`);
       } finally {

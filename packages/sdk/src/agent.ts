@@ -35,6 +35,7 @@ const ACTION_MAP: Record<string, number> = {
   YieldFarm: 1,
   EmergencyDeleverage: 2,
 };
+const MIN_RISK_POSITION_USD = Number(process.env.MIN_RISK_POSITION_USD ?? 0.001);
 
 /**
  * GlobalContext — singletons the agent uses across every vault iteration.
@@ -260,6 +261,13 @@ export async function executeOneIterationForVault(
     `Recommendation: regime=${recommendation.regime} target=${recommendation.targetShare}% ` +
       `action=${recommendation.recommendedAction} amount_bps=${recommendation.recommendedAmountBps}`,
   );
+
+  if (
+    recommendation.recommendedAction === "EmergencyDeleverage" &&
+    Number(riskStr) * market.priceUsd < MIN_RISK_POSITION_USD
+  ) {
+    return { status: "skipped", reason: `risk position below dust threshold (${MIN_RISK_POSITION_USD} ${baseSymbol})` };
+  }
 
   if (recommendation.recommendedAmountBps === 0) {
     return { status: "skipped", reason: "no action needed (deterministic hold)" };
