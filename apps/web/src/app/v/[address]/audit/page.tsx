@@ -33,6 +33,10 @@ function formatRiskDisplay(value: bigint): string {
   return num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 }
 
+function isDustExecution(amountOut: bigint): boolean {
+  return amountOut > 0n && amountOut < 10_000n;
+}
+
 export default function VaultAuditPage() {
   const params = useParams<{ address: string }>();
   const address = params.address as `0x${string}`;
@@ -206,8 +210,9 @@ function AuditEntry({
   );
 
   const date = new Date(tsMs);
-  const actionLabel = ACTION_LABELS[action] ?? "Unknown";
-  const variant = ACTION_VARIANTS[action] ?? "default";
+  const dustExecution = action === 2 && isDustExecution(amountOut);
+  const actionLabel = dustExecution ? "Dust cleanup" : ACTION_LABELS[action] ?? "Unknown";
+  const variant = dustExecution ? "default" : ACTION_VARIANTS[action] ?? "default";
   const logId = String(logCount - 1 - index).padStart(4, "0");
 
   return (
@@ -239,7 +244,9 @@ function AuditEntry({
         </Field>
         <Field label="Amount out">
           <span className="font-serif text-2xl text-amber tabular">
-            {action === 2
+            {dustExecution
+              ? "< $0.01"
+              : action === 2
               ? `$${formatUSDC(amountOut)}`
               : `${formatRiskDisplay(amountOut)}`}
           </span>
