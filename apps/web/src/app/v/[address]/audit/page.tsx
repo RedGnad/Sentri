@@ -33,8 +33,8 @@ function formatRiskDisplay(value: bigint): string {
   return num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
 }
 
-function isDustExecution(amountOut: bigint): boolean {
-  return amountOut > 0n && amountOut < 10_000n;
+function isDustExecution(amountIn: bigint, amountOut: bigint): boolean {
+  return amountIn > 0n && amountIn < 1_000_000_000_000_000n && amountOut > 0n && amountOut < 10_000n;
 }
 
 export default function VaultAuditPage() {
@@ -210,7 +210,7 @@ function AuditEntry({
   );
 
   const date = new Date(tsMs);
-  const dustExecution = action === 2 && isDustExecution(amountOut);
+  const dustExecution = action === 2 && isDustExecution(amountIn, amountOut);
   const actionLabel = dustExecution ? "Dust cleanup" : ACTION_LABELS[action] ?? "Unknown";
   const variant = dustExecution ? "default" : ACTION_VARIANTS[action] ?? "default";
   const logId = String(logCount - 1 - index).padStart(4, "0");
