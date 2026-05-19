@@ -80,10 +80,14 @@ export default async function LandingPage() {
           <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-3">
             Stables-first · Bounded risk · Owner-controlled
           </p>
-          <p className="text-[16px] text-ink-dim max-w-xl mt-8 leading-relaxed">
-            AI agents are getting wallets. Keep them on a leash :
+          <p className="max-w-xl mt-8 leading-relaxed">
+            <span className="text-[18px] text-ink-dim">
+              AI agents are getting wallets. Keep them on a leash :
+            </span>
             <br />
-            Sentri lets AI move capital without letting it go rogue.
+            <strong className="text-[16px] text-ink">
+              Sentri lets AI move capital without letting it go rogue.
+            </strong>
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-8">
             <Link href="/deploy">
