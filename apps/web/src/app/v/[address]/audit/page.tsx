@@ -26,6 +26,13 @@ const ACTION_VARIANTS = ["default", "success", "destructive"] as const;
 const EXPLORER =
   process.env.NEXT_PUBLIC_EXPLORER_URL ?? galileo.blockExplorers.default.url;
 
+function formatRiskDisplay(value: bigint): string {
+  const num = Number(value) / 1e18;
+  if (num === 0) return "0";
+  if (num > 0 && num < 0.0001) return "< 0.0001";
+  return num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+}
+
 export default function VaultAuditPage() {
   const params = useParams<{ address: string }>();
   const address = params.address as `0x${string}`;
@@ -223,7 +230,7 @@ function AuditEntry({
         <Field label="Amount in">
           <span className="font-serif text-2xl text-ink tabular">
             {action === 2
-              ? `${(Number(amountIn) / 1e18).toFixed(4)}`
+              ? `${formatRiskDisplay(amountIn)}`
               : `$${formatUSDC(amountIn)}`}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint ml-1.5">
@@ -234,7 +241,7 @@ function AuditEntry({
           <span className="font-serif text-2xl text-amber tabular">
             {action === 2
               ? `$${formatUSDC(amountOut)}`
-              : `${(Number(amountOut) / 1e18).toFixed(4)}`}
+              : `${formatRiskDisplay(amountOut)}`}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint ml-1.5">
             {action === 2 ? BASE_SYMBOL : RISK_SYMBOL}
