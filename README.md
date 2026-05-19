@@ -1,5 +1,6 @@
 # Sentri
 ## AI agents are getting wallets. Sentri keeps them on a leash. 
+Verified AI treasury execution with hard on-chain limits.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Solidity](https://img.shields.io/badge/solidity-0.8.24-363636.svg)](./contracts/foundry.toml)
