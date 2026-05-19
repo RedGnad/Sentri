@@ -63,7 +63,7 @@ services:
       - key: STORAGE_SUBMIT_FEE_WEI
         value: "1000000000000000"
       - key: SENTRI_AUDIT_RECOVERY_RECORDS
-        value: '[{"rootHash":"0x537c8a51055496bd2df34e6976ab5f11e849cd501ce689a05ae063057eb9f9ca","txHash":"0x34cfe5b5d7843f9e18c2bb0b5325aa01af569cb76e93afed35b2a5b9b67a61c0","referenceTxHash":"0x4b44c5063ca3b7f618a6dab5c20e840cb7d605e761162b6fbe847995df3d9ac4"}]'
+        value: '[{"rootHash":"0x537c8a51055496bd2df34e6976ab5f11e849cd501ce689a05ae063057eb9f9ca","txHash":"0x34cfe5b5d7843f9e18c2bb0b5325aa01af569cb76e93afed35b2a5b9b67a61c0","referenceTxHash":"0x4b44c5063ca3b7f618a6dab5c20e840cb7d605e761162b6fbe847995df3d9ac4"},{"rootHash":"0x06cf6c24ce1eeccb6091bef0b7d888d92f6765a3dd74337e2051e3df3334a060","txHash":"0x6e8876a529de615bd2cb2f759eee5a375e15083c122718b953797e97751db2f8","referenceTxHash":"0x7702193a46aff156fd24d125c86c2369fcdda7803d7271227a44ec76786a9784"}]'
       - key: AGENT_INTERVAL_MS
         value: "60000"
       - key: SENTRI_CACHE_DIR
