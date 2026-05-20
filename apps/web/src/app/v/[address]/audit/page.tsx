@@ -14,7 +14,14 @@ import {
   useVaultRejections,
   type VaultRejectionEntry,
 } from "@/hooks/use-vault-runtime";
-import { ChevronDown, ChevronUp, ExternalLink, ShieldX } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  ShieldX,
+  Copy,
+  Check,
+} from "lucide-react";
 import { galileo } from "@/config/wagmi";
 
 const ACTION_LABELS = [
@@ -25,6 +32,53 @@ const ACTION_LABELS = [
 const ACTION_VARIANTS = ["default", "success", "destructive"] as const;
 const EXPLORER =
   process.env.NEXT_PUBLIC_EXPLORER_URL ?? galileo.blockExplorers.default.url;
+
+function CopyableHash({
+  value,
+  slice = 18,
+}: {
+  value: string;
+  slice?: number;
+}) {
+  const [copied, setCopied] = useState(false);
+  const display =
+    value.length > slice + 4
+      ? `${value.slice(0, slice)}…${value.slice(-4)}`
+      : value;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="font-mono text-[11px] text-ink-dim break-all flex items-center gap-1.5 hover:text-ink transition-colors text-left"
+      title="Copy to clipboard"
+    >
+      <span>{display}</span>
+      {copied ? (
+        <Check className="h-3 w-3 text-phosphor shrink-0" />
+      ) : (
+        <Copy className="h-3 w-3 text-ink-faint shrink-0" />
+      )}
+    </button>
+  );
+}
+
+function ExplorerAddress({ value, label }: { value: string; label?: string }) {
+  const display = label ?? `${value.slice(0, 6)}…${value.slice(-4)}`;
+  return (
+    <a
+      href={`${EXPLORER}/address/${value}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-mono text-[12px] text-amber hover:underline tabular flex items-center gap-1"
+    >
+      {display} <ExternalLink className="h-3 w-3" />
+    </a>
+  );
+}
 
 function formatRiskDisplay(value: bigint): string {
   const num = Number(value) / 1e18;
@@ -378,11 +432,16 @@ function AuditEntry({
                   </span>
                 </Field>
                 <Field label="Provider">
-                  <span className="font-mono text-[11px] text-ink-dim tabular">
-                    {detail.provider
-                      ? `${detail.provider.slice(0, 10)}...`
-                      : "-"}
-                  </span>
+                  {detail.provider ? (
+                    <ExplorerAddress
+                      value={detail.provider}
+                      label={`${detail.provider.slice(0, 6)}…${detail.provider.slice(-4)}`}
+                    />
+                  ) : (
+                    <span className="font-mono text-[11px] text-ink-dim">
+                      -
+                    </span>
+                  )}
                 </Field>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
@@ -408,23 +467,31 @@ function AuditEntry({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
                 <Field label="Chat ID">
-                  <code className="font-mono text-[11px] text-ink-dim break-all">
-                    {detail.chatID || "-"}
-                  </code>
+                  {detail.chatID ? (
+                    <CopyableHash value={detail.chatID} slice={22} />
+                  ) : (
+                    <span className="font-mono text-[11px] text-ink-dim">
+                      -
+                    </span>
+                  )}
                 </Field>
                 <Field label="Recovered signer">
-                  <code className="font-mono text-[11px] text-ink-dim break-all">
-                    {detail.recoveredSigner
-                      ? `${detail.recoveredSigner.slice(0, 10)}...`
-                      : "-"}
-                  </code>
+                  {detail.recoveredSigner ? (
+                    <ExplorerAddress value={detail.recoveredSigner} />
+                  ) : (
+                    <span className="font-mono text-[11px] text-ink-dim">
+                      -
+                    </span>
+                  )}
                 </Field>
                 <Field label="Signed payload hash">
-                  <code className="font-mono text-[11px] text-ink-dim break-all">
-                    {detail.signedPayloadHash
-                      ? `${detail.signedPayloadHash.slice(0, 18)}...`
-                      : "-"}
-                  </code>
+                  {detail.signedPayloadHash ? (
+                    <CopyableHash value={detail.signedPayloadHash} />
+                  ) : (
+                    <span className="font-mono text-[11px] text-ink-dim">
+                      -
+                    </span>
+                  )}
                 </Field>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
@@ -472,9 +539,7 @@ function AuditEntry({
                 )}
                 {detail.canonicalRootHash && (
                   <Field label="Canonical root">
-                    <code className="font-mono text-[11px] text-ink-dim break-all">
-                      {detail.canonicalRootHash.slice(0, 18)}...
-                    </code>
+                    <CopyableHash value={detail.canonicalRootHash} />
                   </Field>
                 )}
               </div>
@@ -494,16 +559,12 @@ function AuditEntry({
                 )}
                 {detail.kvIndexRootHash && (
                   <Field label="KV index root">
-                    <code className="font-mono text-[11px] text-ink-dim break-all">
-                      {detail.kvIndexRootHash.slice(0, 18)}...
-                    </code>
+                    <CopyableHash value={detail.kvIndexRootHash} />
                   </Field>
                 )}
                 {detail.canonicalRecordHash && (
                   <Field label="Record hash">
-                    <code className="font-mono text-[11px] text-ink-dim break-all">
-                      {detail.canonicalRecordHash.slice(0, 18)}...
-                    </code>
+                    <CopyableHash value={detail.canonicalRecordHash} />
                   </Field>
                 )}
               </div>
