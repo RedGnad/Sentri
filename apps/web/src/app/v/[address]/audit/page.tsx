@@ -30,11 +30,19 @@ function formatRiskDisplay(value: bigint): string {
   const num = Number(value) / 1e18;
   if (num === 0) return "0";
   if (num > 0 && num < 0.0001) return "< 0.0001";
-  return num.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
 }
 
 function isDustExecution(amountIn: bigint, amountOut: bigint): boolean {
-  return amountIn > 0n && amountIn < 1_000_000_000_000_000n && amountOut > 0n && amountOut < 10_000n;
+  return (
+    amountIn > 0n &&
+    amountIn < 1_000_000_000_000_000n &&
+    amountOut > 0n &&
+    amountOut < 10_000n
+  );
 }
 
 export default function VaultAuditPage() {
@@ -204,15 +212,23 @@ function AuditEntry({
 }) {
   const [expanded, setExpanded] = useState(false);
   const tsMs = Number(timestamp) * 1000;
-  const { data: detail, isLoading: detailLoading } = useVaultAuditDetail(
+  const {
+    data: detail,
+    isLoading: detailLoading,
+    isFetching: detailFetching,
+  } = useVaultAuditDetail(
     expanded ? vaultAddress : undefined,
     expanded ? tsMs : null,
   );
 
   const date = new Date(tsMs);
   const dustExecution = action === 2 && isDustExecution(amountIn, amountOut);
-  const actionLabel = dustExecution ? "Dust cleanup" : ACTION_LABELS[action] ?? "Unknown";
-  const variant = dustExecution ? "default" : ACTION_VARIANTS[action] ?? "default";
+  const actionLabel = dustExecution
+    ? "Dust cleanup"
+    : (ACTION_LABELS[action] ?? "Unknown");
+  const variant = dustExecution
+    ? "default"
+    : (ACTION_VARIANTS[action] ?? "default");
   const logId = String(logCount - 1 - index).padStart(4, "0");
 
   return (
@@ -247,8 +263,8 @@ function AuditEntry({
             {dustExecution
               ? "< $0.01"
               : action === 2
-              ? `$${formatUSDC(amountOut)}`
-              : `${formatRiskDisplay(amountOut)}`}
+                ? `$${formatUSDC(amountOut)}`
+                : `${formatRiskDisplay(amountOut)}`}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint ml-1.5">
             {action === 2 ? BASE_SYMBOL : RISK_SYMBOL}
@@ -327,7 +343,7 @@ function AuditEntry({
 
       {expanded && (
         <div className="border-t border-hairline px-5 py-5 bg-bg-sunk/40">
-          {detailLoading ? (
+          {detailLoading || (detailFetching && !detail?.reasoning) ? (
             <p className="font-mono text-[11px] text-ink-faint">
               Loading from agent server...
             </p>

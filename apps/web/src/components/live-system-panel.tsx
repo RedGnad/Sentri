@@ -40,9 +40,11 @@ function chainState(snapshot: LiveSnapshot): "ok" | "warn" | "off" {
 function agentState(snapshot: LiveSnapshot): "ok" | "warn" | "off" {
   if (!snapshot.agent.ok) return "off";
   if (!snapshot.agent.lastCycleAt) return "warn";
-  const ageMs = Date.now() - snapshot.agent.lastCycleAt;
+  const snapshotAge = snapshot.fetchedAt ? Date.now() - snapshot.fetchedAt : 0;
+  const ageMs =
+    Date.now() - snapshot.agent.lastCycleAt - Math.max(0, snapshotAge);
   const intervalMs = (snapshot.agent.intervalSec ?? 300) * 1000;
-  if (ageMs > intervalMs * 3) return "warn";
+  if (ageMs > intervalMs * 5) return "warn";
   return "ok";
 }
 
@@ -70,7 +72,11 @@ function ProtocolRow({
   );
 }
 
-export function LiveSystemPanel({ initialSnapshot }: { initialSnapshot: LiveSnapshot }) {
+export function LiveSystemPanel({
+  initialSnapshot,
+}: {
+  initialSnapshot: LiveSnapshot;
+}) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
 
   useEffect(() => {
@@ -82,8 +88,7 @@ export function LiveSystemPanel({ initialSnapshot }: { initialSnapshot: LiveSnap
         if (!res.ok) return;
         const next = (await res.json()) as LiveSnapshot;
         if (mounted) setSnapshot(next);
-      } catch {
-      }
+      } catch {}
     }
 
     const id = window.setInterval(refresh, 15_000);
