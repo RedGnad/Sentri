@@ -50,14 +50,17 @@ export function useActiveVaultsPage(start: bigint, limit: bigint) {
     ]),
     query: { enabled: vaults.length > 0, refetchInterval: 30_000 },
   });
-  const activeVaults = vaults.filter((_, i) => {
-    const killed = statuses.data?.[i * 2]?.result as boolean | undefined;
-    const paused = statuses.data?.[i * 2 + 1]?.result as boolean | undefined;
-    return killed !== true && paused !== true;
-  });
+  const statusesReady = vaults.length === 0 || !!statuses.data;
+  const activeVaults = statusesReady
+    ? vaults.filter((_, i) => {
+        const killed = statuses.data?.[i * 2]?.result as boolean | undefined;
+        const paused = statuses.data?.[i * 2 + 1]?.result as boolean | undefined;
+        return killed !== true && paused !== true;
+      })
+    : [];
   return {
     data: activeVaults,
-    isLoading: page.isLoading || statuses.isLoading,
+    isLoading: page.isLoading || (vaults.length > 0 && statuses.isLoading),
     totalRaw: page.data ? vaults.length : 0,
   };
 }
