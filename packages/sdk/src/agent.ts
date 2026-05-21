@@ -21,6 +21,8 @@ import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog } f
 import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
 import { preflightTeeSigner, readAgentMetadata, resolveAgentTokenId } from "./agent-signer.js";
 import { decodeVaultError } from "./vault-errors.js";
+import { describeOutcome } from "./outcome-verdict.js";
+import { DRAWDOWN_BREACH_PCT, MIN_RISK_POSITION_USD } from "./strategy-constants.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -38,7 +40,6 @@ const ACTION_MAP: Record<string, number> = {
   YieldFarm: 1,
   EmergencyDeleverage: 2,
 };
-const MIN_RISK_POSITION_USD = Number(process.env.MIN_RISK_POSITION_USD ?? 0.001);
 
 /**
  * GlobalContext — singletons the agent uses across every vault iteration.
@@ -767,9 +768,7 @@ export async function runMultiVaultLoop(): Promise<void> {
       for (const vaultAddr of vaults) {
         try {
           const outcome = await executeOneIterationForVault(ctx, vaultAddr, market);
-          log(`  ${vaultAddr.slice(0, 10)}... → ${outcome.status}${
-            outcome.status === "executed" ? ` (${outcome.action})` : `: ${outcome.reason ?? ""}`
-          }`);
+          log(`  ${vaultAddr.slice(0, 10)}... → ${outcome.status} — ${describeOutcome(outcome).text}`);
         } catch (err) {
           log(`  ${vaultAddr.slice(0, 10)}... → ERROR: ${err instanceof Error ? err.message : err}`);
         }
@@ -812,7 +811,7 @@ function classifyRegime(input: {
   change24h: number;
   spreadPct: number;
 }): Regime {
-  if (input.drawdownPct >= 1.5) return "drawdown_breach";
+  if (input.drawdownPct >= DRAWDOWN_BREACH_PCT) return "drawdown_breach";
   if (input.change24h <= -3) return "crash";
   if (input.change24h <= -1) return input.spreadPct >= 1 ? "down_wide" : "down_tight";
   if (input.change24h < 1) return "flat";

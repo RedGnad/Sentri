@@ -25,6 +25,7 @@ import {
   type GlobalContext,
   type IterationOutcome,
 } from "./agent.js";
+import { describeOutcome, type Verdict } from "./outcome-verdict.js";
 import {
   readVaultStateFromCache,
   readVaultAuditFromCache,
@@ -148,6 +149,18 @@ const state: ServerState = {
 let ctx: GlobalContext | null = null;
 let cycleInProgress = false;
 
+/**
+ * Augment a VaultState for API responses with a human-readable verdict derived
+ * from its last outcome — so consumers (dashboard) can show "Target reached" or
+ * "Defensive hold" instead of a bare "skipped".
+ */
+function runtimeWithVerdict(
+  s: VaultState | null,
+): (VaultState & { lastVerdict: Verdict | null }) | null {
+  if (!s) return null;
+  return { ...s, lastVerdict: s.lastOutcome ? describeOutcome(s.lastOutcome) : null };
+}
+
 function getOrInitVault(address: string): VaultState {
   const key = address.toLowerCase();
   let s = state.trackedVaults.get(key);
@@ -233,13 +246,7 @@ async function runCycle(): Promise<void> {
         const outcome = await executeOneIterationForVault(ctx, vaultAddr, market);
         v.inferenceFundingBackoffUntil = null;
         v.lastOutcome = outcome;
-        log(`  ${vaultAddr.slice(0, 10)}... → ${outcome.status}${
-          outcome.status === "executed"
-            ? ` (${outcome.action})`
-            : ":" in outcome
-            ? ` (${(outcome as { reason?: string }).reason ?? ""})`
-            : ""
-        }`);
+        log(`  ${vaultAddr.slice(0, 10)}... → ${outcome.status} — ${describeOutcome(outcome).text}`);
       } catch (err) {
         v.totalErrors++;
         const reason = err instanceof Error ? err.message : String(err);
@@ -273,9 +280,9 @@ app.use((_req, res, next) => {
 });
 
 app.get("/healthz", (_req, res) => {
-  const vaults: Record<string, VaultState> = {};
+  const vaults: Record<string, ReturnType<typeof runtimeWithVerdict>> = {};
   for (const [addr, s] of state.trackedVaults.entries()) {
-    vaults[addr] = s;
+    vaults[addr] = runtimeWithVerdict(s);
   }
   res.json({
     ok: state.agentStatus !== "error",
@@ -324,7 +331,7 @@ app.get("/vaults", (_req, res) => {
     const cache = readVaultStateFromCache(addr);
     return {
       address: addr,
-      runtime,
+      runtime: runtimeWithVerdict(runtime),
       portfolio: cache,
     };
   });
@@ -353,7 +360,7 @@ app.get("/vault/:address/state", async (req, res) => {
   }
   res.json({
     address: addr,
-    runtime,
+    runtime: runtimeWithVerdict(runtime),
     portfolio,
     source: cache ? "cache" : portfolio ? "chain-fallback" : "runtime-only",
   });

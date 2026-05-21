@@ -2,11 +2,15 @@
 
 import { useQuery } from "@tanstack/react-query";
 
+export type VerdictTone = "ok" | "info" | "waiting" | "blocked" | "error";
+
 export interface VaultRuntime {
   totalIterations: number;
   totalErrors: number;
   lastIterationAt: number | null;
   lastOutcome: { status: string; reason?: string; action?: string } | null;
+  /** Human-readable explanation of the last cycle outcome (set by the agent server). */
+  lastVerdict?: { text: string; tone: VerdictTone } | null;
 }
 
 export interface VaultPortfolio {

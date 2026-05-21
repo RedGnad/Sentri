@@ -192,6 +192,18 @@ export default function VaultOverviewPage() {
             )
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              {runtime?.lastVerdict?.text && (
+                <p
+                  className={`col-span-2 md:col-span-4 font-mono text-[11px] leading-relaxed ${
+                    runtime.lastVerdict.tone === "blocked" ||
+                    runtime.lastVerdict.tone === "error"
+                      ? "text-alert"
+                      : "text-ink"
+                  }`}
+                >
+                  {runtime.lastVerdict.text}
+                </p>
+              )}
               <Field
                 label="Last cycle"
                 value={runtime?.lastOutcome?.status ?? "—"}
