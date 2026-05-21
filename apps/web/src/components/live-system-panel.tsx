@@ -7,6 +7,25 @@ function networkLabel(chainId: number): string {
   return chainId === 16661 ? "0G Mainnet" : "0G Galileo";
 }
 
+/**
+ * Merge a fresh snapshot over the previous one, keeping the last known-good
+ * value for on-chain aggregates that can transiently come back `null` — e.g.
+ * one flaky RPC read among many makes `totalExecutions` incomplete, and the
+ * server reports `null` rather than a too-low number. Without this the panel
+ * would flash a wrong/blank figure for one poll before self-correcting.
+ */
+function mergeSnapshot(prev: LiveSnapshot, next: LiveSnapshot): LiveSnapshot {
+  return {
+    ...next,
+    protocol: {
+      ...next.protocol,
+      vaultsCount: next.protocol.vaultsCount ?? prev.protocol.vaultsCount,
+      totalTVL: next.protocol.totalTVL ?? prev.protocol.totalTVL,
+      totalExecutions: next.protocol.totalExecutions ?? prev.protocol.totalExecutions,
+    },
+  };
+}
+
 function formatCompactNumber(num: number): string {
   if (num < 1000) return num.toString();
   if (num < 1000000)
@@ -87,7 +106,7 @@ export function LiveSystemPanel({
         const res = await fetch("/api/live-snapshot", { cache: "no-store" });
         if (!res.ok) return;
         const next = (await res.json()) as LiveSnapshot;
-        if (mounted) setSnapshot(next);
+        if (mounted) setSnapshot((prev) => mergeSnapshot(prev, next));
       } catch {}
     }
 

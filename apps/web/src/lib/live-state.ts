@@ -96,6 +96,7 @@ async function probeChainAndProtocol(): Promise<{
       // Aggregate TVL + executions across all vaults (capped at 50 for sanity).
       let totalTVL = 0n;
       let totalExecutions = 0;
+      let failedLogReads = 0;
       let successfulTvlReads = 0;
       let fallbackTotalTVL = 0n;
       let successfulFallbackTvlReads = 0;
@@ -184,8 +185,14 @@ async function probeChainAndProtocol(): Promise<{
             totalTVL += r.value;
           }
         }
+        // executionLogCount is monotonic on-chain — a sum that drops between
+        // polls can only mean a read failed. If ANY read rejected, the sum is
+        // incomplete: report null (→ "read pending") rather than a wrong,
+        // too-low number. The next poll, or the client's last-good fallback,
+        // restores the real figure.
         for (const r of logResults) {
           if (r.status === "fulfilled") totalExecutions += Number(r.value);
+          else failedLogReads += 1;
         }
         const priceRaw = priceSettled[0];
         const decimalsRaw = priceSettled[1];
@@ -219,7 +226,7 @@ async function probeChainAndProtocol(): Promise<{
             activeVaultsCount === 0 || successfulDisplayTvlReads > 0
               ? (Number(tvlForDisplay) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 })
               : null,
-          totalExecutions,
+          totalExecutions: failedLogReads === 0 ? totalExecutions : null,
         },
       };
     } catch {
