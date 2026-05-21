@@ -149,6 +149,13 @@ export function useVaultAuditDetail(address: `0x${string}` | undefined, timestam
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
-    refetchInterval: (query) => (query.state.data?.reasoning ? false : 3_000),
+    // Enriched reasoning is written by the agent shortly after execution. Poll
+    // until it appears, then stop. Bounded (~10 polls ≈ 25s) so a genuinely
+    // un-indexed entry (e.g. a chain-only fallback log) does not poll forever.
+    refetchInterval: (query) => {
+      if (query.state.data?.reasoning) return false;
+      if (query.state.dataUpdateCount >= 10) return false;
+      return 2_500;
+    },
   });
 }

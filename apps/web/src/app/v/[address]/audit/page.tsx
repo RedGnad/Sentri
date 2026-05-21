@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useReadContracts } from "wagmi";
 import { Badge } from "@/components/ui/badge";
@@ -266,14 +266,27 @@ function AuditEntry({
 }) {
   const [expanded, setExpanded] = useState(false);
   const tsMs = Number(timestamp) * 1000;
-  const {
-    data: detail,
-    isLoading: detailLoading,
-    isFetching: detailFetching,
-  } = useVaultAuditDetail(
+  const { data: detail } = useVaultAuditDetail(
     expanded ? vaultAddress : undefined,
     expanded ? tsMs : null,
   );
+
+  // Reveal is a single, stable phase: from the moment the panel opens it shows
+  // one continuous "decrypting" state until the enriched reasoning arrives
+  // (the agent writes it shortly after execution and the hook polls for it).
+  // Only if it has not arrived after a grace window do we show the terminal
+  // "not indexed" message — this avoids flickering loading ↔ not-indexed while
+  // the background poll is still in flight.
+  const [revealTimedOut, setRevealTimedOut] = useState(false);
+  useEffect(() => {
+    if (!expanded) {
+      setRevealTimedOut(false);
+      return;
+    }
+    if (detail?.reasoning) return; // already resolved — no timer needed
+    const timer = setTimeout(() => setRevealTimedOut(true), 26_000);
+    return () => clearTimeout(timer);
+  }, [expanded, detail?.reasoning]);
 
   const date = new Date(tsMs);
   const dustExecution = action === 2 && isDustExecution(amountIn, amountOut);
@@ -397,9 +410,10 @@ function AuditEntry({
 
       {expanded && (
         <div className="border-t border-hairline px-5 py-5 bg-bg-sunk/40">
-          {detailLoading || (detailFetching && !detail?.reasoning) ? (
+          {!detail?.reasoning && !revealTimedOut ? (
             <p className="font-mono text-[11px] text-ink-faint">
-              Loading from agent server...
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber animate-pulse-dot mr-2 align-middle" />
+              Decrypting sealed inference — fetching the TEE-signed reasoning…
             </p>
           ) : detail && detail.reasoning ? (
             <div className="space-y-5">
