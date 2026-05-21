@@ -26,15 +26,6 @@ function mergeSnapshot(prev: LiveSnapshot, next: LiveSnapshot): LiveSnapshot {
   };
 }
 
-function formatCompactNumber(num: number): string {
-  if (num < 1000) return num.toString();
-  if (num < 1000000)
-    return `${(num / 1000).toFixed(num % 1000 === 0 ? 0 : 1)}k`;
-  if (num < 1000000000)
-    return `${(num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1)}M`;
-  return `${(num / 1000000000).toFixed(num % 1000000000 === 0 ? 0 : 1)}B`;
-}
-
 function formatRelative(timestampMs: number | null): string {
   if (!timestampMs) return "—";
   const ageSec = Math.floor((Date.now() - timestampMs) / 1000);
@@ -158,7 +149,7 @@ export function LiveSystemPanel({
       key: "Agent",
       value:
         snapshot.agent.status === "ready"
-          ? `${formatCompactNumber(snapshot.agent.cycles ?? 0)} cycles · ${formatRelative(snapshot.agent.lastCycleAt)}`
+          ? `Active · last cycle ${formatRelative(snapshot.agent.lastCycleAt)}`
           : snapshot.agent.status === "initializing"
             ? "Initializing"
             : snapshot.agent.status === "error"

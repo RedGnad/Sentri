@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatUSDC, shortenAddress, bpsToPercent } from "@/lib/utils";
+import { formatUSDC, shortenAddress, bpsToPercent, formatRelative } from "@/lib/utils";
 import {
   useParsedVaultData,
   useUsdcBalance,
@@ -205,12 +205,12 @@ export default function VaultOverviewPage() {
                 </p>
               )}
               <Field
-                label="Last cycle"
+                label="Status"
                 value={runtime?.lastOutcome?.status ?? "—"}
               />
               <Field
-                label="Cycles"
-                value={String(runtime?.totalIterations ?? 0)}
+                label="Last cycle"
+                value={formatRelative(runtime?.lastIterationAt)}
                 tabular
               />
               <Field

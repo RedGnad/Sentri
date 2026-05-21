@@ -25,3 +25,13 @@ export function shortenAddress(address: string): string {
 export function bpsToPercent(bps: number): string {
   return (bps / 100).toFixed(1);
 }
+
+/** Compact "time ago" label for a millisecond timestamp (e.g. "40s ago"). */
+export function formatRelative(timestampMs: number | null | undefined): string {
+  if (!timestampMs) return "—";
+  const ageSec = Math.floor((Date.now() - timestampMs) / 1000);
+  if (ageSec < 60) return `${ageSec}s ago`;
+  if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m ago`;
+  if (ageSec < 86400) return `${Math.floor(ageSec / 3600)}h ago`;
+  return `${Math.floor(ageSec / 86400)}d ago`;
+}
