@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatUSDC, shortenAddress, bpsToPercent, formatRelative } from "@/lib/utils";
+import { formatUSDC, shortenAddress, bpsToPercent } from "@/lib/utils";
+import { RelativeTime } from "@/components/relative-time";
 import {
   useParsedVaultData,
   useUsdcBalance,
@@ -210,7 +211,7 @@ export default function VaultOverviewPage() {
               />
               <Field
                 label="Last cycle"
-                value={formatRelative(runtime?.lastIterationAt)}
+                value={<RelativeTime timestampMs={runtime?.lastIterationAt} />}
                 tabular
               />
               <Field
@@ -513,7 +514,7 @@ function Field({
   valueClass = "text-ink",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   tabular?: boolean;
   valueClass?: string;
 }) {

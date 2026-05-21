@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { LiveSnapshot } from "@/lib/live-state";
+import { RelativeTime } from "@/components/relative-time";
 
 function networkLabel(chainId: number): string {
   return chainId === 16661 ? "0G Mainnet" : "0G Galileo";
@@ -24,15 +25,6 @@ function mergeSnapshot(prev: LiveSnapshot, next: LiveSnapshot): LiveSnapshot {
       totalExecutions: next.protocol.totalExecutions ?? prev.protocol.totalExecutions,
     },
   };
-}
-
-function formatRelative(timestampMs: number | null): string {
-  if (!timestampMs) return "—";
-  const ageSec = Math.floor((Date.now() - timestampMs) / 1000);
-  if (ageSec < 60) return `${ageSec}s ago`;
-  if (ageSec < 3600) return `${Math.floor(ageSec / 60)}m ago`;
-  if (ageSec < 86400) return `${Math.floor(ageSec / 3600)}h ago`;
-  return `${Math.floor(ageSec / 86400)}d ago`;
 }
 
 function dotClass(state: "ok" | "warn" | "off"): string {
@@ -64,7 +56,7 @@ function ProtocolRow({
   state,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   state: "ok" | "warn" | "off";
 }) {
   return (
@@ -148,13 +140,18 @@ export function LiveSystemPanel({
     {
       key: "Agent",
       value:
-        snapshot.agent.status === "ready"
-          ? `Active · last cycle ${formatRelative(snapshot.agent.lastCycleAt)}`
-          : snapshot.agent.status === "initializing"
-            ? "Initializing"
-            : snapshot.agent.status === "error"
-              ? "Setup error"
-              : "Unreachable",
+        snapshot.agent.status === "ready" ? (
+          <>
+            Active · last cycle{" "}
+            <RelativeTime timestampMs={snapshot.agent.lastCycleAt} />
+          </>
+        ) : snapshot.agent.status === "initializing" ? (
+          "Initializing"
+        ) : snapshot.agent.status === "error" ? (
+          "Setup error"
+        ) : (
+          "Unreachable"
+        ),
       state: a,
     },
     {
