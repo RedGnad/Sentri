@@ -7,6 +7,7 @@ import {
   PRICE_FEED_ABI,
   ERC20_ABI,
   VAULT_FACTORY_ABI,
+  AGENT_INFT_ABI,
   AGENT,
 } from "./constants.js";
 import {
@@ -18,6 +19,8 @@ import {
 } from "./inference.js";
 import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog } from "./storage.js";
 import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
+import { preflightTeeSigner, readAgentMetadata, resolveAgentTokenId } from "./agent-signer.js";
+import { decodeVaultError } from "./vault-errors.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -42,13 +45,68 @@ const MIN_RISK_POSITION_USD = Number(process.env.MIN_RISK_POSITION_USD ?? 0.001)
  * The factory is the source of truth for which vaults exist; the priceFeed
  * is shared across all vaults; the wallet, broker, and storage are global.
  */
+/**
+ * SignerHealth — whether the 0G provider's TEE signer is bound to the agent's
+ * active AgentINFT. When `ok` is false, executeStrategy can only revert with
+ * InvalidTEESignature, so auto-execution is gated off (no inference, no tx).
+ */
+export interface SignerHealth {
+  /** teeSignerAddress recorded on-chain in the AgentINFT (display; "" if unresolved). */
+  expectedSigner: string;
+  /** TEE signer of the 0G provider the runner selected. */
+  providerSigner: string;
+  /** isActiveAgentWithSigner(agent, providerSigner) — the on-chain gate. */
+  ok: boolean;
+  /** Timestamp of the last evaluation (0 = never). */
+  checkedAt: number;
+}
+
 export interface GlobalContext {
   wallet: ethers.Wallet;
   provider: ethers.JsonRpcProvider;
   factory: ethers.Contract;
   priceFeed: ethers.Contract;
+  /** AgentINFT contract (read-only handle) — used to preflight the TEE-signer binding. */
+  agentNFT: ethers.Contract;
+  agentNFTAddress: string;
+  /** Agent's INFT token id, or null if it could not be resolved (informational only). */
+  agentTokenId: bigint | null;
   walletAddress: string;
   providerInfo: { address: string; model: string; endpoint: string; verifiability: string; teeSignerAddress: string };
+  /** Signer-health gate state. Re-evaluated at startup and once per cycle. */
+  signerHealth: SignerHealth;
+}
+
+/**
+ * Re-evaluate the signer-health gate: is the selected 0G provider's TEE signer
+ * bound to the agent's active AgentINFT? Mutates `ctx.signerHealth` and returns
+ * the verdict. A transient RPC failure is treated as BLOCKED (fail-closed).
+ *
+ * Called once per cycle so the runner self-heals (resumes auto-execution) on
+ * the next cycle once the binding is reconciled on-chain — no restart needed.
+ */
+export async function refreshSignerHealth(ctx: GlobalContext): Promise<boolean> {
+  const providerSigner = ctx.providerInfo.teeSignerAddress;
+  const isFirstCheck = ctx.signerHealth.checkedAt === 0;
+  const prev = ctx.signerHealth.ok;
+
+  let ok = false;
+  try {
+    ok = await ctx.agentNFT.isActiveAgentWithSigner(ctx.walletAddress, providerSigner);
+  } catch (err) {
+    log(`Signer health check failed (treating as BLOCKED for safety): ${err instanceof Error ? err.message : err}`);
+    ok = false;
+  }
+
+  ctx.signerHealth = { ...ctx.signerHealth, providerSigner, ok, checkedAt: Date.now() };
+
+  if (!isFirstCheck && ok && !prev) {
+    log("Signer health RECOVERED — TEE signer reconciled on-chain. Auto-execution re-enabled.");
+  }
+  if (!isFirstCheck && !ok && prev) {
+    log("Signer health DEGRADED — TEE signer no longer bound to the AgentINFT. Auto-execution paused.");
+  }
+  return ok;
 }
 
 /**
@@ -93,11 +151,46 @@ export async function setupGlobalContext(): Promise<GlobalContext> {
   const factory = new ethers.Contract(factoryAddress, VAULT_FACTORY_ABI, wallet);
   const priceFeed = new ethers.Contract(priceFeedAddress, PRICE_FEED_ABI, wallet);
 
+  // AgentINFT identity — the factory `agentNFT` immutable is the source of
+  // truth. Used to preflight the on-chain InvalidTEESignature guard before
+  // every executeStrategy. The token id is resolved via the factory's
+  // `agentTokenId()` getter when available, falling back to an AgentINFT scan
+  // for factory deployments that predate that getter; it is informational only
+  // (the preflight gate keys on the agent address, not a token id).
+  const agentNFTAddress: string = await factory.agentNFT();
+  const agentNFT = new ethers.Contract(agentNFTAddress, AGENT_INFT_ABI, provider);
+  let agentTokenId: bigint | null = null;
+  try {
+    agentTokenId = (await factory.agentTokenId()) as bigint;
+  } catch {
+    try {
+      agentTokenId = await resolveAgentTokenId(agentNFT, wallet.address);
+    } catch (err) {
+      log(`AgentINFT token id resolution skipped: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // Expected on-chain TEE signer — the provider-selection target. Resolving it
+  // BEFORE provider selection lets the runner pin the 0G provider whose signer
+  // the AgentINFT recognises, instead of whatever provider is newest (0G's
+  // registry changes over time, which silently breaks the on-chain binding).
+  // An explicit SENTRI_EXPECTED_TEE_SIGNER env wins over the on-chain read.
+  let expectedTeeSigner = process.env.SENTRI_EXPECTED_TEE_SIGNER?.trim() ?? "";
+  if (!expectedTeeSigner && agentTokenId !== null) {
+    try {
+      const meta = await readAgentMetadata(agentNFT, agentTokenId);
+      expectedTeeSigner = meta.teeSignerAddress;
+    } catch (err) {
+      log(`Expected TEE signer read skipped: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
   log("Initializing 0G Sealed Inference broker...");
   await initInference(privateKey);
 
   log("Selecting inference provider...");
-  const providerInfo = await selectProvider();
+  if (expectedTeeSigner) log(`Targeting expected on-chain TEE signer: ${expectedTeeSigner}`);
+  const providerInfo = await selectProvider(expectedTeeSigner || undefined);
   log(
     `Provider: ${providerInfo.address} | Model: ${providerInfo.model} | ` +
       `Verifiability: ${providerInfo.verifiability} | TEE signer: ${providerInfo.teeSignerAddress}`,
@@ -111,8 +204,42 @@ export async function setupGlobalContext(): Promise<GlobalContext> {
 
   log(`Agent ready. Wallet: ${wallet.address}`);
   log(`Factory: ${factoryAddress}`);
+  log(`AgentINFT: ${agentNFTAddress} | token #${agentTokenId ?? "unknown"}`);
 
-  return { wallet, provider, factory, priceFeed, walletAddress: wallet.address, providerInfo };
+  const ctx: GlobalContext = {
+    wallet,
+    provider,
+    factory,
+    priceFeed,
+    agentNFT,
+    agentNFTAddress,
+    agentTokenId,
+    walletAddress: wallet.address,
+    providerInfo,
+    signerHealth: {
+      expectedSigner: expectedTeeSigner,
+      providerSigner: providerInfo.teeSignerAddress,
+      ok: false,
+      checkedAt: 0,
+    },
+  };
+
+  // Hard signer-health gate (P2). Evaluate the on-chain InvalidTEESignature
+  // binding at boot: if the selected provider's TEE signer is not bound to the
+  // agent's active AgentINFT, auto-execution stays disabled until reconciled.
+  const healthy = await refreshSignerHealth(ctx);
+  if (healthy) {
+    log(`Signer health OK — provider TEE signer is bound to the active AgentINFT.`);
+  } else {
+    log("BLOCKED_SIGNER_HEALTH");
+    log(`  Expected on-chain signer: ${ctx.signerHealth.expectedSigner || "(unresolved)"}`);
+    log(`  Current provider signer:  ${ctx.signerHealth.providerSigner}`);
+    log("  Status: BLOCKED — auto-execution disabled (TEE signer mismatch).");
+    log("  Vault creation and deposits are unaffected. Funds are safe.");
+    log("  Operator action required — see docs/operator-signer-mismatch.md.");
+  }
+
+  return ctx;
 }
 
 // ── Vault discovery ──────────────────────────────────────────────────────
@@ -279,6 +406,52 @@ export async function executeOneIterationForVault(
     `TEE verified: ${inference.verified} | ChatID: ${inference.chatID} | ` +
       `Signer: ${inference.teeSignerAddress}`,
   );
+
+  // Preflight the vault's InvalidTEESignature guard (TreasuryVault._verifyTEE):
+  // executeStrategy reverts with InvalidTEESignature (selector 0x4c0f9589) when
+  // the recovered TEE signer is not bound to the agent's active AgentINFT.
+  // Mirror that check read-only here — before estimateGas / executeStrategy —
+  // so a signer mismatch becomes a clean operator-actionable skip instead of an
+  // opaque "execution reverted (unknown custom error)". Nothing is sent on
+  // chain; funds are never at risk.
+  const preflight = await preflightTeeSigner(
+    ctx.agentNFT,
+    ctx.walletAddress,
+    ctx.agentNFTAddress,
+    ctx.agentTokenId,
+    inference.recoveredSignerAddress,
+  );
+  if (!preflight.ok) {
+    log("SKIPPED_TEE_SIGNER_MISMATCH");
+    log(`  Recovered signer:        ${preflight.recoveredSigner}`);
+    log(`  Expected/onchain signer: ${preflight.expectedSigner}`);
+    log(`  Agent address:           ${preflight.agentAddress}`);
+    log(`  Agent token id:          ${preflight.agentTokenId}`);
+    log(`  Vault:                   ${vaultAddress}`);
+    log("  Funds safe. Operator action required.");
+    log(
+      "Execution blocked: recovered TEE signer is not bound to the active AgentINFT. " +
+        "Funds are safe.",
+    );
+    appendRejectionLog(vaultAddress, {
+      timestamp: Date.now(),
+      type: "tee-signer-mismatch",
+      reason:
+        "Execution blocked: recovered TEE signer is not bound to the active AgentINFT. " +
+        `Recovered ${preflight.recoveredSigner}, AgentINFT expects ${preflight.expectedSigner}. ` +
+        "Funds are safe — operator must reconcile the runner/provider config or rotate the " +
+        "AgentINFT signer (see docs/operator-signer-mismatch.md).",
+      errorCode: "InvalidTEESignature",
+      action: recommendation.recommendedAction,
+      vaultAddress,
+    });
+    return {
+      status: "skipped",
+      reason:
+        "TEE signer not bound to active AgentINFT — operator action required " +
+        "(SKIPPED_TEE_SIGNER_MISMATCH)",
+    };
+  }
 
   let decision: AgentDecision;
   try {
@@ -475,9 +648,10 @@ export async function executeOneIterationForVault(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const COOLDOWN = "0xa22b745e";
-    const ALLOCATION = "0xc630a00d";
-    const DRAWDOWN = "0x4f3a5fbf";
+    // Custom-error selectors = keccak256("Name()")[:4] (verified via ethers.id).
+    const COOLDOWN = "0xa22b745e";    // CooldownNotElapsed()
+    const ALLOCATION = "0x74a5d1f5";  // AllocationExceeded()
+    const DRAWDOWN = "0x897b3413";    // DrawdownBreached()
     const STALE = "PriceStale";
     const mkRejection = (reason: string, errorCode: string) => {
       appendRejectionLog(vaultAddress, {
@@ -509,7 +683,28 @@ export async function executeOneIterationForVault(
       mkRejection("On-chain revert: vault killed", "VaultKilled");
       return { status: "killed", reason: "vault killed mid-iteration" };
     }
-    throw err; // re-throw unknown errors so the server logs them
+
+    // Fallback: decode any other Sentri custom-error selector so an opaque
+    // "execution reverted (unknown custom error)" becomes a named, actionable
+    // outcome. This also catches InvalidTEESignature (0x4c0f9589) in the rare
+    // case the AgentINFT binding changed between preflight and execution.
+    const decoded = decodeVaultError(err);
+    if (decoded) {
+      log(`On-chain revert decoded: ${decoded.name} (${decoded.selector}) — ${decoded.message}`);
+      mkRejection(`On-chain revert: ${decoded.name} — ${decoded.message}`, decoded.name);
+      if (decoded.name === "InvalidTEESignature") {
+        log(
+          "Execution blocked: recovered TEE signer is not bound to the active AgentINFT. " +
+            "Funds are safe. Operator action required (see docs/operator-signer-mismatch.md).",
+        );
+      }
+      if (decoded.name === "VaultKilled") {
+        return { status: "killed", reason: "vault killed mid-iteration" };
+      }
+      return { status: "skipped", reason: `on-chain revert: ${decoded.name}` };
+    }
+
+    throw err; // re-throw genuinely unknown errors so the server logs them
   }
 }
 
@@ -550,6 +745,21 @@ export async function runMultiVaultLoop(): Promise<void> {
 
   while (true) {
     try {
+      // Hard signer-health gate (P2): skip the whole cycle — no price push, no
+      // inference, no executeStrategy — while the provider TEE signer is not
+      // bound to the AgentINFT. Re-evaluated each cycle so the loop self-heals.
+      if (!(await refreshSignerHealth(ctx))) {
+        log(
+          `BLOCKED_SIGNER_HEALTH — auto-execution disabled (TEE signer mismatch). ` +
+            `expected=${ctx.signerHealth.expectedSigner || "(unresolved)"} ` +
+            `provider=${ctx.signerHealth.providerSigner}. Funds are safe; ` +
+            `see docs/operator-signer-mismatch.md.`,
+        );
+        log(`Sleeping ${AGENT.cycleIntervalMs / 1000}s until next cycle...\n`);
+        await new Promise((r) => setTimeout(r, AGENT.cycleIntervalMs));
+        continue;
+      }
+
       const market = await pushPrice(ctx);
       const vaults = await discoverVaults(ctx);
       log(`Cycle: ${vaults.length} vault(s) tracked`);

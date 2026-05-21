@@ -11,7 +11,9 @@
     "agent": "tsx src/cli.ts",
     "server": "tsx src/server.ts",
     "mainnet:demo": "tsx src/mainnet-demo.ts",
-    "setup-broker": "tsx src/setup-broker.ts"
+    "setup-broker": "tsx src/setup-broker.ts",
+    "check-signer": "tsx src/check-agent-signer.ts",
+    "test": "node --import tsx --test src/*.test.ts"
   },
   "dependencies": {
     "@0glabs/0g-serving-broker": "0.7.4",

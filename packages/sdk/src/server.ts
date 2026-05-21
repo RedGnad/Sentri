@@ -20,6 +20,7 @@ import {
   discoverVaults,
   pushPrice,
   executeOneIterationForVault,
+  refreshSignerHealth,
   log,
   type GlobalContext,
   type IterationOutcome,
@@ -182,6 +183,25 @@ async function runCycle(): Promise<void> {
   cycleInProgress = true;
   state.totalCycles++;
 
+  // Hard signer-health gate (P2). If the selected 0G provider's TEE signer is
+  // not bound to the agent's active AgentINFT, executeStrategy can only revert
+  // with InvalidTEESignature — so skip the whole cycle: no Pyth pull, no price
+  // push, no inference, no executeStrategy. Vault creation and deposits are
+  // unaffected; funds are safe. Re-evaluated every cycle so the runner resumes
+  // automatically once the binding is reconciled on-chain.
+  const signerHealthy = await refreshSignerHealth(ctx);
+  if (!signerHealthy) {
+    log(
+      "[server] BLOCKED_SIGNER_HEALTH — auto-execution disabled (TEE signer mismatch). " +
+        `expected=${ctx.signerHealth.expectedSigner || "(unresolved)"} ` +
+        `provider=${ctx.signerHealth.providerSigner}. ` +
+        "Funds are safe; see docs/operator-signer-mismatch.md.",
+    );
+    state.lastCycleAt = Date.now();
+    cycleInProgress = false;
+    return;
+  }
+
   // Pyth on-chain pull (if PYTH_ONCHAIN_ADDRESS is configured): submit the
   // latest 0G/USD VAA on-chain so any reader can call getPriceNoOlderThan
   // trustlessly without keeper dependency. Non-blocking — failure does not
@@ -275,6 +295,18 @@ app.get("/healthz", (_req, res) => {
       model: ctx?.providerInfo?.model ?? null,
       factoryAddress: ctx?.factory.target ?? null,
     },
+    // Signer-health gate: when ok=false, auto-execution is disabled (TEE signer
+    // not bound to the active AgentINFT). Vault creation and deposits are
+    // unaffected. See docs/operator-signer-mismatch.md.
+    autoExecute: ctx ? ctx.signerHealth.ok : false,
+    signerHealth: ctx
+      ? {
+          ok: ctx.signerHealth.ok,
+          expectedSigner: ctx.signerHealth.expectedSigner || null,
+          providerSigner: ctx.signerHealth.providerSigner,
+          checkedAt: ctx.signerHealth.checkedAt || null,
+        }
+      : null,
     uptimeSec: Math.round((Date.now() - state.startedAt) / 1000),
     trackedVaultCount: state.trackedVaults.size,
     vaults,

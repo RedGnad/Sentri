@@ -547,7 +547,7 @@ export function findClosestVaultAudit(
 
 export interface RejectionEntry {
   timestamp: number;
-  type: "defensive-override" | "onchain-revert" | "agent-sizing";
+  type: "defensive-override" | "onchain-revert" | "agent-sizing" | "tee-signer-mismatch";
   reason: string;
   errorCode?: string;
   action?: string;

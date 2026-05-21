@@ -79,7 +79,7 @@ export interface VaultAuditEntry {
 
 export interface VaultRejectionEntry {
   timestamp: number;
-  type: "defensive-override" | "onchain-revert" | "agent-sizing";
+  type: "defensive-override" | "onchain-revert" | "agent-sizing" | "tee-signer-mismatch";
   reason: string;
   errorCode?: string;
   action?: string;

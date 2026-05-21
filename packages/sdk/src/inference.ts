@@ -60,10 +60,17 @@ export function getBroker(): ZGComputeNetworkBroker {
 }
 
 /**
- * List available inference services and pick the first chatbot provider.
- * Caches the provider address for subsequent calls.
+ * Select an inference provider and cache it for subsequent calls.
+ *
+ * @param preferredTeeSigner When set, the provider whose effective TEE signer
+ *        equals this address is pinned. This keeps the runner bound to the
+ *        signer the AgentINFT was minted for: 0G's provider registry changes
+ *        over time, and a recency-based pick silently breaks the on-chain
+ *        InvalidTEESignature binding the moment a newer provider appears. When
+ *        no provider matches, the newest is used and the caller's signer-health
+ *        gate blocks auto-execution.
  */
-export async function selectProvider(): Promise<ProviderInfo> {
+export async function selectProvider(preferredTeeSigner?: string): Promise<ProviderInfo> {
   const broker = getBroker();
   const services = await broker.inference.listService();
 
@@ -90,21 +97,50 @@ export async function selectProvider(): Promise<ProviderInfo> {
     throw new Error("No acknowledged verifiable chatbot provider available; refusing to run Sentri strategy.");
   }
 
-  const service = candidates[0];
-  const { endpoint, model } = await broker.inference.getServiceMetadata(service.provider);
-  const additionalInfo = JSON.parse(service.additionalInfo) as Record<string, unknown>;
-  const teeSignerAddress = resolveTeeSignerAddress(service.teeSignerAddress, additionalInfo);
-  if (!teeSignerAddress || teeSignerAddress === ethers.ZeroAddress) {
-    throw new Error(`Provider ${service.provider} resolved to an empty TEE signer.`);
+  // Resolve every candidate's effective TEE signer so a provider can be pinned
+  // by signer rather than by recency.
+  const resolved = candidates
+    .map((service) => {
+      const additionalInfo = JSON.parse(service.additionalInfo) as Record<string, unknown>;
+      const teeSignerAddress = resolveTeeSignerAddress(service.teeSignerAddress, additionalInfo);
+      return { service, additionalInfo, teeSignerAddress };
+    })
+    .filter((c) => c.teeSignerAddress && c.teeSignerAddress !== ethers.ZeroAddress);
+
+  if (resolved.length === 0) {
+    throw new Error("No verifiable chatbot provider resolved to a usable TEE signer.");
   }
 
+  let chosen = resolved[0]; // newest acknowledged verifiable provider (default)
+  if (preferredTeeSigner) {
+    const match = resolved.find(
+      (c) => c.teeSignerAddress.toLowerCase() === preferredTeeSigner.toLowerCase(),
+    );
+    if (match) {
+      chosen = match;
+      console.log(
+        `Pinned 0G provider ${chosen.service.provider} — its TEE signer ${chosen.teeSignerAddress} ` +
+          `matches the expected on-chain signer.`,
+      );
+    } else {
+      console.warn(
+        `No 0G provider currently exposes the expected on-chain TEE signer ${preferredTeeSigner}. ` +
+          `Falling back to newest provider ${resolved[0].service.provider} ` +
+          `(signer ${resolved[0].teeSignerAddress}). The signer-health gate will block ` +
+          `auto-execution until reconciled.`,
+      );
+    }
+  }
+
+  const { endpoint, model } = await broker.inference.getServiceMetadata(chosen.service.provider);
+
   _providerInfo = {
-    address: service.provider,
+    address: chosen.service.provider,
     model,
     endpoint,
-    verifiability: service.verifiability,
-    teeSignerAddress,
-    additionalInfo,
+    verifiability: chosen.service.verifiability,
+    teeSignerAddress: chosen.teeSignerAddress,
+    additionalInfo: chosen.additionalInfo,
   };
 
   return _providerInfo;

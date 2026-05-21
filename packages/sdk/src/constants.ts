@@ -124,6 +124,7 @@ export const VAULT_FACTORY_ABI = [
   "function implementation() external view returns (address)",
   "function agent() external view returns (address)",
   "function agentNFT() external view returns (address)",
+  "function agentTokenId() external view returns (uint256)",
   "function router() external view returns (address)",
   "function priceFeed() external view returns (address)",
   "function base() external view returns (address)",
@@ -160,6 +161,24 @@ export const TREASURY_VAULT_ABI = [
   "function owner() external view returns (address)",
   "function pendingOwner() external view returns (address)",
   "function lastExecutionTime() external view returns (uint256)",
+] as const;
+
+// AgentINFT ABI — minimal subset the agent runner needs to preflight the
+// on-chain TEE-signer binding before calling executeStrategy.
+//
+// Uses `agentMetadata` (the public mapping getter) rather than the v2-only
+// `intelligentDataOf` convenience view: `agentMetadata` is present on every
+// deployed AgentINFT version, whereas `intelligentDataOf` reverts on the
+// pre-v2 Galileo deployment. `ownerOf` / `totalSupply` let the runner resolve
+// the agent's token id directly from the AgentINFT when the deployed
+// VaultFactory predates the `agentTokenId()` getter.
+export const AGENT_INFT_ABI = [
+  "function isActiveAgent(address agent) external view returns (bool)",
+  "function isActiveAgentWithSigner(address agent, address teeSigner) external view returns (bool)",
+  "function isAuthorizedForVault(address agent, address vault) external view returns (bool)",
+  "function ownerOf(uint256 tokenId) external view returns (address)",
+  "function totalSupply() external view returns (uint256)",
+  "function agentMetadata(uint256 tokenId) external view returns (bytes32 enclaveHash, bytes32 attestationHash, string provider, address teeSignerAddress, uint256 issuedAt, bool revoked, bytes32 metadataRootHash)",
 ] as const;
 
 export const PRICE_FEED_ABI = [

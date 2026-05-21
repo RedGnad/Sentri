@@ -611,6 +611,7 @@ const REJECTION_TYPE_LABEL: Record<string, string> = {
   "defensive-override": "Defensive override",
   "onchain-revert": "On-chain revert",
   "agent-sizing": "Agent sizing",
+  "tee-signer-mismatch": "TEE signer mismatch",
 };
 
 function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
