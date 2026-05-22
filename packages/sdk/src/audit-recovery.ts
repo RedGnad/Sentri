@@ -74,6 +74,15 @@ function mapInferenceOntoEntry(
   };
 }
 
+function unwrapAuditBlob(blob: unknown): InferenceLike | null {
+  if (!blob || typeof blob !== "object") return null;
+  const envelope = blob as InferenceLike;
+  if (envelope.entry && typeof envelope.entry === "object") {
+    return { ...envelope, ...(envelope.entry as InferenceLike) };
+  }
+  return envelope;
+}
+
 export async function recoverAuditEntry(
   vaultAddress: string,
   entry: ChainAuditEntry,
@@ -87,8 +96,9 @@ export async function recoverAuditEntry(
       deps.findByVaultLog(vaultAddress, entry.logIndex);
     if (idxRec?.rootHash) {
       const blob = await deps.downloadBlob(idxRec.rootHash);
-      if (blob && typeof blob === "object") {
-        return mapInferenceOntoEntry(entry, blob as InferenceLike, "index-recovered", {
+      const inference = unwrapAuditBlob(blob);
+      if (inference) {
+        return mapInferenceOntoEntry(entry, inference, "index-recovered", {
           rootHash: idxRec.rootHash,
           txHash: idxRec.storageTxHash,
         });

@@ -67,6 +67,40 @@ test("audit recovery enriches a chain entry from durable rootHash + 0G blob", as
   assert.equal(recovered.storageTxHash, "0xstorage");
 });
 
+test("audit recovery unwraps sentri.audit.v1 storage envelopes", async () => {
+  const recovered = await recoverAuditEntry("0xvault", entry, deps({
+    findByIntentHash: (intentHash) => intentHash === "0xintent"
+      ? {
+          vaultAddress: "0xvault",
+          txHash: "0xtx",
+          logIndex: 2,
+          intentHash,
+          responseHash: "0xresponse",
+          rootHash: "0xroot",
+          action: "Rebalance",
+          createdAt: 1,
+          updatedAt: 2,
+        }
+      : null,
+    downloadBlob: async (rootHash) => rootHash === "0xroot"
+      ? {
+          schema: "sentri.audit.v1",
+          vault: "0xvault",
+          entry: {
+            reasoning: "TEE reasoning inside the durable envelope",
+            decision: "Rebalance",
+            confidence: 88,
+          },
+        }
+      : null,
+  })) as Record<string, unknown>;
+
+  assert.equal(recovered.source, "index-recovered");
+  assert.equal(recovered.reasoning, "TEE reasoning inside the durable envelope");
+  assert.equal(recovered.decision, "Rebalance");
+  assert.equal(recovered.storageRootHash, "0xroot");
+});
+
 test("audit recovery falls back to the chain-only entry when no record resolves", async () => {
   const recovered = await recoverAuditEntry("0xvault", entry, deps());
   assert.equal(recovered, entry);
