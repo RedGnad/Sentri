@@ -26,6 +26,36 @@ interface SourceResult {
   change24h?: number;
 }
 
+interface SourceFetchLog {
+  source: string;
+  endpoint: string;
+  statusCode?: number;
+  durationMs: number;
+  attempt: number;
+  retryAfter?: string | null;
+  bodyPreview?: string;
+  ok: boolean;
+  error?: string;
+}
+
+export interface MarketDataHealth {
+  ok: boolean;
+  asset: string;
+  lastGoodMarketAt: number | null;
+  lastSourceCount: number;
+  requiredSourceCount: number;
+  failedSources: string[];
+  consecutiveFailures: number;
+  cacheAgeSec: number | null;
+}
+
+export class MarketDataUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MarketDataUnavailableError";
+  }
+}
+
 const FETCH_TIMEOUT_MS = 3_500;
 const MIN_QUORUM = 2;
 const MARKET_ASSET = (process.env.MARKET_ASSET ?? process.env.SENTRI_MARKET_ASSET ?? "ETH").toUpperCase();
@@ -40,9 +70,17 @@ const ZERO_G_MAINNET_W0G =
   process.env.ZERO_G_MAINNET_W0G_ADDRESS ?? "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c";
 const ZERO_G_MAINNET_USDCE =
   process.env.ZERO_G_MAINNET_USDCE_ADDRESS ?? "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E";
+const MARKET_SNAPSHOT_CACHE_TTL_MS = Math.min(
+  Math.max(0, Number(process.env.MARKET_SNAPSHOT_CACHE_TTL_MS ?? "45000")),
+  60_000,
+);
+const PYTH_RETRY_DELAY_MS = Number(process.env.PYTH_RETRY_DELAY_MS ?? "250");
+const PYTH_BACKOFF_MS = Number(process.env.PYTH_BACKOFF_MS ?? "10000");
+const COINGECKO_BACKOFF_MS = Number(process.env.COINGECKO_BACKOFF_MS ?? "90000");
 
 // Pyth Network is the official 0G mainnet oracle (day-1 partnership, 2000+ feeds).
-// Hermes is the public price-update endpoint; pull model with no rate limit.
+// Hermes is the public price-update endpoint; treat it as rate-limited and cache
+// the cycle snapshot so multiple vaults do not fan out duplicate requests.
 // Feed id `Crypto.0G/USD` is the canonical 0G token price (publishers include
 // Cboe, Binance, OKX, Jane Street, etc. — fully decentralised).
 const PYTH_HERMES_BASE = process.env.PYTH_HERMES_BASE ?? "https://hermes.pyth.network";
@@ -60,6 +98,7 @@ const PYTH_FEED_W0G_USD =
   process.env.PYTH_FEED_W0G_USD ??
   "fa9e8d4591613476ad0961732475dc08969d248faca270cc6c47efe009ea3070";
 const PYTH_MAX_AGE_S = Number(process.env.PYTH_MAX_AGE_S ?? "60");
+const PYTH_UPDATE_CACHE_MS = Math.min(5_000, PYTH_MAX_AGE_S * 1000);
 
 const JAINE_POOL_ABI = [
   "function token0() view returns (address)",
@@ -69,12 +108,181 @@ const JAINE_POOL_ABI = [
 
 const ERC20_DECIMALS_ABI = ["function decimals() view returns (uint8)"] as const;
 
+let cachedSnapshot: { asset: string; snapshot: MarketSnapshot } | null = null;
+let lastGoodMarketAt: number | null = null;
+let lastSourceCount = 0;
+let lastFailedSources: string[] = [];
+let consecutiveFailures = 0;
+let pythUpdateCache: { fetchedAt: number; data: PythUpdateResponse } | null = null;
+const sourceBackoff = new Map<string, { until: number; reason: string }>();
+
+interface PythUpdateResponse {
+  binary?: { data: string[] };
+  parsed?: Array<{
+    price: { price: string; expo: number; conf: string; publish_time: number };
+  }>;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function bodyPreview(text: string): string {
+  return text.replace(/\s+/g, " ").slice(0, 180);
+}
+
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = Date.parse(header);
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : null;
+}
+
+function setBackoff(source: string, ms: number, reason: string): void {
+  sourceBackoff.set(source, { until: Date.now() + ms, reason });
+}
+
+function sourceBackoffError(source: string): Error | null {
+  const backoff = sourceBackoff.get(source);
+  if (!backoff) return null;
+  const remainingMs = backoff.until - Date.now();
+  if (remainingMs <= 0) {
+    sourceBackoff.delete(source);
+    return null;
+  }
+  return new Error(`${source} in backoff for ${Math.ceil(remainingMs / 1000)}s: ${backoff.reason}`);
+}
+
+function logSourceFetch(event: SourceFetchLog): void {
+  const retryAfter = event.retryAfter ? ` retryAfter=${JSON.stringify(event.retryAfter)}` : "";
+  const status = event.statusCode === undefined ? "n/a" : String(event.statusCode);
+  const body = event.bodyPreview ? ` body=${JSON.stringify(event.bodyPreview)}` : "";
+  const error = event.error ? ` error=${JSON.stringify(event.error)}` : "";
+  console.log(
+    `[market] source=${event.source} endpoint=${JSON.stringify(event.endpoint)} ` +
+      `status=${status} durationMs=${event.durationMs} attempt=${event.attempt}${retryAfter} ok=${event.ok}${body}${error}`,
+  );
+}
+
+function markLogged(error: Error): Error {
+  (error as Error & { marketLogged?: boolean }).marketLogged = true;
+  return error;
+}
+
+function wasLogged(err: unknown): boolean {
+  return Boolean((err as { marketLogged?: boolean } | null)?.marketLogged);
+}
+
+async function fetchJson<T>(
+  source: string,
+  endpoint: string,
+  options: { retries?: number; retryStatuses?: number[]; backoffOn429?: boolean; backoffOn503?: boolean } = {},
+): Promise<T> {
+  const backoffErr = sourceBackoffError(source);
+  if (backoffErr) throw backoffErr;
+
+  const maxAttempts = 1 + (options.retries ?? 0);
+  const retryStatuses = new Set(options.retryStatuses ?? []);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const startedAt = Date.now();
+    try {
+      const res = await fetch(endpoint, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      const retryAfter = res.headers.get("retry-after");
+      const text = await res.text();
+      const durationMs = Date.now() - startedAt;
+      if (!res.ok) {
+        logSourceFetch({
+          source,
+          endpoint,
+          statusCode: res.status,
+          durationMs,
+          attempt,
+          retryAfter,
+          ok: false,
+          bodyPreview: bodyPreview(text),
+        });
+        if (res.status === 429 && options.backoffOn429) {
+          setBackoff(source, retryAfterMs(retryAfter) ?? COINGECKO_BACKOFF_MS, `HTTP 429 from ${source}`);
+        }
+        if (res.status === 503 && options.backoffOn503 && attempt >= maxAttempts) {
+          setBackoff(source, PYTH_BACKOFF_MS, `HTTP 503 from ${source}`);
+        }
+        if (retryStatuses.has(res.status) && attempt < maxAttempts) {
+          await sleep(PYTH_RETRY_DELAY_MS);
+          continue;
+        }
+        throw markLogged(new Error(`${source} ${res.status}`));
+      }
+      try {
+        const parsed = JSON.parse(text) as T;
+        logSourceFetch({ source, endpoint, statusCode: res.status, durationMs, attempt, retryAfter, ok: true });
+        return parsed;
+      } catch (err) {
+        logSourceFetch({
+          source,
+          endpoint,
+          statusCode: res.status,
+          durationMs,
+          attempt,
+          retryAfter,
+          ok: false,
+          bodyPreview: bodyPreview(text),
+          error: err instanceof Error ? err.message : String(err),
+        });
+        throw markLogged(err instanceof Error ? err : new Error(String(err)));
+      }
+    } catch (err) {
+      const durationMs = Date.now() - startedAt;
+      if (wasLogged(err)) {
+        // Already logged with status/body above. Non-retry HTTP failures stop here.
+        throw err;
+      } else if (err instanceof Error && err.name === "AbortError") {
+        logSourceFetch({ source, endpoint, durationMs, attempt, ok: false, error: "timeout" });
+      } else if (!(err instanceof SyntaxError)) {
+        logSourceFetch({
+          source,
+          endpoint,
+          durationMs,
+          attempt,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      if (attempt < maxAttempts && !(err instanceof SyntaxError)) {
+        await sleep(PYTH_RETRY_DELAY_MS);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`${source} failed`);
+}
+
+async function traceSource<T>(source: string, endpoint: string, fn: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    const result = await fn();
+    logSourceFetch({ source, endpoint, durationMs: Date.now() - startedAt, attempt: 1, ok: true });
+    return result;
+  } catch (err) {
+    logSourceFetch({
+      source,
+      endpoint,
+      durationMs: Date.now() - startedAt,
+      attempt: 1,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
 async function fetchBinance(): Promise<SourceResult> {
-  const res = await fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`Binance ${res.status}`);
-  const data = (await res.json()) as { lastPrice: string; priceChangePercent: string };
+  const data = await fetchJson<{ lastPrice: string; priceChangePercent: string }>(
+    "binance",
+    "https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT",
+  );
   return {
     source: "binance",
     priceUsd: Number(data.lastPrice),
@@ -83,12 +291,11 @@ async function fetchBinance(): Promise<SourceResult> {
 }
 
 async function fetchCoinGecko(): Promise<SourceResult> {
-  const res = await fetch(
+  const data = await fetchJson<{ ethereum: { usd: number; usd_24h_change: number } }>(
+    "coingecko",
     "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd&include_24hr_change=true",
-    { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    { backoffOn429: true },
   );
-  if (!res.ok) throw new Error(`CoinGecko ${res.status}`);
-  const data = (await res.json()) as { ethereum: { usd: number; usd_24h_change: number } };
   return {
     source: "coingecko",
     priceUsd: data.ethereum.usd,
@@ -97,20 +304,18 @@ async function fetchCoinGecko(): Promise<SourceResult> {
 }
 
 async function fetchCoinbase(): Promise<SourceResult> {
-  const res = await fetch("https://api.coinbase.com/v2/prices/ETH-USD/spot", {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`Coinbase ${res.status}`);
-  const data = (await res.json()) as { data: { amount: string } };
+  const data = await fetchJson<{ data: { amount: string } }>(
+    "coinbase",
+    "https://api.coinbase.com/v2/prices/ETH-USD/spot",
+  );
   return { source: "coinbase", priceUsd: Number(data.data.amount) };
 }
 
 async function fetchKraken(): Promise<SourceResult> {
-  const res = await fetch("https://api.kraken.com/0/public/Ticker?pair=ETHUSDT", {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!res.ok) throw new Error(`Kraken ${res.status}`);
-  const data = (await res.json()) as { result: Record<string, { c: string[] }> };
+  const data = await fetchJson<{ result: Record<string, { c: string[] }> }>(
+    "kraken",
+    "https://api.kraken.com/0/public/Ticker?pair=ETHUSDT",
+  );
   const tickers = Object.values(data.result);
   if (tickers.length === 0) throw new Error("Kraken empty result");
   return { source: "kraken", priceUsd: Number(tickers[0].c[0]) };
@@ -135,13 +340,7 @@ async function fetchKraken(): Promise<SourceResult> {
  */
 export async function updatePythOnChain(signer: ethers.Signer): Promise<void> {
   if (!PYTH_ONCHAIN_ADDRESS) return;
-  const url = `${PYTH_HERMES_BASE}/v2/updates/price/latest?ids[]=${PYTH_FEED_W0G_USD}&encoding=hex`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`Pyth Hermes VAA fetch failed: ${res.status}`);
-  const data = (await res.json()) as {
-    binary: { data: string[] };
-    parsed: Array<{ price: { price: string; expo: number; publish_time: number } }>;
-  };
+  const data = await fetchW0GPythUpdate();
   const vaas = (data.binary?.data ?? []).map((d: string) => `0x${d}` as `0x${string}`);
   if (vaas.length === 0) throw new Error("Pyth on-chain pull: no VAA bytes returned by Hermes");
   const pyth = new ethers.Contract(PYTH_ONCHAIN_ADDRESS, IPYTH_ABI, signer);
@@ -160,15 +359,22 @@ export async function updatePythOnChain(signer: ethers.Signer): Promise<void> {
  * SentriPriceFeed (which the agent pushes itself, derived from the median
  * of all reachable sources in this module).
  */
-async function fetchW0GPyth(): Promise<SourceResult> {
+async function fetchW0GPythUpdate(): Promise<PythUpdateResponse> {
+  if (pythUpdateCache && Date.now() - pythUpdateCache.fetchedAt <= PYTH_UPDATE_CACHE_MS) {
+    return pythUpdateCache.data;
+  }
   const url = `${PYTH_HERMES_BASE}/v2/updates/price/latest?ids[]=${PYTH_FEED_W0G_USD}&parsed=true&encoding=hex`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`Pyth Hermes ${res.status}`);
-  const data = (await res.json()) as {
-    parsed?: Array<{
-      price: { price: string; expo: number; conf: string; publish_time: number };
-    }>;
-  };
+  const data = await fetchJson<PythUpdateResponse>("pyth-hermes:0g-usd", url, {
+    retries: 1,
+    retryStatuses: [503],
+    backoffOn503: true,
+  });
+  pythUpdateCache = { fetchedAt: Date.now(), data };
+  return data;
+}
+
+async function fetchW0GPyth(): Promise<SourceResult> {
+  const data = await fetchW0GPythUpdate();
   const entry = data.parsed?.[0];
   if (!entry) throw new Error("Pyth Hermes empty parsed payload");
 
@@ -194,12 +400,11 @@ async function fetchW0GPyth(): Promise<SourceResult> {
  * mandatory pair (Jaine on-chain + Pyth) covers price discovery.
  */
 async function fetchW0G24hChangeCoinGecko(): Promise<SourceResult> {
-  const res = await fetch(
+  const data = await fetchJson<{ "wrapped-0g": { usd: number; usd_24h_change: number } }>(
+    "coingecko:wrapped-0g",
     "https://api.coingecko.com/api/v3/simple/price?ids=wrapped-0g&vs_currencies=usd&include_24hr_change=true",
-    { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
+    { backoffOn429: true },
   );
-  if (!res.ok) throw new Error(`CoinGecko W0G 24h ${res.status}`);
-  const data = (await res.json()) as { "wrapped-0g": { usd: number; usd_24h_change: number } };
   return {
     source: "coingecko:wrapped-0g",
     priceUsd: data["wrapped-0g"].usd,
@@ -208,51 +413,57 @@ async function fetchW0G24hChangeCoinGecko(): Promise<SourceResult> {
 }
 
 async function fetchW0GJaineSpot(): Promise<SourceResult> {
-  const provider = new ethers.JsonRpcProvider(ZERO_G_MAINNET_RPC);
-  const pool = new ethers.Contract(ZERO_G_MAINNET_JAINE_POOL, JAINE_POOL_ABI, provider);
-  const [token0, token1, slot0] = await Promise.all([
-    pool.token0() as Promise<string>,
-    pool.token1() as Promise<string>,
-    pool.slot0() as Promise<[bigint, bigint, number, number, number, number, boolean]>,
-  ]);
+  return traceSource(
+    "jaine:onchain-slot0",
+    `${ZERO_G_MAINNET_RPC} pool=${ZERO_G_MAINNET_JAINE_POOL}`,
+    async () => {
+      const provider = new ethers.JsonRpcProvider(ZERO_G_MAINNET_RPC);
+      const pool = new ethers.Contract(ZERO_G_MAINNET_JAINE_POOL, JAINE_POOL_ABI, provider);
+      const [token0, token1, slot0] = await Promise.all([
+        pool.token0() as Promise<string>,
+        pool.token1() as Promise<string>,
+        pool.slot0() as Promise<[bigint, bigint, number, number, number, number, boolean]>,
+      ]);
 
-  const token0Norm = token0.toLowerCase();
-  const token1Norm = token1.toLowerCase();
-  const w0gNorm = ZERO_G_MAINNET_W0G.toLowerCase();
-  const usdceNorm = ZERO_G_MAINNET_USDCE.toLowerCase();
-  if (
-    !((token0Norm === w0gNorm && token1Norm === usdceNorm) ||
-      (token0Norm === usdceNorm && token1Norm === w0gNorm))
-  ) {
-    throw new Error(`Jaine pool token mismatch: token0=${token0}, token1=${token1}`);
-  }
+      const token0Norm = token0.toLowerCase();
+      const token1Norm = token1.toLowerCase();
+      const w0gNorm = ZERO_G_MAINNET_W0G.toLowerCase();
+      const usdceNorm = ZERO_G_MAINNET_USDCE.toLowerCase();
+      if (
+        !((token0Norm === w0gNorm && token1Norm === usdceNorm) ||
+          (token0Norm === usdceNorm && token1Norm === w0gNorm))
+      ) {
+        throw new Error(`Jaine pool token mismatch: token0=${token0}, token1=${token1}`);
+      }
 
-  const token0Contract = new ethers.Contract(token0, ERC20_DECIMALS_ABI, provider);
-  const token1Contract = new ethers.Contract(token1, ERC20_DECIMALS_ABI, provider);
-  const [dec0, dec1] = await Promise.all([
-    token0Contract.decimals() as Promise<number>,
-    token1Contract.decimals() as Promise<number>,
-  ]);
+      const token0Contract = new ethers.Contract(token0, ERC20_DECIMALS_ABI, provider);
+      const token1Contract = new ethers.Contract(token1, ERC20_DECIMALS_ABI, provider);
+      const [dec0, dec1] = await Promise.all([
+        token0Contract.decimals() as Promise<number>,
+        token1Contract.decimals() as Promise<number>,
+      ]);
 
-  const sqrtPriceX96 = BigInt(slot0[0]);
-  if (sqrtPriceX96 <= 0n) throw new Error("Jaine slot0 missing sqrtPriceX96");
+      const sqrtPriceX96 = BigInt(slot0[0]);
+      if (sqrtPriceX96 <= 0n) throw new Error("Jaine slot0 missing sqrtPriceX96");
 
-  // V3 slot0 encodes token1/token0 as sqrtPriceX96 in Q64.96.
-  const rawToken1PerToken0 = Number(sqrtPriceX96 * sqrtPriceX96) / Number(2n ** 192n);
-  const adjustedToken1PerToken0 = rawToken1PerToken0 * 10 ** (Number(dec0) - Number(dec1));
-  const w0gUsd =
-    token0Norm === w0gNorm
-      ? adjustedToken1PerToken0
-      : 1 / adjustedToken1PerToken0;
+      // V3 slot0 encodes token1/token0 as sqrtPriceX96 in Q64.96.
+      const rawToken1PerToken0 = Number(sqrtPriceX96 * sqrtPriceX96) / Number(2n ** 192n);
+      const adjustedToken1PerToken0 = rawToken1PerToken0 * 10 ** (Number(dec0) - Number(dec1));
+      const w0gUsd =
+        token0Norm === w0gNorm
+          ? adjustedToken1PerToken0
+          : 1 / adjustedToken1PerToken0;
 
-  if (!Number.isFinite(w0gUsd) || w0gUsd <= 0) {
-    throw new Error(`Jaine slot0 invalid W0G price: ${w0gUsd}`);
-  }
+      if (!Number.isFinite(w0gUsd) || w0gUsd <= 0) {
+        throw new Error(`Jaine slot0 invalid W0G price: ${w0gUsd}`);
+      }
 
-  return {
-    source: "jaine:onchain-slot0",
-    priceUsd: w0gUsd,
-  };
+      return {
+        source: "jaine:onchain-slot0",
+        priceUsd: w0gUsd,
+      };
+    },
+  );
 }
 
 function median(values: number[]): number {
@@ -263,7 +474,44 @@ function median(values: number[]): number {
     : sorted[mid];
 }
 
-export async function getMarketSnapshot(): Promise<MarketSnapshot> {
+export function getMarketDataHealth(): MarketDataHealth {
+  const cacheAgeSec = cachedSnapshot ? Math.floor((Date.now() - cachedSnapshot.snapshot.timestamp) / 1000) : null;
+  return {
+    ok: Boolean(
+      cachedSnapshot &&
+        cachedSnapshot.asset === MARKET_ASSET &&
+        cacheAgeSec !== null &&
+        cacheAgeSec * 1000 <= MARKET_SNAPSHOT_CACHE_TTL_MS &&
+        cachedSnapshot.snapshot.tradingAllowed,
+    ),
+    asset: MARKET_ASSET,
+    lastGoodMarketAt,
+    lastSourceCount,
+    requiredSourceCount: MIN_QUORUM,
+    failedSources: lastFailedSources,
+    consecutiveFailures,
+    cacheAgeSec,
+  };
+}
+
+export function isMarketDataUnavailableError(err: unknown): boolean {
+  return err instanceof MarketDataUnavailableError;
+}
+
+interface MarketSnapshotOptions {
+  forceRefresh?: boolean;
+  maxAgeMs?: number;
+}
+
+export async function getMarketSnapshot(options: MarketSnapshotOptions = {}): Promise<MarketSnapshot> {
+  const maxAgeMs = Math.min(options.maxAgeMs ?? MARKET_SNAPSHOT_CACHE_TTL_MS, MARKET_SNAPSHOT_CACHE_TTL_MS);
+  if (!options.forceRefresh && cachedSnapshot?.asset === MARKET_ASSET) {
+    const ageMs = Date.now() - cachedSnapshot.snapshot.timestamp;
+    if (ageMs <= maxAgeMs) {
+      return cachedSnapshot.snapshot;
+    }
+  }
+
   // W0G path (0G mainnet): mandatory cross-validation between an on-chain
   // source (Jaine V3 slot0) and Pyth's decentralised publisher network.
   // CoinGecko is opportunistic for 24h change only and never gates trading.
@@ -282,9 +530,11 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     if (r.status === "fulfilled") successes.push(r.value);
     else failures.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
   }
+  lastFailedSources = failures;
 
   if (successes.length < MIN_QUORUM) {
-    throw new Error(
+    consecutiveFailures++;
+    throw new MarketDataUnavailableError(
       `Insufficient market quorum: ${successes.length}/${providers.length} sources succeeded ` +
         `(need ≥ ${MIN_QUORUM}). Asset: ${MARKET_ASSET}. Failures: ${failures.join(" | ")}`,
     );
@@ -297,11 +547,19 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     MARKET_ASSET === "W0G"
       ? successes.filter((s) => s.source !== "coingecko:wrapped-0g")
       : successes;
+  if (priceContributors.length < MIN_QUORUM) {
+    consecutiveFailures++;
+    throw new MarketDataUnavailableError(
+      `Insufficient market price quorum: ${priceContributors.length}/${MIN_QUORUM} price sources succeeded ` +
+        `for ${MARKET_ASSET}. Failures: ${failures.join(" | ") || "missing mandatory source"}`,
+    );
+  }
   const prices = priceContributors.map((s) => s.priceUsd);
   const med = median(prices);
   const spreadPct = prices.length > 1 ? ((Math.max(...prices) - Math.min(...prices)) / med) * 100 : 0;
   if (spreadPct * 100 > MAX_MARKET_SPREAD_BPS) {
-    throw new Error(
+    consecutiveFailures++;
+    throw new MarketDataUnavailableError(
       `Market spread too wide for ${MARKET_ASSET}: ${spreadPct.toFixed(3)}% ` +
         `(max ${(MAX_MARKET_SPREAD_BPS / 100).toFixed(2)}%). Sources: ` +
         priceContributors.map((s) => `${s.source}=${s.priceUsd}`).join(" | "),
@@ -314,7 +572,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
   const hasJaineOnchain = successes.some((s) => s.source === "jaine:onchain-slot0");
   const hasPyth = successes.some((s) => s.source === "pyth:0g-usd");
   const tradingAllowed = MARKET_ASSET !== "W0G" || (hasJaineOnchain && hasPyth);
-  const health =
+  const health: MarketSnapshot["health"] =
     MARKET_ASSET !== "W0G"
       ? "fresh"
       : tradingAllowed
@@ -323,7 +581,7 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
           ? "degraded"
           : "external-only";
 
-  return {
+  const snapshot: MarketSnapshot = {
     priceUsd: med,
     ethUsd: med,
     riskSymbol: RISK_SYMBOL,
@@ -339,4 +597,9 @@ export async function getMarketSnapshot(): Promise<MarketSnapshot> {
     failures,
     requiredSourceCount: MIN_QUORUM,
   };
+  cachedSnapshot = { asset: MARKET_ASSET, snapshot };
+  lastGoodMarketAt = snapshot.timestamp;
+  lastSourceCount = snapshot.sourceCount;
+  if (snapshot.tradingAllowed) consecutiveFailures = 0;
+  return snapshot;
 }

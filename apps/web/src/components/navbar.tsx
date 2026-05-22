@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/vaults", label: "Vaults", num: "01" },
   { href: "/deploy", label: "Deploy", num: "02" },
   { href: "/my", label: "My Vaults", num: "03" },
+  { href: "/points", label: "Points", num: "04" },
 ];
 
 export function Navbar() {

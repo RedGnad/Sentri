@@ -51,8 +51,16 @@ import {
   findAuditIndexByVaultLog,
   writeAuditIndexRecord,
 } from "./audit-index.js";
+import {
+  initPointsLedger,
+  getPointsStats,
+  getLeaderboard,
+  getWalletPoints,
+  getVaultPoints,
+  getRecentPointEvents,
+} from "./points.js";
 import { AGENT, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
-import { updatePythOnChain } from "./market.js";
+import { getMarketDataHealth, isMarketDataUnavailableError, updatePythOnChain } from "./market.js";
 import { decodeVaultError } from "./vault-errors.js";
 import { recoverAuditEntry, type ChainAuditEntry } from "./audit-recovery.js";
 
@@ -385,6 +393,13 @@ const state: ServerState = {
 let ctx: GlobalContext | null = null;
 let cycleInProgress = false;
 
+function limitFromQuery(value: unknown, fallback: number): number {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = Number(raw ?? fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(100, Math.trunc(parsed)));
+}
+
 /**
  * Augment a VaultState for API responses with a human-readable verdict derived
  * from its last outcome — so consumers (dashboard) can show "Target reached" or
@@ -461,19 +476,35 @@ async function runCycle(): Promise<void> {
     return;
   }
 
-  // Pyth on-chain pull (if PYTH_ONCHAIN_ADDRESS is configured): submit the
-  // latest 0G/USD VAA on-chain so any reader can call getPriceNoOlderThan
-  // trustlessly without keeper dependency. Non-blocking — failure does not
-  // stop the cycle. Pattern: https://docs.pyth.network/price-feeds/use-real-time-data/evm
-  void updatePythOnChain(ctx.wallet).catch((e: unknown) => {
-    log(`[server] Pyth on-chain pull skipped: ${e instanceof Error ? e.message : e}`);
-  });
-
   try {
-    const market = await pushPrice(ctx);
     const vaults = await discoverVaults(ctx);
     state.lastCycleVaultCount = vaults.length;
     log(`[server] cycle ${state.totalCycles}: ${vaults.length} vault(s) tracked`);
+    let market: Awaited<ReturnType<typeof pushPrice>>;
+    try {
+      market = await pushPrice(ctx);
+    } catch (err) {
+      if (!isMarketDataUnavailableError(err)) throw err;
+      const reason = err instanceof Error ? err.message : String(err);
+      log(`[server] market data unavailable — ${reason}. Skipping vault iterations before inference/tx.`);
+      for (const vaultAddr of vaults) {
+        const v = getOrInitVault(vaultAddr);
+        v.totalIterations++;
+        v.lastOutcome = { status: "skipped", reason: `market data unavailable — ${reason}` };
+        v.lastIterationAt = Date.now();
+        log(`  ${vaultAddr.slice(0, 10)}... → skipped (${v.lastOutcome.reason})`);
+      }
+      return;
+    }
+
+    // Pyth on-chain pull (if PYTH_ONCHAIN_ADDRESS is configured): submit the
+    // latest 0G/USD VAA on-chain so any reader can call getPriceNoOlderThan
+    // trustlessly without keeper dependency. Non-blocking — failure does not
+    // stop the cycle. The Hermes payload is shared with the market snapshot
+    // cache when available, so this should not fan out another public request.
+    void updatePythOnChain(ctx.wallet).catch((e: unknown) => {
+      log(`[server] Pyth on-chain pull skipped: ${e instanceof Error ? e.message : e}`);
+    });
 
     for (const vaultAddr of vaults) {
       const v = getOrInitVault(vaultAddr);
@@ -531,6 +562,8 @@ app.get("/healthz", (_req, res) => {
     vaults[addr] = runtimeWithVerdict(s);
   }
   const auditIndex = getAuditIndexStats();
+  const points = getPointsStats();
+  const marketData = getMarketDataHealth();
   res.json({
     ok: state.agentStatus !== "error",
     agent: state.agentStatus,
@@ -554,6 +587,8 @@ app.get("/healthz", (_req, res) => {
     // not bound to the active AgentINFT). Vault creation and deposits are
     // unaffected. See docs/operator-signer-mismatch.md.
     auditIndex,
+    points,
+    marketData,
     autoExecute: ctx ? ctx.signerHealth.ok && auditIndexExecutionAllowed() : false,
     signerHealth: ctx
       ? {
@@ -567,6 +602,30 @@ app.get("/healthz", (_req, res) => {
     trackedVaultCount: state.trackedVaults.size,
     vaults,
   });
+});
+
+app.get("/points/leaderboard", (req, res) => {
+  const limit = limitFromQuery(req.query.limit, 25);
+  const entries = getLeaderboard(limit);
+  res.json({ count: entries.length, entries });
+});
+
+app.get("/points/stats", (_req, res) => {
+  res.json(getPointsStats());
+});
+
+app.get("/points/recent", (req, res) => {
+  const limit = limitFromQuery(req.query.limit, 25);
+  const entries = getRecentPointEvents(limit);
+  res.json({ count: entries.length, entries });
+});
+
+app.get("/points/vault/:address", (req, res) => {
+  res.json(getVaultPoints(req.params.address));
+});
+
+app.get("/points/:wallet", (req, res) => {
+  res.json(getWalletPoints(req.params.wallet));
 });
 
 app.get("/vaults", (_req, res) => {
@@ -775,6 +834,14 @@ app.listen(PORT, () => {
     log(
       `[server] BLOCKED_AUDIT_INDEX at startup: ${auditIndex.lastError ?? "unknown error"}. ` +
         "Auto-execution will stay disabled until AUDIT_INDEX_PATH is writable.",
+    );
+  }
+  initPointsLedger();
+  const points = getPointsStats();
+  if (!points.ok) {
+    log(
+      `[server] points ledger unavailable: ${points.lastError ?? "unknown error"}. ` +
+        "Sentri Early Vault Points are disabled; auto-execution is unaffected.",
     );
   }
   log("[server] initializing agent (Sealed Inference broker + Storage)...");

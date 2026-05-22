@@ -220,7 +220,7 @@ async function ensureFreshOracle(
 
   let refreshedMarket: MarketSnapshot | null = null;
   try {
-    refreshedMarket = await pushPrice(ctx);
+    refreshedMarket = await pushPrice(ctx, Math.max(0, maxPriceStaleness * 1000 - 15_000));
   } catch (err) {
     const reason =
       phase === "state-read"
@@ -450,8 +450,8 @@ export async function discoverVaults(ctx: GlobalContext): Promise<string[]> {
  * Push the latest risk/base price to the on-chain oracle. Done once at the
  * start of each cycle so all vault iterations use the same fresh price.
  */
-export async function pushPrice(ctx: GlobalContext): Promise<MarketSnapshot> {
-  const market = await getMarketSnapshot();
+export async function pushPrice(ctx: GlobalContext, maxCacheAgeMs?: number): Promise<MarketSnapshot> {
+  const market = await getMarketSnapshot(maxCacheAgeMs === undefined ? undefined : { maxAgeMs: maxCacheAgeMs });
   log(
     `Market: ${market.riskSymbol}=$${market.priceUsd.toFixed(4)} · 24h ${market.change24h.toFixed(2)}% · ` +
       `${market.sourceCount} sources · spread ${market.spreadPct.toFixed(3)}% · ${market.health} · ${market.source}`,

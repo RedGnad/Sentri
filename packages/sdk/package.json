@@ -15,6 +15,7 @@
     "check-signer": "tsx src/check-agent-signer.ts",
     "inspect-vault": "tsx src/inspect-vault.ts",
     "backfill-audit-index": "tsx src/backfill-audit-index.ts",
+    "award-points": "tsx src/award-points.ts",
     "test": "node --import tsx --test src/*.test.ts"
   },
   "dependencies": {

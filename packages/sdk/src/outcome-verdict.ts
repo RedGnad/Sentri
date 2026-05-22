@@ -82,7 +82,16 @@ export function describeOutcome(outcome: OutcomeLike): Verdict {
       text: "Paused — 0G inference credits need topping up. The agent retries automatically after a backoff.",
     };
   }
-  if (has(reason, "market health", "trading requires", "Jaine on-chain price")) {
+  if (
+    has(
+      reason,
+      "market health",
+      "market data unavailable",
+      "Insufficient market quorum",
+      "trading requires",
+      "Jaine on-chain price",
+    )
+  ) {
     return {
       tone: "waiting",
       text: "Holding — risk-asset price failed the multi-source sanity check. The agent waits for reliable market data.",
