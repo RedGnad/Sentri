@@ -18,6 +18,7 @@ import {
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
 import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog, saveInferenceRecord } from "./storage.js";
+import { writeAuditIndexRecord } from "./audit-index.js";
 import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
 import { preflightTeeSigner, readAgentMetadata, resolveAgentTokenId } from "./agent-signer.js";
 import { decodeVaultError } from "./vault-errors.js";
@@ -866,8 +867,11 @@ export async function executeOneIterationForVault(
       ? ethers.formatUnits(amountIn, riskDec)
       : ethers.formatUnits(amountIn, baseDec);
 
+  // 0G Storage rootHash of the durable, downloadable inference record — set
+  // pre-tx so the post-tx index append can re-reference the same blob.
+  let inferenceRootHash = "";
   try {
-    await saveInferenceRecord(vaultAddress, {
+    const savedInference = await saveInferenceRecord(vaultAddress, {
       schema: "sentri.inference.v1",
       timestamp: Date.now(),
       vaultAddress,
@@ -896,7 +900,17 @@ export async function executeOneIterationForVault(
       model: inference.model,
       verifiability: inference.verifiability,
       chatID: inference.chatID,
+      decision: {
+        action: decision.action,
+        amount_bps: decision.amount_bps,
+        rule_id: decision.rule_id,
+        reasoning: decision.reasoning,
+        short_reason: decision.short_reason,
+        confidence: decision.confidence,
+      },
       reasoning,
+      amountBps: decision.amount_bps,
+      ruleId: decision.rule_id,
       confidence: confidenceScore,
       marketPrice: activeMarket.priceUsd,
       marketSource: activeMarket.source,
@@ -905,6 +919,21 @@ export async function executeOneIterationForVault(
       marketRequiredSourceCount: activeMarket.requiredSourceCount,
       marketRawSources: activeMarket.rawSources,
       priceAttestationPayload,
+    });
+    inferenceRootHash = savedInference.rootHash;
+    // Durable audit index (Render persistent disk). Written BEFORE the tx so a
+    // crash between here and confirmation still leaves the execution
+    // recoverable by intentHash. An index-write failure throws into the catch
+    // below — no funds-moving tx is sent (fail closed).
+    writeAuditIndexRecord({
+      vaultAddress,
+      intentHash,
+      responseHash: inference.responseHash,
+      rootHash: inferenceRootHash,
+      storageTxHash: savedInference.txHash,
+      action: decision.action,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1093,6 +1122,30 @@ export async function executeOneIterationForVault(
     log(
       `Post-execution audit write failed for ${vaultAddress.slice(0, 10)}... ` +
         `after confirmed tx ${receipt.hash}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+
+  // Post-tx: append the durable index record with the now-known txHash and
+  // logIndex (same intentHash/rootHash as the pre-tx line — readers merge).
+  // A failure here is non-fatal: the pre-tx line already makes the execution
+  // recoverable by intentHash.
+  try {
+    writeAuditIndexRecord({
+      vaultAddress,
+      txHash: receipt.hash,
+      logIndex: Number(idx),
+      intentHash,
+      responseHash: inference.responseHash,
+      rootHash: inferenceRootHash,
+      action: decision.action,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  } catch (err) {
+    log(
+      `CRITICAL: post-tx audit index append failed for ${vaultAddress.slice(0, 10)}... ` +
+        `tx ${receipt.hash}: ${err instanceof Error ? err.message : err} — ` +
+        "the pre-tx index record remains recoverable by intentHash.",
     );
   }
 

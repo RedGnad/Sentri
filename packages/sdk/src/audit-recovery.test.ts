@@ -1,0 +1,73 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { recoverAuditEntry, type AuditRecoveryDeps, type ChainAuditEntry } from "./audit-recovery.js";
+
+const entry: ChainAuditEntry = {
+  source: "chain-fallback",
+  logIndex: 2,
+  timestamp: 1779410000000,
+  action: "Rebalance",
+  amountIn: "1000",
+  amountOut: "2000",
+  tvlAfter: "3000",
+  intentHash: "0xintent",
+  responseHash: "0xresponse",
+  teeSigner: "0xsigner",
+  teeAttestation: "0xattestation",
+  deadline: 1779410300,
+  txHash: "0xtx",
+};
+
+function deps(overrides: Partial<AuditRecoveryDeps> = {}): AuditRecoveryDeps {
+  return {
+    findByTxHash: () => null,
+    findByIntentHash: () => null,
+    findByResponseHash: () => null,
+    findByVaultLog: () => null,
+    downloadBlob: async () => null,
+    readKvAudit: async () => null,
+    readInference: async () => null,
+    ...overrides,
+  };
+}
+
+test("audit recovery enriches a chain entry from durable rootHash + 0G blob", async () => {
+  const recovered = await recoverAuditEntry("0xvault", entry, deps({
+    findByTxHash: (txHash) => txHash === "0xtx"
+      ? {
+          vaultAddress: "0xvault",
+          txHash,
+          logIndex: 2,
+          intentHash: "0xintent",
+          responseHash: "0xresponse",
+          rootHash: "0xroot",
+          storageTxHash: "0xstorage",
+          action: "Rebalance",
+          createdAt: 1,
+          updatedAt: 2,
+        }
+      : null,
+    downloadBlob: async (rootHash) => rootHash === "0xroot"
+      ? {
+          reasoning: "TEE reasoning survived the restart",
+          confidence: 91,
+          signedResponse: "signed",
+          teeSignature: "sig",
+          provider: "0xprovider",
+          model: "0GM",
+          verifiability: "tee",
+          chatID: "chat",
+        }
+      : null,
+  })) as Record<string, unknown>;
+
+  assert.equal(recovered.source, "index-recovered");
+  assert.equal(recovered.reasoning, "TEE reasoning survived the restart");
+  assert.equal(recovered.storageRootHash, "0xroot");
+  assert.equal(recovered.storageTxHash, "0xstorage");
+});
+
+test("audit recovery falls back to the chain-only entry when no record resolves", async () => {
+  const recovered = await recoverAuditEntry("0xvault", entry, deps());
+  assert.equal(recovered, entry);
+});

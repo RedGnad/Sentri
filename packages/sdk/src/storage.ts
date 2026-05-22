@@ -13,6 +13,8 @@ import { CHAIN, STORAGE } from "./constants.js";
 const CACHE_DIR = process.env.SENTRI_CACHE_DIR ?? "/tmp/sentri-cache";
 const KV_READ_TIMEOUT_MS = Number(process.env.STORAGE_KV_READ_TIMEOUT_MS ?? "5000");
 const KV_WRITE_TIMEOUT_MS = Number(process.env.STORAGE_KV_WRITE_TIMEOUT_MS ?? "60000");
+const BLOB_DOWNLOAD_TIMEOUT_MS = Number(process.env.STORAGE_BLOB_DOWNLOAD_TIMEOUT_MS ?? "10000");
+const BLOB_UPLOAD_TIMEOUT_MS = Number(process.env.STORAGE_BLOB_UPLOAD_TIMEOUT_MS ?? "90000");
 
 function vaultDir(vaultAddr: string): string {
   return path.join(CACHE_DIR, "vaults", vaultAddr.toLowerCase());
@@ -197,7 +199,10 @@ export interface AuditEntry {
   model: string;
   verifiability: string;
   chatID: string;
+  decision?: unknown;
   reasoning: string;
+  amountBps?: number;
+  ruleId?: string;
   confidence: number;
   txHash?: string;
   marketPrice?: number;
@@ -329,7 +334,10 @@ export interface InferenceRecord {
   model: string;
   verifiability: string;
   chatID: string;
+  decision?: unknown;
   reasoning: string;
+  amountBps?: number;
+  ruleId?: string;
   confidence: number;
   marketPrice?: number;
   marketSource?: string;
@@ -346,19 +354,21 @@ export async function saveInferenceRecord(
   vaultAddr: string,
   record: InferenceRecord,
 ): Promise<{ txHash: string; rootHash: string }> {
-  const key = inferenceKey(vaultAddr, record.intentHash);
-  const result = await _writeKv(inferenceStreamId(vaultAddr), key, record);
-  if (!result) throw new Error("0G Storage KV write returned no result");
+  // Upload the inference record (which carries the TEE reasoning) as a plain,
+  // downloadable JSON blob. The returned rootHash is retrievable by the audit
+  // read path with no KV node — it is what the durable audit index points at.
+  const blob = await uploadJsonRecord(record, "sentri:inference:v1");
+  if (!blob) throw new Error("0G Storage inference blob upload returned no result");
   const stored: InferenceRecord = {
     ...record,
-    kvTxHash: result.txHash,
-    kvRootHash: result.rootHash,
+    kvTxHash: blob.txHash,
+    kvRootHash: blob.rootHash,
   };
   writeCacheFile(
     path.join("vaults", vaultAddr.toLowerCase(), "inference", `${record.intentHash.toLowerCase()}.json`),
     stored,
   );
-  return result;
+  return blob;
 }
 
 export function readInferenceRecordFromCache(
@@ -548,21 +558,32 @@ async function _writeKv(
   return result;
 }
 
-async function _uploadCanonicalBlob(
-  record: CanonicalAuditRecord,
+/**
+ * Upload any JSON-serializable value to 0G Storage as a plain blob. Unlike a
+ * KV write, the returned rootHash can be downloaded directly via the indexer
+ * with NO KV node — this is the retrieval path the durable audit index relies
+ * on. Throws on failure so callers can fail closed.
+ */
+export async function uploadJsonRecord(
+  value: unknown,
+  tag: string,
 ): Promise<{ txHash: string; rootHash: string } | null> {
-  const bytes = Uint8Array.from(Buffer.from(canonicalJson(record), "utf-8"));
+  const bytes = Uint8Array.from(Buffer.from(canonicalJson(value), "utf-8"));
   const file = new MemData(bytes);
   const [, treeErr] = await file.merkleTree();
   if (treeErr !== null) {
-    throw new Error(`Canonical audit Merkle tree error: ${treeErr}`);
+    throw new Error(`0G Storage Merkle tree error: ${treeErr}`);
   }
   const uploadOpts = STORAGE.submitFeeWei > 0n
-    ? { fee: STORAGE.submitFeeWei, tags: ethers.toUtf8Bytes("sentri:audit:v1") }
-    : { tags: ethers.toUtf8Bytes("sentri:audit:v1") };
-  const [result, err] = await getIndexer().upload(file, CHAIN.rpcUrl, getSigner(), uploadOpts);
+    ? { fee: STORAGE.submitFeeWei, tags: ethers.toUtf8Bytes(tag) }
+    : { tags: ethers.toUtf8Bytes(tag) };
+  const [result, err] = await withTimeout(
+    getIndexer().upload(file, CHAIN.rpcUrl, getSigner(), uploadOpts),
+    BLOB_UPLOAD_TIMEOUT_MS,
+    "0G Storage blob upload",
+  );
   if (err !== null) {
-    throw new Error(`Failed to upload canonical audit record to 0G Storage: ${err}`);
+    throw new Error(`Failed to upload JSON record to 0G Storage: ${err}`);
   }
   if (!result) return null;
   if ("txHash" in result) return result;
@@ -570,6 +591,35 @@ async function _uploadCanonicalBlob(
     txHash: result.txHashes[0],
     rootHash: result.rootHashes[0],
   };
+}
+
+async function _uploadCanonicalBlob(
+  record: CanonicalAuditRecord,
+): Promise<{ txHash: string; rootHash: string } | null> {
+  return uploadJsonRecord(record, "sentri:audit:v1");
+}
+
+/**
+ * Download a JSON blob from 0G Storage by rootHash via the indexer (no KV
+ * node). Used by the audit read path once the durable index has resolved a
+ * rootHash. Returns null if the blob is unavailable or unparseable.
+ */
+export async function downloadAuditRecordBlob(rootHash: string): Promise<unknown | null> {
+  const file = path.join(CACHE_DIR, "recovery", `${rootHash}.json`);
+  try {
+    ensureDir(path.dirname(file));
+    if (!fs.existsSync(file)) {
+      const err = await withTimeout(
+        getIndexer().download(rootHash, file, false),
+        BLOB_DOWNLOAD_TIMEOUT_MS,
+        "0G Storage blob download",
+      );
+      if (err !== null) return null;
+    }
+    return JSON.parse(fs.readFileSync(file, "utf-8")) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 async function _readKv<T = unknown>(

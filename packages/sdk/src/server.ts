@@ -36,31 +36,26 @@ import {
   readAuditFromKv,
   readAuditFromRecoveryRecords,
   readInferenceRecord,
+  downloadAuditRecordBlob,
   listVaultRejectionsFromCache,
   readVaultRejectionFromCache,
   readRejectionsFromKv,
 } from "./storage.js";
+import {
+  initAuditIndex,
+  auditIndexExecutionAllowed,
+  getAuditIndexStats,
+  findAuditIndexByIntentHash,
+  findAuditIndexByResponseHash,
+  findAuditIndexByTxHash,
+  findAuditIndexByVaultLog,
+} from "./audit-index.js";
 import { AGENT, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
 import { updatePythOnChain } from "./market.js";
 import { decodeVaultError } from "./vault-errors.js";
+import { recoverAuditEntry, type ChainAuditEntry } from "./audit-recovery.js";
 
 const ACTION_LABELS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"] as const;
-
-type ChainAuditEntry = {
-  source: "chain-fallback";
-  logIndex: number;
-  timestamp: number;
-  action: string;
-  amountIn: string;
-  amountOut: string;
-  tvlAfter: string;
-  intentHash: string;
-  responseHash: string;
-  teeSigner: string;
-  teeAttestation: string;
-  deadline: number;
-  txHash?: string;
-};
 
 /**
  * Fallback: when the agent's local cache is wiped (Render restart on a
@@ -143,46 +138,15 @@ async function enrichChainEntryWithInference(
   vaultAddress: string,
   entry: ChainAuditEntry,
 ): Promise<unknown> {
-  try {
-    const inference = await readInferenceRecord(vaultAddress, entry.intentHash);
-    if (!inference) return entry;
-    return {
-      ...entry,
-      source: "inference-fallback",
-      amount: inference.amount,
-      intent: inference.intent,
-      rawResponseHash: inference.rawResponseHash,
-      signedPayloadHash: inference.signedPayloadHash,
-      modelResponse: inference.modelResponse,
-      signedResponse: inference.signedResponse,
-      teeSignature: inference.teeSignature,
-      recoveredSigner: inference.recoveredSigner,
-      expectedSigner: inference.expectedSigner,
-      signerMatchedProvider: inference.signerMatchedProvider,
-      processResponseVerified: inference.processResponseVerified,
-      verified: inference.verified,
-      provider: inference.provider,
-      providerEndpoint: inference.providerEndpoint,
-      model: inference.model,
-      verifiability: inference.verifiability,
-      chatID: inference.chatID,
-      reasoning: inference.reasoning,
-      confidence: inference.confidence,
-      marketPrice: inference.marketPrice,
-      marketSource: inference.marketSource,
-      marketSpreadPct: inference.marketSpreadPct,
-      marketSourceCount: inference.marketSourceCount,
-      marketRequiredSourceCount: inference.marketRequiredSourceCount,
-      marketRawSources: inference.marketRawSources,
-      priceAttestationPayload: inference.priceAttestationPayload,
-      storageTxHash: inference.kvTxHash,
-      storageRootHash: inference.kvRootHash,
-      kvIndexTxHash: inference.kvTxHash,
-      kvIndexRootHash: inference.kvRootHash,
-    };
-  } catch {
-    return entry;
-  }
+  return recoverAuditEntry(vaultAddress, entry, {
+    findByTxHash: findAuditIndexByTxHash,
+    findByIntentHash: findAuditIndexByIntentHash,
+    findByResponseHash: findAuditIndexByResponseHash,
+    findByVaultLog: findAuditIndexByVaultLog,
+    downloadBlob: downloadAuditRecordBlob,
+    readKvAudit: readAuditEntry,
+    readInference: readInferenceRecord,
+  });
 }
 
 function isPriceStaleError(err: unknown): boolean {
@@ -357,6 +321,16 @@ async function runCycle(): Promise<void> {
   cycleInProgress = true;
   state.totalCycles++;
 
+  if (!auditIndexExecutionAllowed()) {
+    log(
+      "[server] BLOCKED_AUDIT_INDEX — durable audit index is not writable in production. " +
+        "Auto-execution is disabled before any funds-moving transaction.",
+    );
+    state.lastCycleAt = Date.now();
+    cycleInProgress = false;
+    return;
+  }
+
   // Hard signer-health gate (P2). If the selected 0G provider's TEE signer is
   // not bound to the agent's active AgentINFT, executeStrategy can only revert
   // with InvalidTEESignature — so skip the whole cycle: no Pyth pull, no price
@@ -445,6 +419,7 @@ app.get("/healthz", (_req, res) => {
   for (const [addr, s] of state.trackedVaults.entries()) {
     vaults[addr] = runtimeWithVerdict(s);
   }
+  const auditIndex = getAuditIndexStats();
   res.json({
     ok: state.agentStatus !== "error",
     agent: state.agentStatus,
@@ -467,7 +442,8 @@ app.get("/healthz", (_req, res) => {
     // Signer-health gate: when ok=false, auto-execution is disabled (TEE signer
     // not bound to the active AgentINFT). Vault creation and deposits are
     // unaffected. See docs/operator-signer-mismatch.md.
-    autoExecute: ctx ? ctx.signerHealth.ok : false,
+    auditIndex,
+    autoExecute: ctx ? ctx.signerHealth.ok && auditIndexExecutionAllowed() : false,
     signerHealth: ctx
       ? {
           ok: ctx.signerHealth.ok,
@@ -538,40 +514,41 @@ app.get("/vault/:address/audit", async (req, res) => {
     res.json({ address: addr, count: cached.length, entries: cached, source: "cache" });
     return;
   }
-  // Cache empty (likely after a Render restart). Try 0G Storage KV manifest first.
-  try {
-    const kvEntries = await readAuditFromKv(addr, 50);
-    if (kvEntries.length > 0) {
-      res.json({ address: addr, count: kvEntries.length, entries: kvEntries, source: "kv-fallback" });
-      return;
-    }
-  } catch {
-    // KV unreachable — continue to chain fallback below.
-  }
-  try {
-    const recoveredEntries = await readAuditFromRecoveryRecords(addr, 50);
-    if (recoveredEntries.length > 0) {
-      res.json({ address: addr, count: recoveredEntries.length, entries: recoveredEntries, source: "cache" });
-      return;
-    }
-  } catch {
-    // Recovery unavailable — continue to chain fallback below.
-  }
   if (!ctx) {
+    try {
+      const recoveredEntries = await readAuditFromRecoveryRecords(addr, 50);
+      if (recoveredEntries.length > 0) {
+        res.json({ address: addr, count: recoveredEntries.length, entries: recoveredEntries, source: "cache" });
+        return;
+      }
+    } catch {
+      // Recovery unavailable — continue to legacy KV below.
+    }
+    try {
+      const kvEntries = await readAuditFromKv(addr, 50);
+      if (kvEntries.length > 0) {
+        res.json({ address: addr, count: kvEntries.length, entries: kvEntries, source: "inference-fallback" });
+        return;
+      }
+    } catch {
+      // KV unreachable.
+    }
     res.json({ address: addr, count: 0, entries: [], source: "no-context" });
     return;
   }
   try {
     const entries = await readAuditFromChain(addr, ctx, 50);
+    const enriched = await Promise.all(
+      entries.map((entry) => enrichChainEntryWithInference(addr, entry)),
+    );
     res.json({
       address: addr,
-      count: entries.length,
-      entries,
+      count: enriched.length,
+      entries: enriched,
       source: "chain-fallback",
       note:
-        "Local cache empty (typical after a service restart). Showing on-chain executionLogs " +
-        "without off-chain enrichment (model response, reasoning, signed chat payload). " +
-        "Verify each entry's intentHash, responseHash, teeSigner and teeAttestation on chainscan.",
+        "Showing on-chain executionLogs with any recoverable 0G Storage reasoning attached. " +
+        "If an entry remains chain-only, signer, attestation, intentHash and responseHash remain verifiable on-chain.",
     });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -590,14 +567,13 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
     res.json(entry);
     return;
   }
-  // Cache miss. Try KV manifest fallback (survives Render restarts with full enrichment).
-  try {
-    const kvEntries = await readAuditFromKv(addr, 50);
-    if (kvEntries.length > 0) {
+  if (ctx) {
+    try {
+      const onchain = await readAuditFromChain(addr, ctx, 50);
       const requested = Number(ts);
-      const kvMatch =
-        kvEntries.find((e) => String(e.timestamp) === ts) ??
-        kvEntries.reduce<typeof kvEntries[number] | null>(
+      const match =
+        onchain.find((e) => e.timestamp === requested) ??
+        onchain.reduce<typeof onchain[number] | null>(
           (closest, e) =>
             closest === null ||
             Math.abs(e.timestamp - requested) < Math.abs(closest.timestamp - requested)
@@ -605,14 +581,18 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
               : closest,
           null,
         );
-      if (kvMatch) {
-        res.json({ ...kvMatch, source: "kv-fallback" });
+      if (!match) {
+        res.status(404).json({ error: "No on-chain executionLog found for this vault either." });
         return;
       }
+      res.json(await enrichChainEntryWithInference(addr, { ...match, source: "chain-fallback" }));
+      return;
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+      return;
     }
-  } catch {
-    // KV unreachable — continue to chain fallback below.
   }
+  // No chain context yet: fall back to legacy recovery records / KV only.
   try {
     const recoveredEntries = await readAuditFromRecoveryRecords(addr, 50);
     if (recoveredEntries.length > 0) {
@@ -633,45 +613,31 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
       }
     }
   } catch {
-    // Recovery unavailable — continue to chain fallback below.
-  }
-  // KV miss. Fall back to on-chain log lookup so the detail view still has something to show.
-  if (!ctx) {
-    res.status(404).json({ error: "No enriched audit entry cached for this timestamp." });
-    return;
+    // Recovery unavailable — continue to legacy KV below.
   }
   try {
-    const onchain = await readAuditFromChain(addr, ctx, 50);
-    const requested = Number(ts);
-    const match =
-      onchain.find((e) => e.timestamp === requested) ??
-      onchain.reduce<typeof onchain[number] | null>(
-        (closest, e) =>
-          closest === null ||
-          Math.abs(e.timestamp - requested) < Math.abs(closest.timestamp - requested)
-            ? e
-            : closest,
-        null,
-      );
-    if (!match) {
-      res.status(404).json({ error: "No on-chain executionLog found for this vault either." });
-      return;
-    }
-    if (match.txHash) {
-      try {
-        const directKvEntry = await readAuditEntry(addr, match);
-        if (directKvEntry) {
-          res.json({ ...directKvEntry, source: "kv-direct-fallback" });
-          return;
-        }
-      } catch {
-        // Direct deterministic KV lookup is best-effort; continue to inference fallback.
+    const kvEntries = await readAuditFromKv(addr, 50);
+    if (kvEntries.length > 0) {
+      const requested = Number(ts);
+      const kvMatch =
+        kvEntries.find((e) => String(e.timestamp) === ts) ??
+        kvEntries.reduce<typeof kvEntries[number] | null>(
+          (closest, e) =>
+            closest === null ||
+            Math.abs(e.timestamp - requested) < Math.abs(closest.timestamp - requested)
+              ? e
+              : closest,
+          null,
+        );
+      if (kvMatch) {
+        res.json({ ...kvMatch, source: "inference-fallback" });
+        return;
       }
     }
-    res.json(await enrichChainEntryWithInference(addr, { ...match, source: "chain-fallback" }));
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  } catch {
+    // KV unreachable.
   }
+  res.status(404).json({ error: "No enriched audit entry cached for this timestamp." });
 });
 
 app.get("/vault/:address/rejections", async (req, res) => {
@@ -692,6 +658,14 @@ app.get("/", (_req, res) => res.redirect("/healthz"));
 app.listen(PORT, () => {
   log(`[server] listening on :${PORT}`);
   log(`[server] cycle interval = ${CYCLE_INTERVAL_MS / 1000}s`);
+  initAuditIndex();
+  const auditIndex = getAuditIndexStats();
+  if (!auditIndex.ok && process.env.NODE_ENV === "production") {
+    log(
+      `[server] BLOCKED_AUDIT_INDEX at startup: ${auditIndex.lastError ?? "unknown error"}. ` +
+        "Auto-execution will stay disabled until AUDIT_INDEX_PATH is writable.",
+    );
+  }
   log("[server] initializing agent (Sealed Inference broker + Storage)...");
 
   setupGlobalContext()
