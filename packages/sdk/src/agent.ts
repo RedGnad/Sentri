@@ -504,15 +504,17 @@ export async function executeOneIterationForVault(
   }
 
   // Read full vault state
-  const [baseAddr, riskAddr, baseBalance, riskBalance, hwm, policy, logCount] = await Promise.all([
-    vault.base(),
-    vault.risk(),
-    vault.vaultBalance(),
-    vault.riskBalance(),
-    vault.highWaterMark(),
-    vault.policy(),
-    vault.executionLogCount(),
-  ]);
+  const [baseAddr, riskAddr, baseBalance, riskBalance, hwm, policy, logCount, lastExecutionTime] =
+    await Promise.all([
+      vault.base(),
+      vault.risk(),
+      vault.vaultBalance(),
+      vault.riskBalance(),
+      vault.highWaterMark(),
+      vault.policy(),
+      vault.executionLogCount(),
+      vault.lastExecutionTime(),
+    ]);
 
   const baseToken = new ethers.Contract(baseAddr, ERC20_ABI, ctx.wallet);
   const riskToken = new ethers.Contract(riskAddr, ERC20_ABI, ctx.wallet);
@@ -621,6 +623,30 @@ export async function executeOneIterationForVault(
     const maxBaseIn = ethers.parseUnits(remainingRiskHeadroom.toFixed(Number(baseDec)), baseDec);
     if (maxBaseIn === 0n) {
       return { status: "skipped", reason: `no remaining ${riskSymbol} exposure headroom` };
+    }
+  }
+
+  // Cooldown gate (pre-LLM). TreasuryVault enforces `cooldownPeriod` on-chain —
+  // executeStrategy reverts with CooldownNotElapsed inside the window. Mirror
+  // that read-only here, BEFORE Sealed Inference, so a cycle that lands inside
+  // the cooldown window costs no inference call and no durable KV write that
+  // could only end in a rejected transaction. The contract stays the hard
+  // guard (a boundary cycle that slips through is still caught by the on-chain
+  // revert handler); this is purely an efficiency gate. Nothing is sent on
+  // chain; funds are never at risk. lastExecutionTime == 0 means the vault has
+  // never executed — no cooldown applies.
+  if (lastExecutionTime > 0n && policySnapshot.cooldownPeriod > 0) {
+    const elapsedSec = Math.floor(Date.now() / 1000) - Number(lastExecutionTime);
+    if (elapsedSec < policySnapshot.cooldownPeriod) {
+      const remainingSec = policySnapshot.cooldownPeriod - elapsedSec;
+      log(
+        `Cooldown active for ${vaultAddress.slice(0, 10)}... — ${remainingSec}s remaining; ` +
+          "skipping before Sealed Inference (no inference call, no tx).",
+      );
+      return {
+        status: "skipped",
+        reason: `cooldown active — ${remainingSec}s remaining before next action`,
+      };
     }
   }
 
