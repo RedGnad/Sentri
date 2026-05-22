@@ -49,6 +49,7 @@ import {
   findAuditIndexByResponseHash,
   findAuditIndexByTxHash,
   findAuditIndexByVaultLog,
+  writeAuditIndexRecord,
 } from "./audit-index.js";
 import { AGENT, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
 import { updatePythOnChain } from "./market.js";
@@ -147,6 +148,116 @@ async function enrichChainEntryWithInference(
     readKvAudit: readAuditEntry,
     readInference: readInferenceRecord,
   });
+}
+
+function bootstrapRootsFromEnv(): string[] {
+  const raw = process.env.SENTRI_AUDIT_INDEX_BOOTSTRAP_ROOTS;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.filter((v): v is string => typeof v === "string" && v.startsWith("0x"));
+    }
+  } catch {
+    // Fall through to comma/space splitting.
+  }
+  return raw
+    .split(/[\s,]+/)
+    .map((v) => v.trim())
+    .filter((v) => v.startsWith("0x"));
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+async function bootstrapAuditIndexFromRoots(context: GlobalContext): Promise<void> {
+  const roots = bootstrapRootsFromEnv();
+  if (roots.length === 0) return;
+  if (!auditIndexExecutionAllowed()) {
+    log("[server] audit index bootstrap skipped: durable index is not writable.");
+    return;
+  }
+
+  const chainLogsByVault = new Map<string, ChainAuditEntry[]>();
+  let written = 0;
+  let skipped = 0;
+  for (const rootHash of roots) {
+    try {
+      const blob = await downloadAuditRecordBlob(rootHash);
+      if (!blob || typeof blob !== "object") {
+        skipped++;
+        log(`[server] audit index bootstrap skipped ${rootHash}: blob missing or not JSON.`);
+        continue;
+      }
+      const envelope = blob as Record<string, unknown>;
+      const entry = (envelope.entry && typeof envelope.entry === "object"
+        ? envelope.entry
+        : envelope) as Record<string, unknown>;
+      const vaultAddress = stringField(entry.vaultAddress) ?? stringField(envelope.vault) ?? stringField(entry.vault);
+      const intentHash = stringField(entry.intentHash);
+      const responseHash = stringField(entry.responseHash);
+      const reasoning = stringField(entry.reasoning);
+      if (!vaultAddress || !intentHash || !responseHash || !reasoning) {
+        skipped++;
+        log(`[server] audit index bootstrap skipped ${rootHash}: missing vault/hash/reasoning fields.`);
+        continue;
+      }
+
+      const vaultKey = vaultAddress.toLowerCase();
+      let chainLogs = chainLogsByVault.get(vaultKey);
+      if (!chainLogs) {
+        chainLogs = await readAuditFromChain(vaultAddress, context, 100);
+        chainLogsByVault.set(vaultKey, chainLogs);
+      }
+      const match = chainLogs.find(
+        (logEntry) =>
+          logEntry.intentHash.toLowerCase() === intentHash.toLowerCase() ||
+          logEntry.responseHash.toLowerCase() === responseHash.toLowerCase(),
+      );
+      if (!match) {
+        skipped++;
+        log(`[server] audit index bootstrap skipped ${rootHash}: no exact on-chain hash match.`);
+        continue;
+      }
+      const txHash = stringField(entry.txHash);
+      if (txHash && match.txHash && txHash.toLowerCase() !== match.txHash.toLowerCase()) {
+        skipped++;
+        log(`[server] audit index bootstrap skipped ${rootHash}: txHash mismatch.`);
+        continue;
+      }
+      const existing = findAuditIndexByIntentHash(match.intentHash);
+      if (
+        existing?.rootHash.toLowerCase() === rootHash.toLowerCase() &&
+        existing.logIndex === match.logIndex &&
+        (!match.txHash || existing.txHash?.toLowerCase() === match.txHash.toLowerCase())
+      ) {
+        skipped++;
+        log(`[server] audit index bootstrap skipped ${rootHash}: already indexed.`);
+        continue;
+      }
+
+      const now = Date.now();
+      writeAuditIndexRecord({
+        vaultAddress: vaultKey,
+        txHash: match.txHash ?? txHash ?? undefined,
+        logIndex: match.logIndex,
+        intentHash: match.intentHash,
+        responseHash: match.responseHash,
+        rootHash,
+        storageTxHash: stringField(entry.canonicalStorageTxHash) ?? stringField(entry.storageTxHash) ?? undefined,
+        action: match.action,
+        createdAt: now,
+        updatedAt: now,
+      });
+      written++;
+      log(`[server] audit index bootstrap recovered ${vaultKey} log/${match.logIndex} from ${rootHash}.`);
+    } catch (err) {
+      skipped++;
+      log(`[server] audit index bootstrap skipped ${rootHash}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  log(`[server] audit index bootstrap complete: written=${written}, skipped=${skipped}.`);
 }
 
 function isPriceStaleError(err: unknown): boolean {
@@ -669,8 +780,9 @@ app.listen(PORT, () => {
   log("[server] initializing agent (Sealed Inference broker + Storage)...");
 
   setupGlobalContext()
-    .then((c) => {
+    .then(async (c) => {
       ctx = c;
+      await bootstrapAuditIndexFromRoots(c);
       state.agentStatus = "ready";
       log("[server] agent ready. Scheduling cycles.");
       setInterval(runCycle, CYCLE_INTERVAL_MS);
