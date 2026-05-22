@@ -11,6 +11,8 @@ import { CHAIN, STORAGE } from "./constants.js";
 // /vault/:address/state and /vault/:address/audit endpoints — fast reads
 // without re-fetching from 0G Storage every time.
 const CACHE_DIR = process.env.SENTRI_CACHE_DIR ?? "/tmp/sentri-cache";
+const KV_READ_TIMEOUT_MS = Number(process.env.STORAGE_KV_READ_TIMEOUT_MS ?? "5000");
+const KV_WRITE_TIMEOUT_MS = Number(process.env.STORAGE_KV_WRITE_TIMEOUT_MS ?? "60000");
 
 function vaultDir(vaultAddr: string): string {
   return path.join(CACHE_DIR, "vaults", vaultAddr.toLowerCase());
@@ -30,6 +32,20 @@ function writeCacheFile(relPath: string, data: unknown): void {
   }
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // 0G Storage stream IDs are derived per-vault so different vaults' data
 // never collides on the storage layer either.
 function stateStreamId(vaultAddr: string): string {
@@ -42,6 +58,14 @@ function auditStreamId(vaultAddr: string): string {
 
 function auditManifestKey(vaultAddr: string): string {
   return `audit:manifest:${vaultAddr.toLowerCase()}`;
+}
+
+function inferenceStreamId(vaultAddr: string): string {
+  return ethers.keccak256(ethers.toUtf8Bytes(`sentri:inference:${vaultAddr.toLowerCase()}`));
+}
+
+function inferenceKey(vaultAddr: string, intentHash: string): string {
+  return `inference:${vaultAddr.toLowerCase()}:${intentHash.toLowerCase()}`;
 }
 
 function rejectionStreamId(vaultAddr: string): string {
@@ -181,7 +205,7 @@ export interface AuditEntry {
   marketSpreadPct?: number;
   marketSourceCount?: number;
   marketRequiredSourceCount?: number;
-  marketRawSources?: Array<{ source: string; ethUsd: number }>;
+  marketRawSources?: Array<{ source: string; priceUsd?: number; ethUsd: number }>;
   priceAttestationPayload?: unknown;
   storageError?: string;
   canonicalRootHash?: string;
@@ -276,10 +300,101 @@ export async function appendAuditLog(
   return canonicalResult ?? kvResult;
 }
 
+export interface InferenceRecord {
+  schema: "sentri.inference.v1";
+  timestamp: number;
+  vaultAddress: string;
+  logIndex: number;
+  action: string;
+  amount: string;
+  amountIn: string;
+  intent: unknown;
+  intentHash: string;
+  responseHash: string;
+  rawResponseHash?: string;
+  signedPayloadHash?: string;
+  modelResponse?: string;
+  signedResponse: string;
+  teeSignature: string;
+  teeSigner: string;
+  recoveredSigner?: string;
+  expectedSigner?: string;
+  signerMatchedProvider?: boolean;
+  teeAttestation: string;
+  deadline: number;
+  processResponseVerified?: true;
+  verified: true;
+  provider: string;
+  providerEndpoint?: string;
+  model: string;
+  verifiability: string;
+  chatID: string;
+  reasoning: string;
+  confidence: number;
+  marketPrice?: number;
+  marketSource?: string;
+  marketSpreadPct?: number;
+  marketSourceCount?: number;
+  marketRequiredSourceCount?: number;
+  marketRawSources?: Array<{ source: string; priceUsd?: number; ethUsd: number }>;
+  priceAttestationPayload?: unknown;
+  kvTxHash?: string;
+  kvRootHash?: string;
+}
+
+export async function saveInferenceRecord(
+  vaultAddr: string,
+  record: InferenceRecord,
+): Promise<{ txHash: string; rootHash: string }> {
+  const key = inferenceKey(vaultAddr, record.intentHash);
+  const result = await _writeKv(inferenceStreamId(vaultAddr), key, record);
+  if (!result) throw new Error("0G Storage KV write returned no result");
+  const stored: InferenceRecord = {
+    ...record,
+    kvTxHash: result.txHash,
+    kvRootHash: result.rootHash,
+  };
+  writeCacheFile(
+    path.join("vaults", vaultAddr.toLowerCase(), "inference", `${record.intentHash.toLowerCase()}.json`),
+    stored,
+  );
+  return result;
+}
+
+export function readInferenceRecordFromCache(
+  vaultAddr: string,
+  intentHash: string,
+): InferenceRecord | null {
+  const file = path.join(
+    vaultDir(vaultAddr),
+    "inference",
+    `${intentHash.toLowerCase()}.json`,
+  );
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8")) as InferenceRecord;
+  } catch {
+    return null;
+  }
+}
+
+export async function readInferenceRecord(
+  vaultAddr: string,
+  intentHash: string,
+): Promise<InferenceRecord | null> {
+  const cached = readInferenceRecordFromCache(vaultAddr, intentHash);
+  if (cached) return cached;
+  return _readKv<InferenceRecord>(
+    inferenceStreamId(vaultAddr),
+    inferenceKey(vaultAddr, intentHash),
+    STORAGE.kvNodeUrl,
+  );
+}
+
 export async function readAuditEntry(
   vaultAddr: string,
   entry: Pick<AuditEntry, "txHash" | "logIndex" | "intentHash">,
-  kvNodeUrl: string,
+  kvNodeUrl = STORAGE.kvNodeUrl,
 ): Promise<AuditEntry | null> {
   return _readKv<AuditEntry>(auditStreamId(vaultAddr), auditKey(vaultAddr, entry), kvNodeUrl);
 }
@@ -409,7 +524,11 @@ async function _writeKv(
   value: unknown,
 ): Promise<{ txHash: string; rootHash: string } | null> {
   const indexer = getIndexer();
-  const [nodes, nodesErr] = await indexer.selectNodes(1);
+  const [nodes, nodesErr] = await withTimeout(
+    indexer.selectNodes(1),
+    KV_WRITE_TIMEOUT_MS,
+    "0G Storage node selection",
+  );
   if (nodesErr !== null) {
     throw new Error(`Failed to select storage nodes: ${nodesErr}`);
   }
@@ -418,7 +537,11 @@ async function _writeKv(
   batcher.streamDataBuilder.set(streamId, encodeKey(key), encodeValue(value));
 
   const execOpts = STORAGE.submitFeeWei > 0n ? { fee: STORAGE.submitFeeWei } : undefined;
-  const [result, execErr] = await batcher.exec(execOpts);
+  const [result, execErr] = await withTimeout(
+    batcher.exec(execOpts),
+    KV_WRITE_TIMEOUT_MS,
+    "0G Storage KV write",
+  );
   if (execErr !== null) {
     throw new Error(`Failed to write to 0G Storage: ${execErr}`);
   }
@@ -458,7 +581,11 @@ async function _readKv<T = unknown>(
   const keyBytes = encodeKey(key);
   const encodedKey = ethers.encodeBase64(keyBytes) as unknown as Uint8Array;
   try {
-    const val = await kvClient.getValue(streamId, encodedKey);
+    const val = await withTimeout(
+      kvClient.getValue(streamId, encodedKey),
+      KV_READ_TIMEOUT_MS,
+      "0G Storage KV read",
+    );
     if (!val) return null;
     const raw = typeof val === "object" && "data" in val
       ? Buffer.from(String((val as { data: string }).data), "base64").toString("utf-8")
@@ -547,7 +674,7 @@ export function findClosestVaultAudit(
 
 export interface RejectionEntry {
   timestamp: number;
-  type: "defensive-override" | "onchain-revert" | "agent-sizing" | "tee-signer-mismatch";
+  type: "defensive-override" | "onchain-revert" | "agent-sizing" | "tee-signer-mismatch" | "audit-storage";
   phase?: "state-read" | "estimateGas" | "executeStrategy";
   reason: string;
   errorCode?: string;

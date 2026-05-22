@@ -161,6 +161,7 @@ export const TREASURY_VAULT_ABI = [
   "function owner() external view returns (address)",
   "function pendingOwner() external view returns (address)",
   "function lastExecutionTime() external view returns (uint256)",
+  "event StrategyExecuted(uint256 indexed logIndex, uint8 action, uint256 amountIn, uint256 amountOut, uint256 tvlAfter, bytes32 intentHash, bytes32 responseHash, address teeSigner, bytes32 teeAttestation, uint256 deadline)",
 ] as const;
 
 // AgentINFT ABI — minimal subset the agent runner needs to preflight the

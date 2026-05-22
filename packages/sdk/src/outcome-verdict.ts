@@ -94,6 +94,12 @@ export function describeOutcome(outcome: OutcomeLike): Verdict {
       text: "Blocked safely — the oracle price was stale, so execution stopped before funds moved. The agent waits for a fresh price.",
     };
   }
+  if (has(reason, "audit persistence unavailable", "SKIPPED_AUDIT_STORAGE")) {
+    return {
+      tone: "waiting",
+      text: "Blocked safely — the TEE reasoning could not be durably indexed, so execution stopped before funds moved.",
+    };
+  }
   if (has(reason, "below dust threshold")) {
     return {
       tone: "ok",

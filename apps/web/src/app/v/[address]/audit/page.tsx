@@ -296,15 +296,20 @@ function AuditEntry({
   // "not indexed" message — this avoids flickering loading ↔ not-indexed while
   // the background poll is still in flight.
   const [revealTimedOut, setRevealTimedOut] = useState(false);
+  const hasEnrichedReasoning = Boolean(detail?.reasoning);
+  const detailIsTerminalFallback =
+    Boolean(detail) &&
+    !hasEnrichedReasoning &&
+    (detail?.source === "chain-fallback" || detail?.source === "no-context");
   useEffect(() => {
     if (!expanded) {
       setRevealTimedOut(false);
       return;
     }
-    if (detail?.reasoning) return; // already resolved — no timer needed
+    if (hasEnrichedReasoning || detailIsTerminalFallback) return; // already resolved — no timer needed
     const timer = setTimeout(() => setRevealTimedOut(true), 26_000);
     return () => clearTimeout(timer);
-  }, [expanded, detail?.reasoning]);
+  }, [expanded, hasEnrichedReasoning, detailIsTerminalFallback]);
 
   const date = new Date(tsMs);
   const dustExecution = action === 2 && isDustExecution(amountIn, amountOut);
@@ -428,7 +433,7 @@ function AuditEntry({
 
       {expanded && (
         <div className="border-t border-hairline px-5 py-5 bg-bg-sunk/40">
-          {!detail?.reasoning && !revealTimedOut ? (
+          {!hasEnrichedReasoning && !detailIsTerminalFallback && !revealTimedOut ? (
             <p className="font-mono text-[11px] text-ink-faint">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber animate-pulse-dot mr-2 align-middle" />
               Decrypting sealed inference — fetching the TEE-signed reasoning…
@@ -617,9 +622,10 @@ function AuditEntry({
             </div>
           ) : (
             <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
-              On-chain proof verified. Enriched TEE reasoning is not currently
-              indexed by the agent cache, but the vault log, hashes, signer, and
-              attestation remain verifiable on-chain.
+              On-chain proof verified. This execution is currently available
+              from the vault log only, so the enriched TEE reasoning is not
+              indexed by the agent cache. Hashes, signer, and attestation remain
+              verifiable on-chain.
             </p>
           )}
         </div>
@@ -644,6 +650,7 @@ const REJECTION_TYPE_LABEL: Record<string, string> = {
   "onchain-revert": "On-chain revert",
   "agent-sizing": "Agent sizing",
   "tee-signer-mismatch": "TEE signer mismatch",
+  "audit-storage": "Audit storage",
 };
 
 const REJECTION_PHASE_LABEL: Record<string, string> = {

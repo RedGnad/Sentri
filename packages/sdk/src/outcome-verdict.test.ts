@@ -45,6 +45,13 @@ test("stale oracle skip → safe blocked wording", () => {
   assert.match(v.text, /before funds moved/);
 });
 
+test("audit persistence skip → safe blocked wording", () => {
+  const v = describeOutcome({ status: "skipped", reason: "audit persistence unavailable; no funds moved" });
+  assert.equal(v.tone, "waiting");
+  assert.match(v.text, /Blocked safely/);
+  assert.match(v.text, /TEE reasoning/);
+});
+
 test("deterministic hold → ok tone", () => {
   const v = describeOutcome({ status: "skipped", reason: "no action needed (deterministic hold)" });
   assert.equal(v.tone, "ok");

@@ -32,8 +32,10 @@ import {
   listVaultAuditFromCache,
   findClosestVaultAudit,
   listKnownVaultsFromCache,
+  readAuditEntry,
   readAuditFromKv,
   readAuditFromRecoveryRecords,
+  readInferenceRecord,
   listVaultRejectionsFromCache,
   readVaultRejectionFromCache,
   readRejectionsFromKv,
@@ -43,6 +45,22 @@ import { updatePythOnChain } from "./market.js";
 import { decodeVaultError } from "./vault-errors.js";
 
 const ACTION_LABELS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"] as const;
+
+type ChainAuditEntry = {
+  source: "chain-fallback";
+  logIndex: number;
+  timestamp: number;
+  action: string;
+  amountIn: string;
+  amountOut: string;
+  tvlAfter: string;
+  intentHash: string;
+  responseHash: string;
+  teeSigner: string;
+  teeAttestation: string;
+  deadline: number;
+  txHash?: string;
+};
 
 /**
  * Fallback: when the agent's local cache is wiped (Render restart on a
@@ -57,13 +75,14 @@ async function readAuditFromChain(
   vaultAddress: string,
   context: GlobalContext,
   limit: number,
-): Promise<unknown[]> {
+): Promise<ChainAuditEntry[]> {
   const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, context.provider);
   const countRaw = (await vault.executionLogCount()) as bigint;
   const count = Number(countRaw);
   if (count === 0) return [];
   const start = Math.max(0, count - limit);
   const indices = Array.from({ length: count - start }, (_, i) => start + i);
+  const txHashesByLogIndex = await readStrategyExecutedTxHashes(vaultAddress, context);
   const logs = await Promise.all(
     indices.map(
       (i) =>
@@ -86,8 +105,84 @@ async function readAuditFromChain(
       teeSigner: log[7],
       teeAttestation: log[8],
       deadline: Number(log[9]),
+      txHash: txHashesByLogIndex.get(indices[k]),
     }))
     .reverse();
+}
+
+async function readStrategyExecutedTxHashes(
+  vaultAddress: string,
+  context: GlobalContext,
+): Promise<Map<number, string>> {
+  const hashes = new Map<number, string>();
+  try {
+    const iface = new ethers.Interface(TREASURY_VAULT_ABI);
+    const event = iface.getEvent("StrategyExecuted");
+    if (!event) return hashes;
+    const latest = await context.provider.getBlockNumber();
+    const defaultFromBlock = Math.max(0, latest - 1_000_000);
+    const fromBlock = Number(process.env.SENTRI_AUDIT_EVENT_FROM_BLOCK ?? defaultFromBlock);
+    const logs = await context.provider.getLogs({
+      address: vaultAddress,
+      fromBlock,
+      toBlock: "latest",
+      topics: [event.topicHash],
+    });
+    for (const raw of logs) {
+      const parsed = iface.parseLog(raw);
+      if (!parsed) continue;
+      hashes.set(Number(parsed.args.logIndex), raw.transactionHash);
+    }
+  } catch {
+    // Tx hash enrichment is best-effort; executionLogs remain authoritative.
+  }
+  return hashes;
+}
+
+async function enrichChainEntryWithInference(
+  vaultAddress: string,
+  entry: ChainAuditEntry,
+): Promise<unknown> {
+  try {
+    const inference = await readInferenceRecord(vaultAddress, entry.intentHash);
+    if (!inference) return entry;
+    return {
+      ...entry,
+      source: "inference-fallback",
+      amount: inference.amount,
+      intent: inference.intent,
+      rawResponseHash: inference.rawResponseHash,
+      signedPayloadHash: inference.signedPayloadHash,
+      modelResponse: inference.modelResponse,
+      signedResponse: inference.signedResponse,
+      teeSignature: inference.teeSignature,
+      recoveredSigner: inference.recoveredSigner,
+      expectedSigner: inference.expectedSigner,
+      signerMatchedProvider: inference.signerMatchedProvider,
+      processResponseVerified: inference.processResponseVerified,
+      verified: inference.verified,
+      provider: inference.provider,
+      providerEndpoint: inference.providerEndpoint,
+      model: inference.model,
+      verifiability: inference.verifiability,
+      chatID: inference.chatID,
+      reasoning: inference.reasoning,
+      confidence: inference.confidence,
+      marketPrice: inference.marketPrice,
+      marketSource: inference.marketSource,
+      marketSpreadPct: inference.marketSpreadPct,
+      marketSourceCount: inference.marketSourceCount,
+      marketRequiredSourceCount: inference.marketRequiredSourceCount,
+      marketRawSources: inference.marketRawSources,
+      priceAttestationPayload: inference.priceAttestationPayload,
+      storageTxHash: inference.kvTxHash,
+      storageRootHash: inference.kvRootHash,
+      kvIndexTxHash: inference.kvTxHash,
+      kvIndexRootHash: inference.kvRootHash,
+    };
+  } catch {
+    return entry;
+  }
 }
 
 function isPriceStaleError(err: unknown): boolean {
@@ -536,9 +631,7 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
     return;
   }
   try {
-    const onchain = (await readAuditFromChain(addr, ctx, 50)) as Array<{
-      timestamp: number;
-    }>;
+    const onchain = await readAuditFromChain(addr, ctx, 50);
     const requested = Number(ts);
     const match =
       onchain.find((e) => e.timestamp === requested) ??
@@ -554,7 +647,18 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
       res.status(404).json({ error: "No on-chain executionLog found for this vault either." });
       return;
     }
-    res.json({ ...match, source: "chain-fallback" });
+    if (match.txHash) {
+      try {
+        const directKvEntry = await readAuditEntry(addr, match);
+        if (directKvEntry) {
+          res.json({ ...directKvEntry, source: "kv-direct-fallback" });
+          return;
+        }
+      } catch {
+        // Direct deterministic KV lookup is best-effort; continue to inference fallback.
+      }
+    }
+    res.json(await enrichChainEntryWithInference(addr, { ...match, source: "chain-fallback" }));
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }

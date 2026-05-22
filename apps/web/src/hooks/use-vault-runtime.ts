@@ -36,6 +36,7 @@ export interface VaultStateFromAgent {
 }
 
 export interface VaultAuditEntry {
+  source?: string;
   timestamp: number;
   logIndex: number;
   action: string;
@@ -83,7 +84,7 @@ export interface VaultAuditEntry {
 
 export interface VaultRejectionEntry {
   timestamp: number;
-  type: "defensive-override" | "onchain-revert" | "agent-sizing" | "tee-signer-mismatch";
+  type: "defensive-override" | "onchain-revert" | "agent-sizing" | "tee-signer-mismatch" | "audit-storage";
   phase?: "state-read" | "estimateGas" | "executeStrategy";
   reason: string;
   errorCode?: string;

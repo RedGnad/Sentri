@@ -17,7 +17,7 @@ import {
   requestInference,
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
-import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog } from "./storage.js";
+import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog, saveInferenceRecord } from "./storage.js";
 import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
 import { preflightTeeSigner, readAgentMetadata, resolveAgentTokenId } from "./agent-signer.js";
 import { decodeVaultError } from "./vault-errors.js";
@@ -776,12 +776,84 @@ export async function executeOneIterationForVault(
     timestamp: activeMarket.timestamp,
   };
 
-  // Execute. Keep this try/catch scoped only to executeStrategy so post-tx
-  // bookkeeping failures cannot be misreported as blocked actions.
   const formattedAmountIn =
     decision.action === "EmergencyDeleverage"
       ? ethers.formatUnits(amountIn, riskDec)
       : ethers.formatUnits(amountIn, baseDec);
+
+  try {
+    await saveInferenceRecord(vaultAddress, {
+      schema: "sentri.inference.v1",
+      timestamp: Date.now(),
+      vaultAddress,
+      logIndex: Number(logCount),
+      action: decision.action,
+      amount: formattedAmountIn,
+      amountIn: amountIn.toString(),
+      intent,
+      intentHash,
+      responseHash: inference.responseHash,
+      rawResponseHash: inference.rawResponseHash,
+      signedPayloadHash: inference.signedPayloadHash,
+      modelResponse: inference.modelResponse,
+      signedResponse: inference.signedResponse,
+      teeSignature: inference.teeSignature,
+      teeSigner: inference.teeSignerAddress,
+      recoveredSigner: inference.recoveredSignerAddress,
+      expectedSigner: inference.teeSignerAddress,
+      signerMatchedProvider: inference.recoveredSignerAddress.toLowerCase() === inference.teeSignerAddress.toLowerCase(),
+      teeAttestation: inference.teeAttestation,
+      deadline,
+      processResponseVerified: inference.processResponseVerified,
+      verified: inference.verified,
+      provider: inference.provider,
+      providerEndpoint: inference.endpoint,
+      model: inference.model,
+      verifiability: inference.verifiability,
+      chatID: inference.chatID,
+      reasoning,
+      confidence: confidenceScore,
+      marketPrice: activeMarket.priceUsd,
+      marketSource: activeMarket.source,
+      marketSpreadPct: activeMarket.spreadPct,
+      marketSourceCount: activeMarket.sourceCount,
+      marketRequiredSourceCount: activeMarket.requiredSourceCount,
+      marketRawSources: activeMarket.rawSources,
+      priceAttestationPayload,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`SKIPPED_AUDIT_STORAGE: durable inference record write failed: ${message}`);
+    await appendRejectionLog(vaultAddress, {
+      timestamp: Date.now(),
+      type: "audit-storage",
+      reason:
+        "Audit persistence unavailable — TEE reasoning could not be written to durable storage, " +
+        "so execution was blocked before funds moved.",
+      errorCode: "AuditStorageUnavailable",
+      action: decision.action,
+      intentHash,
+      vaultAddress,
+      safeNoFundsMoved: true,
+      verdict:
+        "Blocked safely: TEE reasoning was not durably indexed, so no transaction was sent and no funds moved.",
+    });
+    return { status: "skipped", reason: "audit persistence unavailable; no funds moved" };
+  }
+
+  const finalFreshness = await ensureFreshOracle(
+    ctx,
+    vaultAddress,
+    policySnapshot.maxPriceStaleness,
+    "executeStrategy",
+    decision.action,
+  );
+  if (!finalFreshness.ok) {
+    return { status: "skipped", reason: finalFreshness.reason };
+  }
+
+  // Execute. Keep this try/catch scoped only to executeStrategy so post-tx
+  // bookkeeping failures cannot be misreported as blocked actions.
   let receipt: ethers.TransactionReceipt;
   try {
     const tx = await vault.executeStrategy(
