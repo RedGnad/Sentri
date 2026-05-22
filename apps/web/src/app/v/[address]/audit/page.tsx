@@ -622,10 +622,9 @@ function AuditEntry({
             </div>
           ) : (
             <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
-              On-chain proof verified. This execution is currently available
-              from the vault log only, so the enriched TEE reasoning is not
-              indexed by the agent cache. Hashes, signer, and attestation remain
-              verifiable on-chain.
+              On-chain proof verified. Full reasoning recovery is pending for
+              this historical execution. Signer, attestation, intent hash,
+              response hash and vault log remain verifiable on-chain.
             </p>
           )}
         </div>
