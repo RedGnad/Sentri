@@ -614,6 +614,16 @@ export async function executeOneIterationForVault(
     return { status: "skipped", reason: "no action needed (deterministic hold)" };
   }
 
+  if (recommendation.recommendedAction === "Rebalance") {
+    const currentRiskValue = Number(riskStr) * activeMarket.priceUsd;
+    const maxRiskValue = Number(tvlStr) * policySnapshot.maxAllocationBps / 10000;
+    const remainingRiskHeadroom = Math.max(0, maxRiskValue - currentRiskValue);
+    const maxBaseIn = ethers.parseUnits(remainingRiskHeadroom.toFixed(Number(baseDec)), baseDec);
+    if (maxBaseIn === 0n) {
+      return { status: "skipped", reason: `no remaining ${riskSymbol} exposure headroom` };
+    }
+  }
+
   log("Requesting Sealed Inference (TEE)...");
   const inference = await requestInference(prompt, TREASURY_SYSTEM_PROMPT);
   log(
@@ -1097,21 +1107,29 @@ function classifyRegime(input: {
  */
 function targetShareForRegime(regime: Regime, maxAllocationBps: number): number {
   const isAggressive = maxAllocationBps >= 5000;
+  let rawTarget: number;
   switch (regime) {
     case "drawdown_breach":
     case "crash":
-      return 0;
+      rawTarget = 0;
+      break;
     case "down_wide":
-      return 10;
+      rawTarget = 10;
+      break;
     case "down_tight":
-      return 18;
+      rawTarget = 18;
+      break;
     case "flat":
-      return 22;
+      rawTarget = 22;
+      break;
     case "up_wide":
-      return 20;
+      rawTarget = 20;
+      break;
     case "up_tight":
-      return isAggressive ? 28 : 25;
+      rawTarget = isAggressive ? 28 : 25;
+      break;
   }
+  return Math.min(rawTarget, maxAllocationBps / 100);
 }
 
 interface StrategyRecommendation {
@@ -1129,7 +1147,7 @@ interface StrategyRecommendation {
  * LLM never has to do float math, and the recommendation is reproducible
  * off-chain by anyone with the same inputs.
  */
-function computeStrategy(input: {
+export function computeStrategy(input: {
   currentShare: number;
   drawdownPct: number;
   change24h: number;
@@ -1255,7 +1273,7 @@ export function validateAgainstRecommendation(
     if (decision.action !== "Rebalance") {
       return {
         ok: false,
-        reason: `recommended Rebalance(${recommendation.recommendedAmountBps}bps); LLM picked ${decision.action} which is not a defensive override`,
+        reason: `model disagreement: deterministic policy recommended Rebalance(${recommendation.recommendedAmountBps}bps); model picked ${decision.action}; skipped with no trade sent`,
       };
     }
     if (decision.amount_bps > recommendation.recommendedAmountBps) {

@@ -142,10 +142,10 @@ export function describeOutcome(outcome: OutcomeLike): Verdict {
       text: "Skipped — the swap exceeded the slippage guard. The agent retries next cycle.",
     };
   }
-  if (has(reason, "defensive override")) {
+  if (has(reason, "defensive override", "model disagreement")) {
     return {
       tone: "info",
-      text: "Holding — the AI proposed a riskier action than the defensive policy allows; rejected by the verifier.",
+      text: "Verifier hold — the model disagreed with the deterministic policy, so the agent skipped the trade. No funds moved.",
     };
   }
   if (has(reason, "invalid JSON", "invalid amount_bps", "invalid action", "invalid confidence")) {

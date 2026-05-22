@@ -19,6 +19,7 @@ import {
   ChevronUp,
   ExternalLink,
   ShieldX,
+  ShieldCheck,
   Copy,
   Check,
 } from "lucide-react";
@@ -27,9 +28,9 @@ import { galileo } from "@/config/wagmi";
 const ACTION_LABELS = [
   "Rebalance",
   "YieldFarm",
-  "EmergencyDeleverage",
+  "Risk trim",
 ] as const;
-const ACTION_VARIANTS = ["default", "success", "destructive"] as const;
+const ACTION_VARIANTS = ["default", "success", "warning"] as const;
 const EXPLORER =
   process.env.NEXT_PUBLIC_EXPLORER_URL ?? galileo.blockExplorers.default.url;
 
@@ -110,6 +111,12 @@ export default function VaultAuditPage() {
     rejectionsData?.entries.filter(
       (entry) => entry.errorCode !== "CooldownNotElapsed",
     ) ?? [];
+  const blockedActions = visibleRejections.filter(
+    (entry) => entry.type !== "defensive-override",
+  );
+  const verifierHolds = visibleRejections.filter(
+    (entry) => entry.type === "defensive-override",
+  );
   const [rejectionsExpanded, setRejectionsExpanded] = useState(false);
 
   const logContracts = Array.from(
@@ -155,10 +162,21 @@ export default function VaultAuditPage() {
             className="w-full flex items-center justify-between px-4 py-3 text-left"
             onClick={() => setRejectionsExpanded((v) => !v)}
           >
-            <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-alert">
-              <ShieldX className="h-3.5 w-3.5" />
-              {visibleRejections.length} blocked action
-              {visibleRejections.length === 1 ? "" : "s"}
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-kicker">
+              {blockedActions.length > 0 && (
+                <span className="flex items-center gap-2 text-alert">
+                  <ShieldX className="h-3.5 w-3.5" />
+                  {blockedActions.length} blocked action
+                  {blockedActions.length === 1 ? "" : "s"}
+                </span>
+              )}
+              {verifierHolds.length > 0 && (
+                <span className="flex items-center gap-2 text-amber">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {verifierHolds.length} verifier hold
+                  {verifierHolds.length === 1 ? "" : "s"}
+                </span>
+              )}
             </span>
             {rejectionsExpanded ? (
               <ChevronUp className="h-4 w-4 text-ink-dim" />
@@ -168,7 +186,7 @@ export default function VaultAuditPage() {
           </button>
           {rejectionsExpanded && (
             <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
-              {visibleRejections.map((r, i) => (
+              {[...blockedActions, ...verifierHolds].map((r, i) => (
                 <RejectionRow key={i} entry={r} />
               ))}
             </div>
@@ -305,7 +323,7 @@ function AuditEntry({
           <span className="font-mono text-[10px] text-ink-dim tabular">
             log/{logId}
           </span>
-          <Badge variant={variant as "default" | "success" | "destructive"}>
+          <Badge variant={variant as "default" | "success" | "destructive" | "warning"}>
             {actionLabel}
           </Badge>
         </div>
@@ -622,7 +640,7 @@ function AuditEntry({
 }
 
 const REJECTION_TYPE_LABEL: Record<string, string> = {
-  "defensive-override": "Defensive override",
+  "defensive-override": "Verifier hold",
   "onchain-revert": "On-chain revert",
   "agent-sizing": "Agent sizing",
   "tee-signer-mismatch": "TEE signer mismatch",
@@ -636,19 +654,26 @@ const REJECTION_PHASE_LABEL: Record<string, string> = {
 
 function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
   const date = new Date(entry.timestamp);
+  const isVerifierHold = entry.type === "defensive-override";
   const safeVerdict =
     entry.verdict ??
     (entry.errorCode === "PriceStale"
       ? "Blocked safely: oracle price was stale. No funds moved."
       : entry.safeNoFundsMoved
         ? "Blocked safely: no funds moved."
+      : isVerifierHold
+        ? "Verifier hold: model disagreed with policy, so no trade was sent."
       : null);
   return (
     <div className="py-2.5 grid grid-cols-[auto_1fr_auto] gap-3 items-start">
-      <ShieldX className="h-3.5 w-3.5 text-alert mt-0.5 shrink-0" />
+      {isVerifierHold ? (
+        <ShieldCheck className="h-3.5 w-3.5 text-amber mt-0.5 shrink-0" />
+      ) : (
+        <ShieldX className="h-3.5 w-3.5 text-alert mt-0.5 shrink-0" />
+      )}
       <div>
         {safeVerdict && (
-          <p className="font-mono text-[11px] text-phosphor leading-snug mb-1">
+          <p className={`font-mono text-[11px] leading-snug mb-1 ${isVerifierHold ? "text-amber" : "text-phosphor"}`}>
             {safeVerdict}
           </p>
         )}

@@ -123,6 +123,7 @@ The LLM is a **defensive verifier**, not a free trader. After `parseAgentDecisio
 - For a `Rebalance` recommendation of *N* bps, the LLM may return a buy in `[0, N]` or fall back to hold; never `> N`.
 - For an `EmergencyDeleverage` recommendation of *N* bps, the LLM must return at least *N* — under-trimming a defensive recommendation is forbidden.
 - Hold (`amount_bps = 0`) is universally permitted.
+- The regime target is capped by `policy.maxAllocationBps`, so Conservative/custom vaults never chase a target above their on-chain exposure ceiling.
 
 Any contract violation is rejected at the agent layer with a logged reason; the cycle is skipped without an on-chain swap. This makes the "AI as defensive verifier" claim machine-checked in the call path, not only stated in the prompt doctrine.
 

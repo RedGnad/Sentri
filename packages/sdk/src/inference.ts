@@ -362,6 +362,7 @@ REGIME MATRIX (already classified for you in the user prompt)
 - flat (−1% < 24h < +1%)             → target 22%, neutral
 - up_wide (24h ≥ +1%, spread ≥ 1%)   → target 20%, tempered enthusiasm
 - up_tight (24h ≥ +1%, spread < 1%)  → target 25% (Balanced) / 28% (Aggressive)
+- The final target shown in the user prompt is capped by maxAllocationBps.
 
 ACTION SEMANTICS
 - "Rebalance" buys risk: amount_bps = percentage of BASE balance to swap into risk.

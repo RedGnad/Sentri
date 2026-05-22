@@ -60,6 +60,16 @@ test("TEE signer mismatch skip → blocked tone", () => {
   assert.match(v.text, /Auto-execution blocked/);
 });
 
+test("model disagreement skip → verifier hold", () => {
+  const v = describeOutcome({
+    status: "skipped",
+    reason: "model disagreement: deterministic policy recommended Rebalance(500bps); model picked EmergencyDeleverage; skipped with no trade sent",
+  });
+  assert.equal(v.tone, "info");
+  assert.match(v.text, /Verifier hold/);
+  assert.match(v.text, /No funds moved/);
+});
+
 test("killed → blocked tone, mentions funds safe", () => {
   const v = describeOutcome({ status: "killed", reason: "vault killed mid-iteration" });
   assert.equal(v.tone, "blocked");
