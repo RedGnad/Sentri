@@ -638,8 +638,10 @@ function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
   const date = new Date(entry.timestamp);
   const safeVerdict =
     entry.verdict ??
-    (entry.errorCode === "PriceStale" && entry.safeNoFundsMoved
+    (entry.errorCode === "PriceStale"
       ? "Blocked safely: oracle price was stale. No funds moved."
+      : entry.safeNoFundsMoved
+        ? "Blocked safely: no funds moved."
       : null);
   return (
     <div className="py-2.5 grid grid-cols-[auto_1fr_auto] gap-3 items-start">
