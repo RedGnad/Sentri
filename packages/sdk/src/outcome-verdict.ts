@@ -91,7 +91,7 @@ export function describeOutcome(outcome: OutcomeLike): Verdict {
   if (has(reason, "oracle price stale", "price stale", "PriceStale")) {
     return {
       tone: "waiting",
-      text: "Holding — the oracle price is stale. The agent waits for a fresh price before executing.",
+      text: "Blocked safely — the oracle price was stale, so execution stopped before funds moved. The agent waits for a fresh price.",
     };
   }
   if (has(reason, "below dust threshold")) {

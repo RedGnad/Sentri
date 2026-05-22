@@ -38,6 +38,13 @@ test("cooldown skip → waiting tone", () => {
   assert.match(v.text, /Cooldown/);
 });
 
+test("stale oracle skip → safe blocked wording", () => {
+  const v = describeOutcome({ status: "skipped", reason: "oracle price stale" });
+  assert.equal(v.tone, "waiting");
+  assert.match(v.text, /Blocked safely/);
+  assert.match(v.text, /before funds moved/);
+});
+
 test("deterministic hold → ok tone", () => {
   const v = describeOutcome({ status: "skipped", reason: "no action needed (deterministic hold)" });
   assert.equal(v.tone, "ok");

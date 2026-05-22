@@ -628,32 +628,62 @@ const REJECTION_TYPE_LABEL: Record<string, string> = {
   "tee-signer-mismatch": "TEE signer mismatch",
 };
 
+const REJECTION_PHASE_LABEL: Record<string, string> = {
+  "state-read": "State read",
+  "estimateGas": "Estimate only",
+  "executeStrategy": "Execute tx",
+};
+
 function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
   const date = new Date(entry.timestamp);
+  const safeVerdict =
+    entry.verdict ??
+    (entry.errorCode === "PriceStale" && entry.safeNoFundsMoved
+      ? "Blocked safely: oracle price was stale. No funds moved."
+      : null);
   return (
     <div className="py-2.5 grid grid-cols-[auto_1fr_auto] gap-3 items-start">
       <ShieldX className="h-3.5 w-3.5 text-alert mt-0.5 shrink-0" />
       <div>
+        {safeVerdict && (
+          <p className="font-mono text-[11px] text-phosphor leading-snug mb-1">
+            {safeVerdict}
+          </p>
+        )}
         <p className="font-mono text-[11px] text-ink leading-snug">
           {entry.reason}
         </p>
-        {entry.errorCode && (
-          <code className="font-mono text-[10px] text-alert/80">
-            {entry.errorCode}
-          </code>
-        )}
-        {entry.action && (
-          <span className="ml-2 font-mono text-[10px] text-ink-dim">
-            action: {entry.action}
-          </span>
-        )}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-ink-dim">
+          {entry.errorCode && (
+            <code className="text-alert/80">{entry.errorCode}</code>
+          )}
+          {entry.phase && <span>phase: {REJECTION_PHASE_LABEL[entry.phase] ?? entry.phase}</span>}
+          {entry.action && <span>action: {entry.action}</span>}
+          {entry.priceAgeSec != null && entry.maxPriceStaleness != null && (
+            <span>
+              price age: {entry.priceAgeSec}s / max {entry.maxPriceStaleness}s
+            </span>
+          )}
+          {entry.txHash ? (
+            <a
+              href={`${EXPLORER}/tx/${entry.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber hover:underline tabular flex items-center gap-1"
+            >
+              tx {entry.txHash.slice(0, 10)}… <ExternalLink className="h-3 w-3" />
+            </a>
+          ) : (
+            <span>no tx</span>
+          )}
+        </div>
       </div>
       <div className="text-right shrink-0">
         <p className="font-mono text-[9px] text-ink-faint">
           {REJECTION_TYPE_LABEL[entry.type] ?? entry.type}
         </p>
         <p className="font-mono text-[9px] text-ink-faint">
-          {date.toLocaleTimeString()}
+          {date.toISOString().slice(0, 19).replace("T", " ")} UTC
         </p>
       </div>
     </div>

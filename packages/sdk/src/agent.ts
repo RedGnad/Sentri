@@ -126,6 +126,179 @@ export function log(msg: string): void {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
+type RejectionPhase = "state-read" | "estimateGas" | "executeStrategy";
+
+interface PriceFreshness {
+  answer: bigint;
+  updatedAt: number;
+  blockTimestamp: number;
+  ageSec: number;
+  maxPriceStaleness: number;
+  refreshThresholdSec: number;
+}
+
+const PRICE_REFRESH_BUFFER_SEC = Number(process.env.PRICE_REFRESH_BUFFER_SEC ?? 20);
+
+function priceRefreshThreshold(maxPriceStaleness: number): number {
+  const boundedBuffer = Math.min(PRICE_REFRESH_BUFFER_SEC, Math.max(5, Math.floor(maxPriceStaleness / 4)));
+  return Math.max(0, maxPriceStaleness - boundedBuffer);
+}
+
+function isPriceStaleError(err: unknown): boolean {
+  return decodeVaultError(err)?.name === "PriceStale" ||
+    (err instanceof Error && err.message.includes("PriceStale"));
+}
+
+function errorTxHash(err: unknown): string | undefined {
+  const candidates: unknown[] = [];
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    candidates.push(e.transactionHash, e.hash);
+    if (e.receipt && typeof e.receipt === "object") {
+      const receipt = e.receipt as Record<string, unknown>;
+      candidates.push(receipt.hash, receipt.transactionHash);
+    }
+    if (e.transaction && typeof e.transaction === "object") {
+      candidates.push((e.transaction as Record<string, unknown>).hash);
+    }
+    if (e.info && typeof e.info === "object") {
+      const info = e.info as Record<string, unknown>;
+      if (info.receipt && typeof info.receipt === "object") {
+        candidates.push((info.receipt as Record<string, unknown>).transactionHash);
+      }
+    }
+  }
+  return candidates.find((value): value is string => typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value));
+}
+
+function executionFailurePhase(err: unknown): RejectionPhase {
+  return errorTxHash(err) ? "executeStrategy" : "estimateGas";
+}
+
+async function readPriceFreshness(ctx: GlobalContext, maxPriceStaleness: number): Promise<PriceFreshness> {
+  const [round, latestBlock] = await Promise.all([
+    ctx.priceFeed.latestRoundData() as Promise<[bigint, bigint, bigint, bigint, bigint]>,
+    ctx.provider.getBlock("latest"),
+  ]);
+  if (!latestBlock) throw new Error("latest block unavailable while checking oracle freshness");
+  const updatedAt = Number(round[3]);
+  const blockTimestamp = Number(latestBlock.timestamp);
+  return {
+    answer: BigInt(round[1]),
+    updatedAt,
+    blockTimestamp,
+    ageSec: Math.max(0, blockTimestamp - updatedAt),
+    maxPriceStaleness,
+    refreshThresholdSec: priceRefreshThreshold(maxPriceStaleness),
+  };
+}
+
+async function ensureFreshOracle(
+  ctx: GlobalContext,
+  vaultAddress: string,
+  maxPriceStaleness: number,
+  phase: RejectionPhase,
+  action?: string,
+): Promise<{ ok: true; market: MarketSnapshot | null; freshness: PriceFreshness } | { ok: false; reason: string }> {
+  const before = await readPriceFreshness(ctx, maxPriceStaleness);
+  if (before.answer > 0n && before.ageSec < before.refreshThresholdSec) {
+    return { ok: true, market: null, freshness: before };
+  }
+
+  log(
+    `Oracle age ${before.ageSec}s is near/stale for ${vaultAddress.slice(0, 10)}... ` +
+      `(max ${maxPriceStaleness}s). Refreshing before ${phase}.`,
+  );
+
+  let refreshedMarket: MarketSnapshot | null = null;
+  try {
+    refreshedMarket = await pushPrice(ctx);
+  } catch (err) {
+    const reason =
+      phase === "state-read"
+        ? "Price refresh needed — oracle price stale, state read blocked before funds moved."
+        : "Price refresh needed — oracle price stale, execution blocked before funds moved.";
+    appendRejectionLog(vaultAddress, {
+      timestamp: Date.now(),
+      type: "onchain-revert",
+      phase,
+      reason,
+      errorCode: "PriceStale",
+      action,
+      vaultAddress,
+      priceAgeSec: before.ageSec,
+      maxPriceStaleness,
+      safeNoFundsMoved: true,
+      verdict: "Blocked safely: oracle price was stale. No transaction was sent and no funds moved.",
+    });
+    log(`Price refresh failed before ${phase}: ${err instanceof Error ? err.message : err}`);
+    return { ok: false, reason: "oracle price stale; refresh failed before funds moved" };
+  }
+
+  const after = await readPriceFreshness(ctx, maxPriceStaleness);
+  if (after.answer <= 0n || after.ageSec >= after.refreshThresholdSec) {
+    const reason =
+      phase === "state-read"
+        ? "Price refresh needed — oracle price stale, state read blocked before funds moved."
+        : "Price refresh needed — oracle price stale, execution blocked before funds moved.";
+    appendRejectionLog(vaultAddress, {
+      timestamp: Date.now(),
+      type: "onchain-revert",
+      phase,
+      reason,
+      errorCode: "PriceStale",
+      action,
+      vaultAddress,
+      priceAgeSec: after.ageSec,
+      maxPriceStaleness,
+      safeNoFundsMoved: true,
+      verdict: "Blocked safely: oracle price was stale. No transaction was sent and no funds moved.",
+    });
+    return { ok: false, reason: "oracle price stale; refresh did not land before funds moved" };
+  }
+
+  return { ok: true, market: refreshedMarket, freshness: after };
+}
+
+function pow10(decimals: bigint | number): bigint {
+  return 10n ** BigInt(decimals);
+}
+
+function quoteRiskToBase(
+  riskAmount: bigint,
+  price: bigint,
+  feedDec: bigint | number,
+  baseDec: bigint | number,
+  riskDec: bigint | number,
+): bigint {
+  return (riskAmount * price * pow10(baseDec)) / (pow10(feedDec) * pow10(riskDec));
+}
+
+async function readTvlWithLatestPriceFallback(
+  vault: ethers.Contract,
+  priceFeed: ethers.Contract,
+  baseBalance: bigint,
+  riskBalance: bigint,
+  baseDec: bigint | number,
+  riskDec: bigint | number,
+): Promise<{ tvl: bigint; usedFallback: boolean }> {
+  try {
+    return { tvl: (await vault.totalValue()) as bigint, usedFallback: false };
+  } catch (err) {
+    if (!isPriceStaleError(err)) throw err;
+    const [round, feedDec] = await Promise.all([
+      priceFeed.latestRoundData() as Promise<[bigint, bigint, bigint, bigint, bigint]>,
+      priceFeed.decimals() as Promise<bigint | number>,
+    ]);
+    const answer = BigInt(round[1]);
+    if (answer <= 0n) throw err;
+    return {
+      tvl: baseBalance + quoteRiskToBase(riskBalance, answer, feedDec, baseDec, riskDec),
+      usedFallback: true,
+    };
+  }
+}
+
 function getEnvOrThrow(key: string): string {
   const val = process.env[key];
   if (!val) throw new Error(`Missing env var: ${key}`);
@@ -319,6 +492,7 @@ export async function executeOneIterationForVault(
   market: MarketSnapshot,
 ): Promise<IterationOutcome> {
   const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, ctx.wallet);
+  let activeMarket = market;
 
   const isKilled: boolean = await vault.killed();
   if (isKilled) {
@@ -330,12 +504,11 @@ export async function executeOneIterationForVault(
   }
 
   // Read full vault state
-  const [baseAddr, riskAddr, baseBalance, riskBalance, tvl, hwm, policy, logCount] = await Promise.all([
+  const [baseAddr, riskAddr, baseBalance, riskBalance, hwm, policy, logCount] = await Promise.all([
     vault.base(),
     vault.risk(),
     vault.vaultBalance(),
     vault.riskBalance(),
-    vault.totalValue(),
     vault.highWaterMark(),
     vault.policy(),
     vault.executionLogCount(),
@@ -344,13 +517,53 @@ export async function executeOneIterationForVault(
   const baseToken = new ethers.Contract(baseAddr, ERC20_ABI, ctx.wallet);
   const riskToken = new ethers.Contract(riskAddr, ERC20_ABI, ctx.wallet);
   const [baseDec, riskDec] = await Promise.all([baseToken.decimals(), riskToken.decimals()]);
+  const policySnapshot = {
+    maxAllocationBps: Number(policy[0]),
+    maxDrawdownBps: Number(policy[1]),
+    rebalanceThresholdBps: Number(policy[2]),
+    maxSlippageBps: Number(policy[3]),
+    cooldownPeriod: Number(policy[4]),
+    maxPriceStaleness: Number(policy[5]),
+  };
+
+  const stateFreshness = await ensureFreshOracle(
+    ctx,
+    vaultAddress,
+    policySnapshot.maxPriceStaleness,
+    "state-read",
+  );
+  if (!stateFreshness.ok) {
+    return { status: "skipped", reason: stateFreshness.reason };
+  }
+  if (stateFreshness.market) activeMarket = stateFreshness.market;
+
+  let tvl: bigint;
+  try {
+    tvl = (await vault.totalValue()) as bigint;
+  } catch (err) {
+    if (!isPriceStaleError(err)) throw err;
+    const freshness = await readPriceFreshness(ctx, policySnapshot.maxPriceStaleness);
+    appendRejectionLog(vaultAddress, {
+      timestamp: Date.now(),
+      type: "onchain-revert",
+      phase: "state-read",
+      reason: "Price refresh needed — oracle price stale, state read blocked before funds moved.",
+      errorCode: "PriceStale",
+      vaultAddress,
+      priceAgeSec: freshness.ageSec,
+      maxPriceStaleness: policySnapshot.maxPriceStaleness,
+      safeNoFundsMoved: true,
+      verdict: "Blocked safely: oracle price was stale. No transaction was sent and no funds moved.",
+    });
+    return { status: "skipped", reason: "oracle price stale during state read; no funds moved" };
+  }
 
   const baseStr = ethers.formatUnits(baseBalance, baseDec);
   const riskStr = ethers.formatUnits(riskBalance, riskDec);
-  const tvlStr = ethers.formatUnits(tvl, baseDec);
+  let tvlStr = ethers.formatUnits(tvl, baseDec);
   const hwmStr = ethers.formatUnits(hwm, baseDec);
-  const baseSymbol = market.baseSymbol ?? "USDC";
-  const riskSymbol = market.riskSymbol ?? "ETH";
+  const baseSymbol = activeMarket.baseSymbol ?? "USDC";
+  const riskSymbol = activeMarket.riskSymbol ?? "ETH";
 
   log(
     `Vault ${vaultAddress.slice(0, 10)}...: ${baseStr} ${baseSymbol} + ${riskStr} ${riskSymbol} | ` +
@@ -361,12 +574,12 @@ export async function executeOneIterationForVault(
     return { status: "skipped", reason: "vault is empty" };
   }
 
-  if (market.tradingAllowed === false) {
+  if (activeMarket.tradingAllowed === false) {
     return {
       status: "skipped",
       reason:
-        `market health ${market.health}; ${riskSymbol} trading requires Jaine on-chain price plus external sanity check. ` +
-        `Sources: ${market.source}. Failures: ${market.failures.join(" | ") || "none"}`,
+        `market health ${activeMarket.health}; ${riskSymbol} trading requires Jaine on-chain price plus external sanity check. ` +
+        `Sources: ${activeMarket.source}. Failures: ${activeMarket.failures.join(" | ") || "none"}`,
     };
   }
 
@@ -375,13 +588,13 @@ export async function executeOneIterationForVault(
     riskBalance: riskStr,
     tvl: tvlStr,
     hwm: hwmStr,
-    market,
+    market: activeMarket,
     policy: {
-      maxAllocationBps: Number(policy[0]),
-      maxDrawdownBps: Number(policy[1]),
-      rebalanceThresholdBps: Number(policy[2]),
-      maxSlippageBps: Number(policy[3]),
-      cooldownPeriod: Number(policy[4]),
+      maxAllocationBps: policySnapshot.maxAllocationBps,
+      maxDrawdownBps: policySnapshot.maxDrawdownBps,
+      rebalanceThresholdBps: policySnapshot.rebalanceThresholdBps,
+      maxSlippageBps: policySnapshot.maxSlippageBps,
+      cooldownPeriod: policySnapshot.cooldownPeriod,
     },
   });
 
@@ -392,7 +605,7 @@ export async function executeOneIterationForVault(
 
   if (
     recommendation.recommendedAction === "EmergencyDeleverage" &&
-    Number(riskStr) * market.priceUsd < MIN_RISK_POSITION_USD
+    Number(riskStr) * activeMarket.priceUsd < MIN_RISK_POSITION_USD
   ) {
     return { status: "skipped", reason: `risk position below dust threshold (${MIN_RISK_POSITION_USD} ${baseSymbol})` };
   }
@@ -488,6 +701,22 @@ export async function executeOneIterationForVault(
     return { status: "skipped", reason: "no action needed (amount_bps=0)" };
   }
 
+  const executionFreshness = await ensureFreshOracle(
+    ctx,
+    vaultAddress,
+    policySnapshot.maxPriceStaleness,
+    "executeStrategy",
+    decision.action,
+  );
+  if (!executionFreshness.ok) {
+    return { status: "skipped", reason: executionFreshness.reason };
+  }
+  if (executionFreshness.market) {
+    activeMarket = executionFreshness.market;
+    tvl = (await vault.totalValue()) as bigint;
+    tvlStr = ethers.formatUnits(tvl, baseDec);
+  }
+
   // Size the order
   let amountIn: bigint;
   if (decision.action === "EmergencyDeleverage") {
@@ -496,8 +725,8 @@ export async function executeOneIterationForVault(
   } else {
     amountIn = (BigInt(baseBalance) * BigInt(decision.amount_bps)) / 10000n;
     if (amountIn === 0n) return { status: "skipped", reason: "no base balance to allocate" };
-    const currentRiskValue = Number(riskStr) * market.priceUsd;
-    const maxRiskValue = Number(tvlStr) * Number(policy[0]) / 10000;
+    const currentRiskValue = Number(riskStr) * activeMarket.priceUsd;
+    const maxRiskValue = Number(tvlStr) * policySnapshot.maxAllocationBps / 10000;
     const remainingRiskHeadroom = Math.max(0, maxRiskValue - currentRiskValue);
     const maxBaseIn = ethers.parseUnits(remainingRiskHeadroom.toFixed(Number(baseDec)), baseDec);
     if (maxBaseIn === 0n) return { status: "skipped", reason: `no remaining ${riskSymbol} exposure headroom` };
@@ -510,14 +739,6 @@ export async function executeOneIterationForVault(
     }
   }
 
-  const policySnapshot = {
-    maxAllocationBps: Number(policy[0]),
-    maxDrawdownBps: Number(policy[1]),
-    rebalanceThresholdBps: Number(policy[2]),
-    maxSlippageBps: Number(policy[3]),
-    cooldownPeriod: Number(policy[4]),
-    maxPriceStaleness: Number(policy[5]),
-  };
   const deadline = Math.floor(Date.now() / 1000) + 300;
   const intent = {
     chainId: CHAIN.id,
@@ -531,21 +752,27 @@ export async function executeOneIterationForVault(
     responseHash: inference.responseHash,
     action: decision.action,
     amountIn: amountIn.toString(),
-    price: market.priceUsd,
-    priceSource: market.source,
+    price: activeMarket.priceUsd,
+    priceSource: activeMarket.source,
     policySnapshot,
     deadline,
   };
   const intentHash = ethers.keccak256(ethers.toUtf8Bytes(canonicalJson(intent)));
   const priceAttestationPayload = {
-    medianPrice: market.priceUsd,
-    sourceCount: market.sourceCount,
-    spreadPct: market.spreadPct,
-    sources: market.rawSources,
-    timestamp: market.timestamp,
+    medianPrice: activeMarket.priceUsd,
+    sourceCount: activeMarket.sourceCount,
+    spreadPct: activeMarket.spreadPct,
+    sources: activeMarket.rawSources,
+    timestamp: activeMarket.timestamp,
   };
 
-  // Execute
+  // Execute. Keep this try/catch scoped only to executeStrategy so post-tx
+  // bookkeeping failures cannot be misreported as blocked actions.
+  const formattedAmountIn =
+    decision.action === "EmergencyDeleverage"
+      ? ethers.formatUnits(amountIn, riskDec)
+      : ethers.formatUnits(amountIn, baseDec);
+  let receipt: ethers.TransactionReceipt;
   try {
     const tx = await vault.executeStrategy(
       ACTION_MAP[decision.action],
@@ -556,30 +783,108 @@ export async function executeOneIterationForVault(
       inference.teeAttestation,
       deadline,
     );
-    const receipt = await tx.wait();
+    const waited = await tx.wait();
+    if (!waited) throw new Error("executeStrategy transaction was sent but no receipt was returned");
+    receipt = waited;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Custom-error selectors = keccak256("Name()")[:4] (verified via ethers.id).
+    const COOLDOWN = "0xa22b745e";    // CooldownNotElapsed()
+    const ALLOCATION = "0x74a5d1f5";  // AllocationExceeded()
+    const DRAWDOWN = "0x897b3413";    // DrawdownBreached()
+    const STALE = "PriceStale";
+    const mkRejection = async (reason: string, errorCode: string) => {
+      const txHash = errorTxHash(err);
+      let priceAgeSec: number | undefined;
+      let maxPriceStaleness: number | undefined;
+      if (errorCode === "PriceStale") {
+        try {
+          const freshness = await readPriceFreshness(ctx, policySnapshot.maxPriceStaleness);
+          priceAgeSec = freshness.ageSec;
+          maxPriceStaleness = freshness.maxPriceStaleness;
+        } catch {
+          maxPriceStaleness = policySnapshot.maxPriceStaleness;
+        }
+      }
+      appendRejectionLog(vaultAddress, {
+        timestamp: Date.now(),
+        type: "onchain-revert",
+        phase: executionFailurePhase(err),
+        reason,
+        errorCode,
+        action: decision.action,
+        intentHash,
+        txHash,
+        priceAgeSec,
+        maxPriceStaleness,
+        safeNoFundsMoved: true,
+        verdict: txHash
+          ? "Blocked safely: transaction reverted on-chain. No funds moved."
+          : "Blocked safely: no transaction was sent and no funds moved.",
+        vaultAddress,
+      });
+    };
+    if (msg.includes("CooldownNotElapsed") || msg.includes(COOLDOWN)) {
+      await mkRejection("On-chain revert: cooldown not elapsed", "CooldownNotElapsed");
+      return { status: "skipped", reason: "cooldown not elapsed" };
+    } else if (msg.includes("AllocationExceeded") || msg.includes(ALLOCATION)) {
+      await mkRejection("On-chain revert: allocation cap exceeded", "AllocationExceeded");
+      return { status: "skipped", reason: "allocation exceeded" };
+    } else if (msg.includes("DrawdownBreached") || msg.includes(DRAWDOWN)) {
+      await mkRejection("On-chain revert: drawdown bound breached", "DrawdownBreached");
+      return { status: "skipped", reason: "drawdown breached" };
+    } else if (msg.includes(STALE)) {
+      await mkRejection("On-chain revert: oracle price stale", "PriceStale");
+      return { status: "skipped", reason: "oracle price stale" };
+    } else if (msg.includes("InsufficientAmountOut")) {
+      await mkRejection("On-chain revert: swap slippage guard triggered", "InsufficientAmountOut");
+      return { status: "skipped", reason: "swap reverted on slippage guard" };
+    } else if (msg.includes("VaultKilled")) {
+      await mkRejection("On-chain revert: vault killed", "VaultKilled");
+      return { status: "killed", reason: "vault killed mid-iteration" };
+    }
 
-    // Use chain block timestamp × 1000 for the audit cache key so the dashboard
-    // (which reads executionLogs[].timestamp from chain and queries by × 1000)
-    // gets a deterministic match.
-    const execBlock = await receipt.getBlock();
-    const chainTimestampMs = Number(execBlock.timestamp) * 1000;
+    // Fallback: decode any other Sentri custom-error selector so an opaque
+    // "execution reverted (unknown custom error)" becomes a named, actionable
+    // outcome. This also catches InvalidTEESignature (0x4c0f9589) in the rare
+    // case the AgentINFT binding changed between preflight and execution.
+    const decoded = decodeVaultError(err);
+    if (decoded) {
+      log(`On-chain revert decoded: ${decoded.name} (${decoded.selector}) — ${decoded.message}`);
+      await mkRejection(`On-chain revert: ${decoded.name} — ${decoded.message}`, decoded.name);
+      if (decoded.name === "InvalidTEESignature") {
+        log(
+          "Execution blocked: recovered TEE signer is not bound to the active AgentINFT. " +
+            "Funds are safe. Operator action required (see docs/operator-signer-mismatch.md).",
+        );
+      }
+      if (decoded.name === "VaultKilled") {
+        return { status: "killed", reason: "vault killed mid-iteration" };
+      }
+      return { status: "skipped", reason: `on-chain revert: ${decoded.name}` };
+    }
 
-    // Determine actual amounts from the latest log
-    const idx = (await vault.executionLogCount()) - 1n;
-    const latestLog = await vault.executionLogs(idx);
-    const amountOut = latestLog[3];
+    throw err; // re-throw genuinely unknown errors so the server logs them
+  }
 
-    const formattedAmountIn =
-      decision.action === "EmergencyDeleverage"
-        ? ethers.formatUnits(amountIn, riskDec)
-        : ethers.formatUnits(amountIn, baseDec);
-    const formattedAmountOut =
-      decision.action === "EmergencyDeleverage"
-        ? ethers.formatUnits(amountOut, baseDec)
-        : ethers.formatUnits(amountOut, riskDec);
+  // Use chain block timestamp × 1000 for the audit cache key so the dashboard
+  // (which reads executionLogs[].timestamp from chain and queries by × 1000)
+  // gets a deterministic match.
+  const execBlock = await receipt.getBlock();
+  const chainTimestampMs = Number(execBlock.timestamp) * 1000;
 
-    log(`TX confirmed: ${receipt.hash}. Saving audit + state to 0G Storage...`);
+  // Determine actual amounts from the latest log.
+  const idx = (await vault.executionLogCount()) - 1n;
+  const latestLog = await vault.executionLogs(idx);
+  const amountOut = latestLog[3] as bigint;
+  const formattedAmountOut =
+    decision.action === "EmergencyDeleverage"
+      ? ethers.formatUnits(amountOut, baseDec)
+      : ethers.formatUnits(amountOut, riskDec);
 
+  log(`TX confirmed: ${receipt.hash}. Saving audit + state to 0G Storage...`);
+
+  try {
     await appendAuditLog(vaultAddress, {
       timestamp: chainTimestampMs,
       logIndex: Number(idx),
@@ -609,23 +914,42 @@ export async function executeOneIterationForVault(
       reasoning,
       confidence: confidenceScore,
       txHash: receipt.hash,
-      marketPrice: market.priceUsd,
-      marketSource: market.source,
-      marketSpreadPct: market.spreadPct,
-      marketSourceCount: market.sourceCount,
-      marketRequiredSourceCount: market.requiredSourceCount,
-      marketRawSources: market.rawSources,
+      marketPrice: activeMarket.priceUsd,
+      marketSource: activeMarket.source,
+      marketSpreadPct: activeMarket.spreadPct,
+      marketSourceCount: activeMarket.sourceCount,
+      marketRequiredSourceCount: activeMarket.requiredSourceCount,
+      marketRawSources: activeMarket.rawSources,
       priceAttestationPayload,
     });
+  } catch (err) {
+    log(
+      `Post-execution audit write failed for ${vaultAddress.slice(0, 10)}... ` +
+        `after confirmed tx ${receipt.hash}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
 
-    // Refresh and persist portfolio state
-    const [newBase, newRisk, newTvl, newHwm, newLogCount] = await Promise.all([
-      vault.vaultBalance(),
-      vault.riskBalance(),
-      vault.totalValue(),
-      vault.highWaterMark(),
-      vault.executionLogCount(),
+  try {
+    const [newBase, newRisk, newHwm, newLogCount] = await Promise.all([
+      vault.vaultBalance() as Promise<bigint>,
+      vault.riskBalance() as Promise<bigint>,
+      vault.highWaterMark() as Promise<bigint>,
+      vault.executionLogCount() as Promise<bigint>,
     ]);
+    const { tvl: newTvl, usedFallback } = await readTvlWithLatestPriceFallback(
+      vault,
+      ctx.priceFeed,
+      newBase,
+      newRisk,
+      baseDec,
+      riskDec,
+    );
+    if (usedFallback) {
+      log(
+        `Post-execution portfolio refresh used latest-price fallback for ${vaultAddress.slice(0, 10)}... ` +
+          `after confirmed tx ${receipt.hash}; no rejection logged.`,
+      );
+    }
 
     await savePortfolioState(vaultAddress, {
       vaultBalance: ethers.formatUnits(newBase, baseDec),
@@ -635,78 +959,24 @@ export async function executeOneIterationForVault(
       lastAction: decision.action,
       lastActionTime: Date.now(),
       totalExecutions: Number(newLogCount),
-      pnlBps: newHwm > 0n ? Number(((BigInt(newTvl) - BigInt(newHwm)) * 10000n) / BigInt(newHwm)) : 0,
-      marketPrice: market.priceUsd,
+      pnlBps: newHwm > 0n ? Number(((newTvl - newHwm) * 10000n) / newHwm) : 0,
+      marketPrice: activeMarket.priceUsd,
     });
-
-    return {
-      status: "executed",
-      action: decision.action,
-      amountIn: formattedAmountIn,
-      amountOut: formattedAmountOut,
-      txHash: receipt.hash,
-      reasoning,
-    };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // Custom-error selectors = keccak256("Name()")[:4] (verified via ethers.id).
-    const COOLDOWN = "0xa22b745e";    // CooldownNotElapsed()
-    const ALLOCATION = "0x74a5d1f5";  // AllocationExceeded()
-    const DRAWDOWN = "0x897b3413";    // DrawdownBreached()
-    const STALE = "PriceStale";
-    const mkRejection = (reason: string, errorCode: string) => {
-      appendRejectionLog(vaultAddress, {
-        timestamp: Date.now(),
-        type: "onchain-revert",
-        reason,
-        errorCode,
-        action: decision.action,
-        intentHash,
-        vaultAddress,
-      });
-    };
-    if (msg.includes("CooldownNotElapsed") || msg.includes(COOLDOWN)) {
-      mkRejection("On-chain revert: cooldown not elapsed", "CooldownNotElapsed");
-      return { status: "skipped", reason: "cooldown not elapsed" };
-    } else if (msg.includes("AllocationExceeded") || msg.includes(ALLOCATION)) {
-      mkRejection("On-chain revert: allocation cap exceeded", "AllocationExceeded");
-      return { status: "skipped", reason: "allocation exceeded" };
-    } else if (msg.includes("DrawdownBreached") || msg.includes(DRAWDOWN)) {
-      mkRejection("On-chain revert: drawdown bound breached", "DrawdownBreached");
-      return { status: "skipped", reason: "drawdown breached" };
-    } else if (msg.includes(STALE)) {
-      mkRejection("On-chain revert: oracle price stale", "PriceStale");
-      return { status: "skipped", reason: "oracle price stale" };
-    } else if (msg.includes("InsufficientAmountOut")) {
-      mkRejection("On-chain revert: swap slippage guard triggered", "InsufficientAmountOut");
-      return { status: "skipped", reason: "swap reverted on slippage guard" };
-    } else if (msg.includes("VaultKilled")) {
-      mkRejection("On-chain revert: vault killed", "VaultKilled");
-      return { status: "killed", reason: "vault killed mid-iteration" };
-    }
-
-    // Fallback: decode any other Sentri custom-error selector so an opaque
-    // "execution reverted (unknown custom error)" becomes a named, actionable
-    // outcome. This also catches InvalidTEESignature (0x4c0f9589) in the rare
-    // case the AgentINFT binding changed between preflight and execution.
-    const decoded = decodeVaultError(err);
-    if (decoded) {
-      log(`On-chain revert decoded: ${decoded.name} (${decoded.selector}) — ${decoded.message}`);
-      mkRejection(`On-chain revert: ${decoded.name} — ${decoded.message}`, decoded.name);
-      if (decoded.name === "InvalidTEESignature") {
-        log(
-          "Execution blocked: recovered TEE signer is not bound to the active AgentINFT. " +
-            "Funds are safe. Operator action required (see docs/operator-signer-mismatch.md).",
-        );
-      }
-      if (decoded.name === "VaultKilled") {
-        return { status: "killed", reason: "vault killed mid-iteration" };
-      }
-      return { status: "skipped", reason: `on-chain revert: ${decoded.name}` };
-    }
-
-    throw err; // re-throw genuinely unknown errors so the server logs them
+    log(
+      `Post-execution portfolio refresh failed for ${vaultAddress.slice(0, 10)}... ` +
+        `after confirmed tx ${receipt.hash}; execution remains confirmed: ${err instanceof Error ? err.message : err}`,
+    );
   }
+
+  return {
+    status: "executed",
+    action: decision.action,
+    amountIn: formattedAmountIn,
+    amountOut: formattedAmountOut,
+    txHash: receipt.hash,
+    reasoning,
+  };
 }
 
 function validateDecision(decision: AgentDecision): string | null {

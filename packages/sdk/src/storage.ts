@@ -548,10 +548,16 @@ export function findClosestVaultAudit(
 export interface RejectionEntry {
   timestamp: number;
   type: "defensive-override" | "onchain-revert" | "agent-sizing" | "tee-signer-mismatch";
+  phase?: "state-read" | "estimateGas" | "executeStrategy";
   reason: string;
   errorCode?: string;
   action?: string;
   intentHash?: string;
+  txHash?: string;
+  priceAgeSec?: number;
+  maxPriceStaleness?: number;
+  safeNoFundsMoved?: boolean;
+  verdict?: string;
   vaultAddress: string;
   kvTxHash?: string;
   kvRootHash?: string;

@@ -38,8 +38,9 @@ import {
   readVaultRejectionFromCache,
   readRejectionsFromKv,
 } from "./storage.js";
-import { AGENT, TREASURY_VAULT_ABI } from "./constants.js";
+import { AGENT, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
 import { updatePythOnChain } from "./market.js";
+import { decodeVaultError } from "./vault-errors.js";
 
 const ACTION_LABELS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"] as const;
 
@@ -89,21 +90,77 @@ async function readAuditFromChain(
     .reverse();
 }
 
+function isPriceStaleError(err: unknown): boolean {
+  return decodeVaultError(err)?.name === "PriceStale" ||
+    (err instanceof Error && err.message.includes("PriceStale"));
+}
+
+function pow10(decimals: bigint | number): bigint {
+  return 10n ** BigInt(decimals);
+}
+
+function quoteRiskToBase(
+  riskAmount: bigint,
+  price: bigint,
+  feedDec: bigint | number,
+  baseDec: bigint | number,
+  riskDec: bigint | number,
+): bigint {
+  return (riskAmount * price * pow10(baseDec)) / (pow10(feedDec) * pow10(riskDec));
+}
+
+async function readTvlForDisplay(
+  vault: ethers.Contract,
+  context: GlobalContext,
+  vaultBalance: bigint,
+  riskBalance: bigint,
+): Promise<{ totalValue: bigint; source: "totalValue" | "latest-price-fallback" }> {
+  try {
+    return { totalValue: (await vault.totalValue()) as bigint, source: "totalValue" };
+  } catch (err) {
+    if (!isPriceStaleError(err)) throw err;
+    const [baseAddr, riskAddr, round, feedDec] = await Promise.all([
+      vault.base() as Promise<string>,
+      vault.risk() as Promise<string>,
+      context.priceFeed.latestRoundData() as Promise<[bigint, bigint, bigint, bigint, bigint]>,
+      context.priceFeed.decimals() as Promise<bigint | number>,
+    ]);
+    const answer = BigInt(round[1]);
+    if (answer <= 0n) throw err;
+    const baseToken = new ethers.Contract(baseAddr, ERC20_ABI, context.provider);
+    const riskToken = new ethers.Contract(riskAddr, ERC20_ABI, context.provider);
+    const [baseDec, riskDec] = await Promise.all([
+      baseToken.decimals() as Promise<bigint | number>,
+      riskToken.decimals() as Promise<bigint | number>,
+    ]);
+    return {
+      totalValue: vaultBalance + quoteRiskToBase(riskBalance, answer, feedDec, baseDec, riskDec),
+      source: "latest-price-fallback",
+    };
+  }
+}
+
 async function readVaultStateFromChain(
   vaultAddress: string,
   context: GlobalContext,
 ): Promise<unknown> {
   const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, context.provider);
-  const [vaultBalance, riskBalance, totalValue, highWaterMark, executionLogCount] =
+  const [vaultBalance, riskBalance, highWaterMark, executionLogCount] =
     await Promise.all([
       vault.vaultBalance() as Promise<bigint>,
       vault.riskBalance() as Promise<bigint>,
-      vault.totalValue() as Promise<bigint>,
       vault.highWaterMark() as Promise<bigint>,
       vault.executionLogCount() as Promise<bigint>,
     ]);
+  const { totalValue, source: totalValueSource } = await readTvlForDisplay(
+    vault,
+    context,
+    vaultBalance,
+    riskBalance,
+  );
   return {
     source: "chain-fallback" as const,
+    totalValueSource,
     vaultBalance: vaultBalance.toString(),
     riskBalance: riskBalance.toString(),
     totalValue: totalValue.toString(),
