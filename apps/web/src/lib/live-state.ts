@@ -45,11 +45,16 @@ export interface LiveSnapshot {
     uptimeSec: number | null;
     trackedVaultCount: number | null;
     error: string | null;
+    build: { gitSha: string | null; gitBranch: string | null } | null;
   };
   links: {
     explorer: string;
     factoryExplorer: string;
   };
+  // Build provenance for the deployed web app, so an operator can confirm the
+  // live dashboard matches the intended commit. Vercel injects
+  // VERCEL_GIT_COMMIT_SHA / VERCEL_GIT_COMMIT_REF automatically.
+  build: { gitSha: string | null; gitBranch: string | null };
   fetchedAt: number;
 }
 
@@ -249,6 +254,7 @@ async function probeAgent(): Promise<LiveSnapshot["agent"]> {
     uptimeSec: null,
     trackedVaultCount: null,
     error: null,
+    build: null,
   };
 
   if (!AGENT_URL) return { ...empty, error: "AGENT_URL not configured" };
@@ -271,6 +277,7 @@ async function probeAgent(): Promise<LiveSnapshot["agent"]> {
       uptimeSec: body.uptimeSec ?? null,
       trackedVaultCount: body.trackedVaultCount ?? null,
       error: body.setupError ?? null,
+      build: body.build ?? null,
     };
   } catch (err) {
     return { ...empty, error: err instanceof Error ? err.message : String(err) };
@@ -292,6 +299,10 @@ export async function getLiveSnapshot(): Promise<LiveSnapshot> {
     links: {
       explorer: EXPLORER,
       factoryExplorer: `${EXPLORER}/address/${VAULT_FACTORY_ADDRESS}`,
+    },
+    build: {
+      gitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.SENTRI_GIT_SHA ?? null,
+      gitBranch: process.env.VERCEL_GIT_COMMIT_REF ?? null,
     },
     fetchedAt: Date.now(),
   };

@@ -268,6 +268,15 @@ const PORT = Number(process.env.PORT ?? 8080);
 const CYCLE_INTERVAL_MS = Number(process.env.AGENT_INTERVAL_MS ?? AGENT.cycleIntervalMs);
 const INFERENCE_FUNDING_BACKOFF_MS = Number(process.env.INFERENCE_FUNDING_BACKOFF_MS ?? 15 * 60_000);
 
+// Build provenance — surfaced in /healthz so an operator can confirm the live
+// runtime matches the intended commit instead of debugging a stale build.
+// Render injects RENDER_GIT_COMMIT / RENDER_GIT_BRANCH automatically; the
+// SENTRI_GIT_SHA fallback covers non-Render hosts.
+const BUILD_INFO = {
+  gitSha: process.env.RENDER_GIT_COMMIT ?? process.env.SENTRI_GIT_SHA ?? null,
+  gitBranch: process.env.RENDER_GIT_BRANCH ?? null,
+} as const;
+
 interface VaultState {
   totalIterations: number;
   totalErrors: number;
@@ -440,6 +449,7 @@ app.get("/healthz", (_req, res) => {
     ok: state.agentStatus !== "error",
     agent: state.agentStatus,
     setupError: state.agentSetupError,
+    build: BUILD_INFO,
     cycles: {
       total: state.totalCycles,
       errors: state.totalCycleErrors,
