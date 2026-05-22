@@ -92,3 +92,20 @@ test("unknown skip reason falls back to the raw reason (nothing hidden)", () => 
   const v = describeOutcome({ status: "skipped", reason: "some brand new reason" });
   assert.equal(v.text, "some brand new reason");
 });
+
+test("anti-churn skip → ok tone, not a red blocked action", () => {
+  const v = describeOutcome({
+    status: "skipped",
+    reason: "anti-churn hold — a small Rebalance would reverse the previous trade",
+  });
+  assert.equal(v.tone, "ok");
+  assert.match(v.text, /Anti-churn hold/);
+});
+
+test("sub-economic trade skip → ok tone", () => {
+  const v = describeOutcome({
+    status: "skipped",
+    reason: "trade value $0.0076 below minimum economic size ($0.01)",
+  });
+  assert.equal(v.tone, "ok");
+});

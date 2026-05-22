@@ -22,7 +22,14 @@ import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./mar
 import { preflightTeeSigner, readAgentMetadata, resolveAgentTokenId } from "./agent-signer.js";
 import { decodeVaultError } from "./vault-errors.js";
 import { describeOutcome } from "./outcome-verdict.js";
-import { DRAWDOWN_BREACH_PCT, MIN_RISK_POSITION_USD } from "./strategy-constants.js";
+import {
+  DRAWDOWN_BREACH_PCT,
+  MIN_RISK_POSITION_USD,
+  MIN_TRADE_NOTIONAL_USD,
+  ANTICHURN_WINDOW_SEC,
+  ANTICHURN_OVERRIDE_DRIFT_PP,
+  ANTICHURN_REGIME_CONFIRM_CYCLES,
+} from "./strategy-constants.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -605,6 +612,10 @@ export async function executeOneIterationForVault(
       `action=${recommendation.recommendedAction} amount_bps=${recommendation.recommendedAmountBps}`,
   );
 
+  // Track regime persistence every cycle (even on a hold) so the anti-churn
+  // guard below can tell a confirmed regime change from boundary flap.
+  const regimeObservations = recordRegimeObservation(vaultAddress, recommendation.regime);
+
   if (
     recommendation.recommendedAction === "EmergencyDeleverage" &&
     Number(riskStr) * activeMarket.priceUsd < MIN_RISK_POSITION_USD
@@ -647,6 +658,54 @@ export async function executeOneIterationForVault(
         status: "skipped",
         reason: `cooldown active — ${remainingSec}s remaining before next action`,
       };
+    }
+  }
+
+  // Anti-churn guard (pre-LLM). Deterministic, reproducible off-chain. Skips a
+  // trade that is either sub-economic in size or a small reversal of a recent
+  // trade during regime-boundary flap — before spending Sealed Inference on it.
+  // Safety regimes (drawdown_breach, crash) bypass it inside evaluateAntiChurn.
+  // Touches no on-chain policy threshold; the contract stays the hard guard.
+  {
+    const currentShare =
+      Number(tvlStr) > 0
+        ? (Number(riskStr) * activeMarket.priceUsd) / Number(tvlStr) * 100
+        : 0;
+    const tradeValueUsd =
+      recommendation.recommendedAction === "EmergencyDeleverage"
+        ? Number(riskStr) * (recommendation.recommendedAmountBps / 10000) * activeMarket.priceUsd
+        : Number(baseStr) * (recommendation.recommendedAmountBps / 10000);
+    const secondsSinceLastExecution =
+      lastExecutionTime > 0n ? Math.floor(Date.now() / 1000) - Number(lastExecutionTime) : null;
+
+    // The last on-chain action is only needed when a recent execution could be
+    // reversed — read it lazily to avoid an RPC call on the common path.
+    let lastExecutedAction: number | null = null;
+    if (
+      logCount > 0n &&
+      secondsSinceLastExecution !== null &&
+      secondsSinceLastExecution < ANTICHURN_WINDOW_SEC
+    ) {
+      try {
+        const lastLog = await vault.executionLogs(logCount - 1n);
+        lastExecutedAction = Number(lastLog[1]);
+      } catch {
+        lastExecutedAction = null; // best-effort — the reversal check just stays inert
+      }
+    }
+
+    const churn = evaluateAntiChurn({
+      recommendedAction: recommendation.recommendedAction,
+      tradeValueUsd,
+      regime: recommendation.regime,
+      driftPp: Math.abs(currentShare - recommendation.targetShare),
+      lastExecutedAction,
+      secondsSinceLastExecution,
+      regimeObservations,
+    });
+    if (churn.block) {
+      log(`Anti-churn skip for ${vaultAddress.slice(0, 10)}... — ${churn.reason}`);
+      return { status: "skipped", reason: churn.reason ?? "anti-churn hold" };
     }
   }
 
@@ -1175,7 +1234,7 @@ export async function runMultiVaultLoop(): Promise<void> {
  * AI-managed crypto treasuries: scale exposure down when realised vol /
  * regime stress widens, expand it when the regime is calm and constructive.
  */
-type Regime =
+export type Regime =
   | "drawdown_breach" // drawdown ≥ 1.5%
   | "crash"           // 24h ≤ -3%
   | "down_wide"       // 24h ≤ -1% AND spread ≥ 1%
@@ -1325,6 +1384,111 @@ export function computeStrategy(input: {
     recommendedAmountBps: bps,
     rationale: `regime=${regime}, trim ${trimValueUsd.toFixed(2)} of risk toward ${targetShare}% target`,
   };
+}
+
+// ── Anti-churn guard ────────────────────────────────────────────────────────
+//
+// The regime classifier maps live signals to discrete targets whose steps
+// (e.g. flat 22% → up_tight 25%) exceed the ±3pp hold band. Near a regime
+// boundary this can produce buy → sell → buy churn — each leg individually
+// policy-compliant, but together pure noise: gas + Sealed Inference compute
+// spent to nudge a few percent of allocation. The guard below damps that
+// WITHOUT touching any on-chain policy threshold or the regime classifier.
+
+/**
+ * Per-vault count of how many consecutive cycles the current regime has held.
+ * Process-local (lost on restart, which only re-warms the count over a couple
+ * of cycles — safety regimes bypass the guard anyway, so funds are never at
+ * risk from a cold start).
+ */
+const regimeObservationHistory = new Map<string, { regime: Regime; observations: number }>();
+
+/**
+ * Record this cycle's regime for a vault and return how many consecutive
+ * cycles it has now held (≥ 1). A regime change resets the count to 1.
+ */
+export function recordRegimeObservation(vaultAddress: string, regime: Regime): number {
+  const key = vaultAddress.toLowerCase();
+  const prev = regimeObservationHistory.get(key);
+  if (prev && prev.regime === regime) {
+    prev.observations += 1;
+    return prev.observations;
+  }
+  regimeObservationHistory.set(key, { regime, observations: 1 });
+  return 1;
+}
+
+export interface AntiChurnInput {
+  recommendedAction: "Rebalance" | "EmergencyDeleverage" | "hold";
+  /** Intended trade value in USD. */
+  tradeValueUsd: number;
+  regime: Regime;
+  /** Absolute drift from the regime target, in percentage points. */
+  driftPp: number;
+  /** Enum of the last on-chain execution (0 Rebalance, 1 YieldFarm, 2 EmergencyDeleverage), or null if none. */
+  lastExecutedAction: number | null;
+  /** Seconds since the last execution, or null if the vault has never executed. */
+  secondsSinceLastExecution: number | null;
+  /** Consecutive cycles the current regime has held (≥ 1). */
+  regimeObservations: number;
+}
+
+export interface AntiChurnVerdict {
+  block: boolean;
+  reason?: string;
+}
+
+/**
+ * Deterministic anti-churn evaluation. Pure — no I/O, reproducible off-chain.
+ *
+ * Two checks, both bypassed by safety regimes (drawdown_breach, crash) so
+ * defensive deleveraging is never delayed:
+ *   (A) minimum economic trade size — skip sub-MIN_TRADE_NOTIONAL_USD trades;
+ *   (B) reversal damping — block a trade that reverses the direction of a
+ *       recent execution unless the drift is large or the regime has been
+ *       confirmed over ANTICHURN_REGIME_CONFIRM_CYCLES cycles.
+ */
+export function evaluateAntiChurn(input: AntiChurnInput): AntiChurnVerdict {
+  const isSafetyRegime = input.regime === "drawdown_breach" || input.regime === "crash";
+  if (isSafetyRegime) return { block: false };
+
+  // (A) Minimum economic trade size.
+  if (input.tradeValueUsd < MIN_TRADE_NOTIONAL_USD) {
+    return {
+      block: true,
+      reason:
+        `trade value $${input.tradeValueUsd.toFixed(4)} below minimum economic size ` +
+        `($${MIN_TRADE_NOTIONAL_USD}) — skipped to avoid gas/compute churn`,
+    };
+  }
+
+  // (B) Reversal damping — only when a recent execution exists to reverse.
+  if (
+    input.lastExecutedAction !== null &&
+    input.secondsSinceLastExecution !== null &&
+    input.secondsSinceLastExecution < ANTICHURN_WINDOW_SEC
+  ) {
+    const lastWasBuy = input.lastExecutedAction === 0; // Rebalance
+    const lastWasSell = input.lastExecutedAction === 2; // EmergencyDeleverage
+    const nextIsBuy = input.recommendedAction === "Rebalance";
+    const nextIsSell = input.recommendedAction === "EmergencyDeleverage";
+    const reverses = (lastWasBuy && nextIsSell) || (lastWasSell && nextIsBuy);
+    if (reverses) {
+      const largeDrift = input.driftPp >= ANTICHURN_OVERRIDE_DRIFT_PP;
+      const regimeConfirmed = input.regimeObservations >= ANTICHURN_REGIME_CONFIRM_CYCLES;
+      if (!largeDrift && !regimeConfirmed) {
+        return {
+          block: true,
+          reason:
+            `anti-churn hold — a small ${input.recommendedAction} would reverse the ` +
+            `previous trade; regime not yet confirmed and drift ${input.driftPp.toFixed(1)}pp ` +
+            `below the ${ANTICHURN_OVERRIDE_DRIFT_PP}pp override`,
+        };
+      }
+    }
+  }
+
+  return { block: false };
 }
 
 /**

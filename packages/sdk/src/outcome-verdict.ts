@@ -118,6 +118,18 @@ export function describeOutcome(outcome: OutcomeLike): Verdict {
       text: "Holding — the current allocation is within the target band. No action needed this cycle.",
     };
   }
+  if (has(reason, "anti-churn")) {
+    return {
+      tone: "ok",
+      text: "Anti-churn hold — a small reversal of the recent trade was skipped while the regime settles. The position stays within policy; funds are safe.",
+    };
+  }
+  if (has(reason, "minimum economic size")) {
+    return {
+      tone: "ok",
+      text: "Holding — the rebalance is below the minimum economic trade size, so it was skipped to avoid gas and compute churn.",
+    };
+  }
   if (has(reason, "no base balance")) {
     return { tone: "info", text: "Holding — no stablecoin balance available to deploy." };
   }

@@ -18,3 +18,34 @@ export const DRAWDOWN_BREACH_PCT = 1.5;
  * skipped (there is effectively nothing left to sell). Overridable via env.
  */
 export const MIN_RISK_POSITION_USD = Number(process.env.MIN_RISK_POSITION_USD ?? 0.001);
+
+/**
+ * Minimum USD value of a single trade for it to be worth executing. Below this
+ * the trade is pure churn — gas + Sealed Inference compute spent to move a
+ * sub-cent amount (e.g. a 3% rebalance of a $0.25 vault is ~$0.0076). The
+ * runner skips it before inference. Overridable via env.
+ */
+export const MIN_TRADE_NOTIONAL_USD = Number(process.env.MIN_TRADE_NOTIONAL_USD ?? 0.01);
+
+/**
+ * Anti-churn window. A trade that reverses the direction of the previous
+ * execution within this many seconds is damped unless the regime is confirmed
+ * (see ANTICHURN_REGIME_CONFIRM_CYCLES) or the drift is large (see
+ * ANTICHURN_OVERRIDE_DRIFT_PP). Beyond the window, reversals are unconstrained.
+ */
+export const ANTICHURN_WINDOW_SEC = Number(process.env.ANTICHURN_WINDOW_SEC ?? 6 * 3600);
+
+/**
+ * Drift (percentage points off the regime target) at or above which a
+ * direction-reversing trade is allowed immediately, regardless of regime
+ * confirmation — a large gap is a real signal, not flap.
+ */
+export const ANTICHURN_OVERRIDE_DRIFT_PP = Number(process.env.ANTICHURN_OVERRIDE_DRIFT_PP ?? 5);
+
+/**
+ * Consecutive cycles a newly-observed regime must hold before it may drive a
+ * direction reversal of the previous trade. Anti-flap for regime boundaries.
+ */
+export const ANTICHURN_REGIME_CONFIRM_CYCLES = Number(
+  process.env.ANTICHURN_REGIME_CONFIRM_CYCLES ?? 2,
+);
