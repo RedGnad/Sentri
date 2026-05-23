@@ -140,7 +140,7 @@ export default function PointsPage() {
         num="04"
         section="Points"
         title="Early Vault Points"
-        subtitle="Experimental early tester score · no token · no financial claim"
+        subtitle="Experimental early tester score"
       />
 
       {error && (
