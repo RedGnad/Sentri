@@ -4,7 +4,6 @@ import path from "node:path";
 
 export const POINTS_RULES = {
   active_vault_hour: 100,
-  verified_execution: 1_000,
   safe_blocked_action: 1_500,
   useful_feedback: 2_500,
   shipped_bug_report: 5_000,
@@ -118,6 +117,10 @@ function lc(value: string): string {
 
 function stableId(uniqueKey: string): string {
   return `points_${crypto.createHash("sha256").update(uniqueKey).digest("hex").slice(0, 24)}`;
+}
+
+function isScoringEntry(entry: PointsEntry): boolean {
+  return entry.type !== "verified_execution";
 }
 
 export function createPointsEntry(
@@ -249,6 +252,13 @@ export function hasAwardedUnique(uniqueKey: string): boolean {
 
 export function awardPoints(entry: PointsEntry): PointsAwardResult {
   const normalized = createPointsEntry(entry);
+  if (normalized.type === "verified_execution") {
+    return {
+      awarded: false,
+      entry: normalized,
+      reason: "verified_execution points are disabled",
+    };
+  }
   if (!state.initialized) initPointsLedger();
   if (!state.path || !state.writable) {
     return {
@@ -274,7 +284,7 @@ export function awardPoints(entry: PointsEntry): PointsAwardResult {
 
 export function getWalletPoints(wallet: string): WalletPoints {
   const key = lc(wallet);
-  const entries = readAllEntries().filter((entry) => entry.wallet === key);
+  const entries = readAllEntries().filter((entry) => entry.wallet === key && isScoringEntry(entry));
   return {
     wallet: key,
     total: entries.reduce((sum, entry) => sum + entry.points, 0),
@@ -284,7 +294,7 @@ export function getWalletPoints(wallet: string): WalletPoints {
 
 export function getVaultPoints(vaultAddress: string): VaultPoints {
   const key = lc(vaultAddress);
-  const entries = readAllEntries().filter((entry) => entry.vaultAddress === key);
+  const entries = readAllEntries().filter((entry) => entry.vaultAddress === key && isScoringEntry(entry));
   return {
     vaultAddress: key,
     total: entries.reduce((sum, entry) => sum + entry.points, 0),
@@ -294,7 +304,7 @@ export function getVaultPoints(vaultAddress: string): VaultPoints {
 
 export function getLeaderboard(limit = 25): LeaderboardEntry[] {
   const totals = new Map<string, LeaderboardEntry>();
-  for (const entry of readAllEntries()) {
+  for (const entry of readAllEntries().filter(isScoringEntry)) {
     const current = totals.get(entry.wallet) ?? { wallet: entry.wallet, points: 0, events: 0 };
     current.points += entry.points;
     current.events++;
@@ -307,6 +317,7 @@ export function getLeaderboard(limit = 25): LeaderboardEntry[] {
 
 export function getRecentPointEvents(limit = 25): PointsEntry[] {
   return [...readAllEntries()]
+    .filter(isScoringEntry)
     .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))
     .slice(0, Math.max(0, limit));
 }
@@ -317,7 +328,7 @@ export function getPointsStats(): PointsStats {
     ok: Boolean(state.path) && state.writable,
     path: state.path,
     writable: state.writable,
-    entries: readAllEntries().length,
+    entries: readAllEntries().filter(isScoringEntry).length,
     lastError: state.lastError,
   };
 }
@@ -404,26 +415,8 @@ export function computeActiveVaultHourAwards(
 }
 
 export function computeExecutionAwards(executions: ExecutionAwardCandidate[]): PointsEntry[] {
-  const awards = executions.flatMap((execution) => {
-    const vault = lc(execution.vaultAddress);
-    const txHash = lc(execution.txHash);
-    const uniqueKey = `execution:${vault}:${execution.logIndex}:${txHash}`;
-    if (hasAwardedUnique(uniqueKey)) return [];
-    return [
-      createPointsEntry({
-        uniqueKey,
-        wallet: execution.wallet,
-        vaultAddress: vault,
-        type: "verified_execution",
-        points: POINTS_RULES.verified_execution,
-        reason: "Verified on-chain execution",
-        txHash,
-        logIndex: execution.logIndex,
-        createdAt: execution.timestamp ?? Date.now(),
-      }),
-    ];
-  });
-  return dailyCappedAwards(awards, "verified_execution", 10);
+  void executions;
+  return [];
 }
 
 export function computeBlockedActionAwards(blockedActions: BlockedActionAwardCandidate[]): PointsEntry[] {

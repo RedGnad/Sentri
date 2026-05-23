@@ -43,7 +43,6 @@ interface WalletPoints {
 
 const PUBLIC_RULES = [
   { type: "active_vault_hour", label: "Active vault hour", points: 100 },
-  { type: "verified_execution", label: "Verified execution", points: 1_000 },
   { type: "safe_blocked_action", label: "Safe blocked action", points: 1_500 },
   { type: "useful_feedback", label: "Useful feedback", points: 2_500 },
   { type: "shipped_bug_report", label: "Shipped bug report", points: 5_000 },

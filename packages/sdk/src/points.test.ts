@@ -166,8 +166,8 @@ test("active-hour uniqueKey prevents double count", () => {
   assert.equal(getWalletPoints("0xwallet").total, 100);
 });
 
-test("execution uniqueKey prevents double count", () => {
-  freshLedger();
+test("verified execution awards are disabled and never counted", () => {
+  const p = freshLedger();
   const awards = computeExecutionAwards([
     {
       wallet: "0xWallet",
@@ -177,19 +177,27 @@ test("execution uniqueKey prevents double count", () => {
       timestamp: Date.UTC(2026, 4, 22, 10, 15),
     },
   ]);
-  assert.equal(awards.length, 1);
-  assert.equal(awardPoints(awards[0]).awarded, true);
-  assert.equal(hasAwardedUnique("execution:0xvault:0:0xtx"), true);
-  assert.equal(computeExecutionAwards([
-    {
-      wallet: "0xWallet",
-      vaultAddress: "0xVault",
-      txHash: "0xTx",
-      logIndex: 0,
-      timestamp: Date.UTC(2026, 4, 22, 10, 15),
-    },
-  ]).length, 0);
-  assert.equal(getWalletPoints("0xwallet").total, 1_000);
+  assert.equal(awards.length, 0);
+
+  const direct = entry({
+    uniqueKey: "execution:0xvault:0:0xtx",
+    type: "verified_execution",
+    points: 1_000,
+    reason: "Verified on-chain execution",
+    txHash: "0xTx",
+    logIndex: 0,
+  });
+  const result = awardPoints(direct);
+  assert.equal(result.awarded, false);
+  assert.equal(result.reason, "verified_execution points are disabled");
+  assert.equal(hasAwardedUnique("execution:0xvault:0:0xtx"), false);
+
+  fs.appendFileSync(p, JSON.stringify(direct) + "\n");
+  assert.equal(getWalletPoints("0xwallet").total, 0);
+  assert.equal(getVaultPoints("0xVault").total, 0);
+  assert.equal(getLeaderboard(10).length, 0);
+  assert.equal(getRecentPointEvents(10).length, 0);
+  assert.equal(getPointsStats().entries, 0);
 });
 
 test("safe blocked action awards are capped and system errors are ignored", () => {

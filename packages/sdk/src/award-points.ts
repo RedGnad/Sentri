@@ -29,7 +29,6 @@ interface CliIo {
 
 const TYPES = new Set<PointType>([
   "active_vault_hour",
-  "verified_execution",
   "safe_blocked_action",
   "useful_feedback",
   "shipped_bug_report",

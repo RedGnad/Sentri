@@ -184,7 +184,6 @@ function bootstrapRootsFromEnv(): string[] {
 
 function isPointType(value: unknown): value is PointType {
   return value === "active_vault_hour" ||
-    value === "verified_execution" ||
     value === "safe_blocked_action" ||
     value === "useful_feedback" ||
     value === "shipped_bug_report" ||
