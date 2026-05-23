@@ -1,6 +1,6 @@
 // SkillMint external advisory signal client.
 //
-// Uses @skillmint/sdk v0.4.0 — x402 payment flow (W0G on 0G testnet),
+// Uses @skillmint/sdk v0.4.0 — x402 payment flow (W0G on 0G mainnet),
 // receipt download from 0G Storage, and full receipt verification
 // (inputHashOk + outputHashOk + teeVerified).
 //
@@ -10,9 +10,105 @@
 // Security: SKILLMINT_CALLER_PRIVATE_KEY lives ONLY on Render (sentri-agent).
 // NEVER expose it via NEXT_PUBLIC_* / Vercel / frontend build vars.
 // Use a dedicated low-balance wallet — NOT the agent PRIVATE_KEY.
+//
+// V3 address override: @skillmint/sdk@0.4.0 ships V1 addresses in dist.
+// Use SKILLMINT_REGISTRY_ADDRESS / SKILLMINT_ESCROW_ADDRESS env vars to
+// point at the V3 contracts until the SDK publishes a new npm release.
+// Hard guard: mainnet + skill #13 requires V3 addresses — if not set the
+// call is silently skipped and SKILLMINT_ENABLED should remain false.
 
 import { SkillMintClient, TESTNET, MAINNET } from "@skillmint/sdk";
 import type { ReceiptVerification } from "@skillmint/sdk";
+
+// V3 mainnet contract addresses — confirmed from on-chain mint and exec txs.
+// Remove once @skillmint/sdk publishes a version with these in dist/constants.js.
+export const V3_MAINNET_REGISTRY = "0xdF28e06899955092DF81f0DBea03496D1Ac8904E";
+export const V3_MAINNET_ESCROW   = "0xA0e5A7d722399f59A0Ee4B8DF740107FBC63f7ae";
+
+// Reported by the installed package; update when SDK is upgraded.
+const SKILLMINT_SDK_VERSION = "0.4.0";
+
+// ── Network builder (V3 override + hard guard) ────────────────────────────
+
+export interface SkillMintNetworkResult {
+  /** Resolved network config (with any env overrides applied). */
+  network: typeof MAINNET;
+  usingAddressOverride: boolean;
+  /** Non-null when the hard guard blocked execution. */
+  guardError: string | null;
+}
+
+/**
+ * Build the SkillMintClient network config, applying env var address overrides
+ * and enforcing the V3 hard guard for mainnet + skill #13.
+ *
+ * Hard guard: if SKILLMINT_NETWORK=mainnet and SKILLMINT_SKILL_ID=13, the
+ * resolved registry must equal V3_MAINNET_REGISTRY. This prevents the SDK's
+ * stale V1 default from being used silently for the treasury advisory skill.
+ */
+export function buildSkillMintNetwork(skillIdOverride?: number): SkillMintNetworkResult {
+  const isMainnet = (process.env.SKILLMINT_NETWORK ?? "mainnet") !== "testnet";
+  const base = isMainnet ? MAINNET : TESTNET;
+  const skillId = skillIdOverride ?? Number(process.env.SKILLMINT_SKILL_ID ?? "13");
+
+  const registryOverride = process.env.SKILLMINT_REGISTRY_ADDRESS;
+  const escrowOverride   = process.env.SKILLMINT_ESCROW_ADDRESS;
+  const usingAddressOverride = !!(registryOverride || escrowOverride);
+
+  const network = {
+    ...base,
+    registry: registryOverride ?? base.registry,
+    escrow:   escrowOverride   ?? base.escrow,
+  } as typeof MAINNET;
+
+  // Hard guard: mainnet + skill #13 → V3 addresses required.
+  if (isMainnet && skillId === 13) {
+    const regOk    = network.registry.toLowerCase() === V3_MAINNET_REGISTRY.toLowerCase();
+    const escrowOk = !network.escrow || network.escrow.toLowerCase() === V3_MAINNET_ESCROW.toLowerCase();
+    if (!regOk || !escrowOk) {
+      return {
+        network,
+        usingAddressOverride,
+        guardError:
+          "SkillMint disabled: SDK mainnet config points to legacy V1 registry " +
+          `(got ${network.registry}, need ${V3_MAINNET_REGISTRY}). ` +
+          "Set SKILLMINT_REGISTRY_ADDRESS and SKILLMINT_ESCROW_ADDRESS to the V3 addresses.",
+      };
+    }
+  }
+
+  return { network, usingAddressOverride, guardError: null };
+}
+
+// ── Healthz config snapshot ───────────────────────────────────────────────
+
+export interface SkillMintHealthConfig {
+  enabled: boolean;
+  configured: boolean;
+  sdkVersion: string;
+  chainId: number;
+  registry: string;
+  escrow: string | undefined;
+  skillId: number;
+  usingAddressOverride: boolean;
+  lastError: string | null;
+}
+
+export function getSkillMintConfig(): SkillMintHealthConfig {
+  const skillId = Number(process.env.SKILLMINT_SKILL_ID ?? "13");
+  const { network, usingAddressOverride, guardError } = buildSkillMintNetwork(skillId);
+  return {
+    enabled:              skillMintEnabled(),
+    configured:           !!process.env.SKILLMINT_CALLER_PRIVATE_KEY,
+    sdkVersion:           SKILLMINT_SDK_VERSION,
+    chainId:              network.chainId,
+    registry:             network.registry,
+    escrow:               network.escrow,
+    skillId,
+    usingAddressOverride,
+    lastError:            guardError,
+  };
+}
 
 export type SkillMintRelation =
   | "agrees"
@@ -104,11 +200,12 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
 
   if (!callerKey) return null;
 
-  const network = process.env.SKILLMINT_NETWORK === "testnet" ? TESTNET : MAINNET;
-  const client = new SkillMintClient({
-    privateKey: callerKey,
-    network,
-  });
+  const { network, guardError } = buildSkillMintNetwork(skillId);
+  if (guardError) {
+    console.error(`[skillmint] ${guardError}`);
+    return null;
+  }
+  const client = new SkillMintClient({ privateKey: callerKey, network });
 
   const skillInput = JSON.stringify({
     action: input.action,
@@ -210,9 +307,10 @@ export async function verifySkillMintReceipt(
   rootHash: string,
   opts?: { network?: "mainnet" | "testnet" },
 ): Promise<ReceiptVerifyResult> {
-  const network = (opts?.network ?? process.env.SKILLMINT_NETWORK ?? "mainnet") === "testnet"
-    ? TESTNET
-    : MAINNET;
+  const isTestnet = (opts?.network ?? process.env.SKILLMINT_NETWORK ?? "mainnet") === "testnet";
+  const { network } = isTestnet
+    ? { network: TESTNET }
+    : buildSkillMintNetwork(); // applies V3 override if env vars are set
   const client = new SkillMintClient({
     privateKey: "0x" + "1".repeat(64), // read-only; fetchReceipt needs no signing
     network,

@@ -70,6 +70,10 @@ services:
         value: "/data/sentri-points-ledger.jsonl"
       - key: REJECTIONS_LEDGER_PATH
         value: "/data/sentri-rejections-ledger.jsonl"
+      - key: SKILLMINT_REGISTRY_ADDRESS
+        value: "0xdF28e06899955092DF81f0DBea03496D1Ac8904E"
+      - key: SKILLMINT_ESCROW_ADDRESS
+        value: "0xA0e5A7d722399f59A0Ee4B8DF740107FBC63f7ae"
       - key: SENTRI_POINTS_BOOTSTRAP_AWARDS
         value: '[{"wallet":"0x14057aD8dE779090Cc02f1B9F70e3C995e62A206","vaultAddress":"0xd5e39d68345e5ca147c06edcf46371e8cd37522e","points":20000,"type":"exceptional_bonus","reason":"Early external vault bonus (lab rat)","uniqueKey":"manual:exceptional_bonus:0x14057ad8de779090cc02f1b9f70e3c995e62a206:20000:early-external-vault-bonus-lab-rat"}]'
       - key: SENTRI_AUDIT_RECOVERY_RECORDS

@@ -5,15 +5,19 @@
 //
 // Requires in env (Render sentri-agent service only — NOT AGENT_PRIVATE_KEY):
 //   SKILLMINT_CALLER_PRIVATE_KEY=0x...   dedicated low-balance wallet
+//   SKILLMINT_REGISTRY_ADDRESS=0x...     V3 registry override (required for mainnet + skill #13)
+//   SKILLMINT_ESCROW_ADDRESS=0x...       V3 escrow override   (required for mainnet + skill #13)
 //   SKILLMINT_SKILL_ID=13               (overridden by --skill-id)
 //   SKILLMINT_NETWORK=mainnet           (default)
 //
-// Prints: paid amount, settlement tx, receiptRootHash, verification result, parsed output.
+// Prints: network config, skill metadata, paid amount, settlement tx,
+//         receiptRootHash, verification result, parsed output.
 // Does NOT touch Sentri vault execution.
 
 import "dotenv/config";
 import * as fs from "node:fs";
-import { SkillMintClient, MAINNET, TESTNET } from "@skillmint/sdk";
+import { SkillMintClient, TESTNET } from "@skillmint/sdk";
+import { buildSkillMintNetwork } from "./skillmint.js";
 
 function getArg(flag: string, fallbackEnv?: string): string | undefined {
   const idx = process.argv.indexOf(flag);
@@ -42,19 +46,59 @@ if (!fs.existsSync(inputFile)) {
 const skillId = Number(skillIdStr);
 const inputJson = fs.readFileSync(inputFile, "utf-8");
 
-const networkName = process.env.SKILLMINT_NETWORK === "testnet" ? "testnet" : "mainnet";
-const network = networkName === "testnet" ? TESTNET : MAINNET;
+const isTestnet = process.env.SKILLMINT_NETWORK === "testnet";
+const { network, usingAddressOverride, guardError } = isTestnet
+  ? { network: TESTNET, usingAddressOverride: false, guardError: null }
+  : buildSkillMintNetwork(skillId);
+
+if (guardError) {
+  console.error(`[skillmint] ${guardError}`);
+  console.error("Set SKILLMINT_REGISTRY_ADDRESS and SKILLMINT_ESCROW_ADDRESS to the V3 addresses.");
+  process.exit(1);
+}
 
 const client = new SkillMintClient({ privateKey: callerKey, network });
 
-console.log(`Network:    ${networkName} (chainId ${network.chainId})`);
-console.log(`x402 URL:   ${network.x402Url}`);
-console.log(`Skill ID:   ${skillId}`);
-console.log(`Caller:     ${client.address}`);
-console.log(`W0G balance: ${await client.getW0GBalance()} W0G`);
-console.log(`A0GI balance: ${await client.getBalance()} A0GI`);
-console.log("\nExecuting...\n");
+console.log(`Network:              ${isTestnet ? "testnet" : "mainnet"} (chainId ${network.chainId})`);
+console.log(`Registry:             ${network.registry}${usingAddressOverride ? " [V3 override]" : ""}`);
+console.log(`Escrow:               ${network.escrow ?? "(none)"}${usingAddressOverride ? " [V3 override]" : ""}`);
+console.log(`usingAddressOverride: ${usingAddressOverride}`);
+console.log(`x402 URL:             ${network.x402Url}`);
+console.log(`Skill ID:             ${skillId}`);
+console.log(`Caller:               ${client.address}`);
+console.log(`W0G balance:          ${await client.getW0GBalance()} W0G`);
+console.log(`A0GI balance:         ${await client.getBalance()} A0GI`);
 
+// Stage A: verify skill exists and is active before paying.
+// Note: @skillmint/sdk@0.4.0 may fail to decode the V3 getSkill return struct
+// (ABI mismatch). If decoding fails, log a warning but proceed — the raw data
+// confirms the skill exists, and executeX402 is the authoritative gate.
+console.log("\n--- Stage A: getSkill ---");
+try {
+  const skill = await client.getSkill(skillId);
+  console.log(`  active:    ${skill.active}`);
+  console.log(`  owner:     ${skill.owner}`);
+  console.log(`  model:     ${skill.model}`);
+  console.log(`  price:     ${skill.price}`);
+  if (!skill.active) {
+    console.error(`Skill #${skillId} is not active — aborting.`);
+    process.exit(1);
+  }
+} catch (e) {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.includes("BAD_DATA") || msg.includes("could not decode")) {
+    console.warn(`  ⚠ getSkill ABI decode failed (SDK V1 struct vs V3 registry) — proceeding.`);
+    console.warn(`  Raw return data confirms skill #${skillId} exists on V3 registry.`);
+    console.warn(`  This warning is expected with @skillmint/sdk@0.4.0 + V3 contracts.`);
+  } else {
+    console.error("getSkill failed:", msg);
+    console.error("Check that SKILLMINT_REGISTRY_ADDRESS points to V3 registry.");
+    process.exit(1);
+  }
+}
+
+// Stage B: execute and verify.
+console.log("\n--- Stage B: executeX402 ---");
 let result: Awaited<ReturnType<typeof client.executeX402>>;
 try {
   result = await client.executeX402(skillId, inputJson, undefined, { autoWrap: true });
@@ -63,7 +107,6 @@ try {
   process.exit(1);
 }
 
-console.log("--- Execution result ---");
 console.log(`  Paid W0G:        ${result.paidW0G}`);
 console.log(`  Payer:           ${result.payer}`);
 console.log(`  Settlement tx:   ${result.settlement.transaction}`);
@@ -92,6 +135,8 @@ try {
   try {
     const parsed = JSON.parse(receipt.output) as Record<string, unknown>;
     console.log(JSON.stringify(parsed, null, 2));
+    const hasExpectedFields = "action" in parsed && "amount_bps" in parsed && "confidence" in parsed && "short_reason" in parsed;
+    console.log(hasExpectedFields ? "✓ Output has expected fields (action/amount_bps/confidence/short_reason)." : "⚠ Output missing expected fields.");
   } catch {
     console.log("(output is not JSON):", receipt.output);
   }

@@ -73,6 +73,7 @@ import {
   getRejectionsStats,
 } from "./rejections-ledger.js";
 import { getMarketDataHealth, isMarketDataUnavailableError, updatePythOnChain } from "./market.js";
+import { getSkillMintConfig } from "./skillmint.js";
 import { decodeVaultError } from "./vault-errors.js";
 import { recoverAuditEntry, type ChainAuditEntry } from "./audit-recovery.js";
 
@@ -743,6 +744,7 @@ app.get("/healthz", (_req, res) => {
     auditIndex,
     points,
     rejectionsLedger: getRejectionsStats(),
+    skillMint: getSkillMintConfig(),
     marketData,
     autoExecute: ctx ? ctx.signerHealth.ok && auditIndexExecutionAllowed() : false,
     signerHealth: ctx
