@@ -52,14 +52,21 @@ import {
   writeAuditIndexRecord,
 } from "./audit-index.js";
 import {
+  awardPoints,
+  buildManualUniqueKey,
+  computeActiveVaultHourAwards,
+  createPointsEntry,
   initPointsLedger,
   getPointsStats,
   getLeaderboard,
   getWalletPoints,
   getVaultPoints,
   getRecentPointEvents,
+  type ActiveVaultCandidate,
+  type PointType,
+  type PointsEntry,
 } from "./points.js";
-import { AGENT, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
+import { AGENT, CONTRACTS, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
 import { getMarketDataHealth, isMarketDataUnavailableError, updatePythOnChain } from "./market.js";
 import { decodeVaultError } from "./vault-errors.js";
 import { recoverAuditEntry, type ChainAuditEntry } from "./audit-recovery.js";
@@ -173,6 +180,81 @@ function bootstrapRootsFromEnv(): string[] {
     .split(/[\s,]+/)
     .map((v) => v.trim())
     .filter((v) => v.startsWith("0x"));
+}
+
+function isPointType(value: unknown): value is PointType {
+  return value === "active_vault_hour" ||
+    value === "verified_execution" ||
+    value === "safe_blocked_action" ||
+    value === "useful_feedback" ||
+    value === "shipped_bug_report" ||
+    value === "exceptional_bonus";
+}
+
+function bootstrapPointsAwardsFromEnv(): PointsEntry[] {
+  const raw = process.env.SENTRI_POINTS_BOOTSTRAP_AWARDS;
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    log(`[server] points bootstrap ignored: invalid JSON (${err instanceof Error ? err.message : err}).`);
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    log("[server] points bootstrap ignored: SENTRI_POINTS_BOOTSTRAP_AWARDS must be a JSON array.");
+    return [];
+  }
+  const now = Date.now();
+  const awards: PointsEntry[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") {
+      log("[server] points bootstrap skipped one award: entry is not an object.");
+      continue;
+    }
+    const award = item as Record<string, unknown>;
+    const wallet = stringField(award.wallet);
+    const reason = stringField(award.reason);
+    const type = award.type;
+    const points = award.points;
+    if (!wallet || !reason || !isPointType(type) || typeof points !== "number" || !Number.isFinite(points)) {
+      log("[server] points bootstrap skipped one award: missing wallet/type/points/reason.");
+      continue;
+    }
+    const uniqueKey = stringField(award.uniqueKey) ?? buildManualUniqueKey(type, wallet, points, reason);
+    awards.push(createPointsEntry({
+      uniqueKey,
+      wallet,
+      vaultAddress: stringField(award.vaultAddress) ?? undefined,
+      type,
+      points,
+      reason,
+      txHash: stringField(award.txHash) ?? undefined,
+      logIndex: typeof award.logIndex === "number" ? award.logIndex : undefined,
+      createdAt: typeof award.createdAt === "number" ? award.createdAt : now,
+    }));
+  }
+  return awards;
+}
+
+function applyBootstrapPointsAwards(): void {
+  const awards = bootstrapPointsAwardsFromEnv();
+  if (awards.length === 0) return;
+  let written = 0;
+  let skipped = 0;
+  for (const award of awards) {
+    const result = awardPoints(award);
+    if (result.awarded) {
+      written++;
+      log(`[server] points bootstrap awarded ${award.points} ${award.type} to ${award.wallet}.`);
+    } else {
+      skipped++;
+      const reason = result.reason ?? "unknown reason";
+      const level = reason === "duplicate uniqueKey" ? "already applied" : `skipped: ${reason}`;
+      log(`[server] points bootstrap ${level} for ${award.wallet} (${award.uniqueKey}).`);
+    }
+  }
+  log(`[server] points bootstrap complete: written=${written}, skipped=${skipped}.`);
 }
 
 function stringField(value: unknown): string | null {
@@ -347,6 +429,73 @@ async function readVaultStateFromChain(
   };
 }
 
+function isDemoVault(vaultAddress: string): boolean {
+  return vaultAddress.toLowerCase() === CONTRACTS.demoVault.toLowerCase();
+}
+
+async function readActiveVaultPointsCandidate(
+  vaultAddress: string,
+  context: GlobalContext,
+): Promise<ActiveVaultCandidate | null> {
+  const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, context.provider);
+  const [owner, paused, killed, vaultBalance, riskBalance, baseAddr] = await Promise.all([
+    vault.owner() as Promise<string>,
+    vault.paused() as Promise<boolean>,
+    vault.killed() as Promise<boolean>,
+    vault.vaultBalance() as Promise<bigint>,
+    vault.riskBalance() as Promise<bigint>,
+    vault.base() as Promise<string>,
+  ]);
+  const { totalValue } = await readTvlForDisplay(vault, context, vaultBalance, riskBalance);
+  const baseToken = new ethers.Contract(baseAddr, ERC20_ABI, context.provider);
+  const baseDecimals = await baseToken.decimals() as bigint | number;
+  const totalValueUsd = Number(ethers.formatUnits(totalValue, Number(baseDecimals)));
+  return {
+    wallet: owner,
+    vaultAddress,
+    paused,
+    killed,
+    totalValueUsd,
+  };
+}
+
+async function awardActiveVaultHourPoints(context: GlobalContext, vaults: string[]): Promise<void> {
+  try {
+    const stats = getPointsStats();
+    if (!stats.ok) {
+      log(`[server] points hourly award skipped: ledger unavailable (${stats.lastError ?? "unknown error"}).`);
+      return;
+    }
+    const candidates: ActiveVaultCandidate[] = [];
+    for (const vaultAddress of vaults) {
+      if (isDemoVault(vaultAddress)) {
+        log(`[server] points hourly award skipped demo vault ${vaultAddress}.`);
+        continue;
+      }
+      try {
+        const candidate = await readActiveVaultPointsCandidate(vaultAddress, context);
+        if (candidate) candidates.push(candidate);
+      } catch (err) {
+        log(
+          `[server] points hourly candidate skipped ${vaultAddress}: ` +
+            `${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+    const awards = computeActiveVaultHourAwards(candidates);
+    for (const award of awards) {
+      const result = awardPoints(award);
+      if (result.awarded) {
+        log(`[server] points awarded ${award.points} active_vault_hour to ${award.wallet}.`);
+      } else if (result.reason !== "duplicate uniqueKey") {
+        log(`[server] points award skipped ${award.uniqueKey}: ${result.reason ?? "unknown reason"}.`);
+      }
+    }
+  } catch (err) {
+    log(`[server] points hourly award failed safely: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 const PORT = Number(process.env.PORT ?? 8080);
 const CYCLE_INTERVAL_MS = Number(process.env.AGENT_INTERVAL_MS ?? AGENT.cycleIntervalMs);
 const INFERENCE_FUNDING_BACKOFF_MS = Number(process.env.INFERENCE_FUNDING_BACKOFF_MS ?? 15 * 60_000);
@@ -480,6 +629,7 @@ async function runCycle(): Promise<void> {
     const vaults = await discoverVaults(ctx);
     state.lastCycleVaultCount = vaults.length;
     log(`[server] cycle ${state.totalCycles}: ${vaults.length} vault(s) tracked`);
+    void awardActiveVaultHourPoints(ctx, vaults);
     let market: Awaited<ReturnType<typeof pushPrice>>;
     try {
       market = await pushPrice(ctx);
@@ -843,6 +993,8 @@ app.listen(PORT, () => {
       `[server] points ledger unavailable: ${points.lastError ?? "unknown error"}. ` +
         "Sentri Early Vault Points are disabled; auto-execution is unaffected.",
     );
+  } else {
+    applyBootstrapPointsAwards();
   }
   log("[server] initializing agent (Sealed Inference broker + Storage)...");
 

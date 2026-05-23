@@ -68,6 +68,8 @@ services:
         value: '["0xe62da0068807e9576b5dd7bfabd0e77143f338d9baa4b8675fb57393f4f55f6e","0xdac97551deda588027f1b3da818cf591be6c4026868fa3b90d9c8d9cfc56ee3e","0xf469131e9bc7c4f152b1ea59da100f1bf17e024cf686b73a2e5aafae39dd8e3d","0xbef2dd2e264ff05f3f82d3c6274704769ea5cd964ca199db9f0863bfc73858dd","0x26e48d4d13016d4fe297d86ab03a6be682dc2758acf2269e9242e75ab736fb34"]'
       - key: POINTS_LEDGER_PATH
         value: "/data/sentri-points-ledger.jsonl"
+      - key: SENTRI_POINTS_BOOTSTRAP_AWARDS
+        value: '[{"wallet":"0x14057aD8dE779090Cc02f1B9F70e3C995e62A206","vaultAddress":"0xd5e39d68345e5ca147c06edcf46371e8cd37522e","points":20000,"type":"exceptional_bonus","reason":"Early external vault bonus (lab rat)","uniqueKey":"manual:exceptional_bonus:0x14057ad8de779090cc02f1b9f70e3c995e62a206:20000:early-external-vault-bonus-lab-rat"}]'
       - key: SENTRI_AUDIT_RECOVERY_RECORDS
         value: '[{"rootHash":"0x537c8a51055496bd2df34e6976ab5f11e849cd501ce689a05ae063057eb9f9ca","txHash":"0x34cfe5b5d7843f9e18c2bb0b5325aa01af569cb76e93afed35b2a5b9b67a61c0","referenceTxHash":"0x4b44c5063ca3b7f618a6dab5c20e840cb7d605e761162b6fbe847995df3d9ac4"},{"rootHash":"0x71a0a3723e089a2ebb44e5b76e78aae9cb02cacf5a96275663e49ad48f24a08d","referenceTxHash":"0x68b8de37976587a18a0cefb7f97ffe348e3ee1cadf4db3cfa99be7b2cb9bb894"},{"rootHash":"0x06cf6c24ce1eeccb6091bef0b7d888d92f6765a3dd74337e2051e3df3334a060","txHash":"0x6e8876a529de615bd2cb2f759eee5a375e15083c122718b953797e97751db2f8","referenceTxHash":"0x7702193a46aff156fd24d125c86c2369fcdda7803d7271227a44ec76786a9784"},{"rootHash":"0x23debac69cad09cf1c754428ef5fbe3e26ba4dc51e8933e9d984a92efeea60f8","referenceTxHash":"0x8d199f655c99e43d9c9f5cf4d3b2ca03590fe74bcf1bebf8a20258fd9e08fbe4"}]'
       - key: AGENT_INTERVAL_MS
