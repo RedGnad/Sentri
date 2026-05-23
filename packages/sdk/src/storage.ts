@@ -248,6 +248,27 @@ export interface AuditEntry {
   kvIndexTxHash?: string;
   canonicalStorageError?: string;
   kvIndexError?: string;
+  externalSignals?: ExternalSignal[];
+}
+
+export interface ExternalSignal {
+  provider: string;
+  skillId?: string;
+  action: string;
+  amountBps: number;
+  confidence: number;
+  reason: string;
+  receiptVerified: boolean;
+  receiptRootHash: string;
+  receiptStorageScanUrl: string;
+  receiptVerification?: {
+    valid: boolean;
+    inputHashOk: boolean;
+    outputHashOk: boolean;
+    teeVerified: boolean;
+  } | null;
+  callTs: number;
+  relation?: string;
 }
 
 export interface CanonicalAuditRecord {
@@ -376,6 +397,7 @@ export interface InferenceRecord {
   priceAttestationPayload?: unknown;
   kvTxHash?: string;
   kvRootHash?: string;
+  externalSignals?: ExternalSignal[];
 }
 
 function isRecoverableInferenceBlob(value: unknown, expectedIntentHash: string): boolean {

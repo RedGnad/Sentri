@@ -18,6 +18,7 @@ import {
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
 import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog, saveInferenceRecord } from "./storage.js";
+import { shouldCallSkillMint, callSkillMint, computeSkillMintRelation, type SkillMintSignal } from "./skillmint.js";
 import { writeAuditIndexRecord } from "./audit-index.js";
 import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
 import { preflightTeeSigner, readAgentMetadata, resolveAgentTokenId } from "./agent-signer.js";
@@ -805,6 +806,35 @@ export async function executeOneIterationForVault(
     return { status: "skipped", reason: "no action needed (amount_bps=0)" };
   }
 
+  // ── SkillMint external advisory signal (non-blocking) ────────────────────
+  // Called only when Sentri already has a meaningful candidate action (Rebalance
+  // or EmergencyDeleverage above the minimum threshold). Failure / timeout /
+  // unavailability must never block core execution: any error returns null here.
+  let skillMintSignal: SkillMintSignal | null = null;
+  if (shouldCallSkillMint(decision.action, decision.amount_bps)) {
+    try {
+      skillMintSignal = await callSkillMint({
+        vaultAddress,
+        action: decision.action,
+        amountBps: decision.amount_bps,
+        marketPrice: activeMarket.priceUsd,
+        baseBalance: baseStr,
+        riskBalance: riskStr,
+        tvl: tvlStr,
+        riskSymbol,
+        baseSymbol,
+      });
+      if (skillMintSignal) {
+        log(
+          `SkillMint signal: action=${skillMintSignal.action} bps=${skillMintSignal.amountBps} ` +
+            `conf=${skillMintSignal.confidence}% receiptVerified=${skillMintSignal.receiptVerified}`,
+        );
+      }
+    } catch {
+      // Defensive: callSkillMint is already try/catch but belt-and-suspenders.
+    }
+  }
+
   const executionFreshness = await ensureFreshOracle(
     ctx,
     vaultAddress,
@@ -927,6 +957,7 @@ export async function executeOneIterationForVault(
       marketRequiredSourceCount: activeMarket.requiredSourceCount,
       marketRawSources: activeMarket.rawSources,
       priceAttestationPayload,
+      externalSignals: skillMintSignal ? [skillMintSignal] : undefined,
     });
     inferenceRootHash = savedInference.rootHash;
     // Durable audit index (Render persistent disk). Written BEFORE the tx so a
@@ -1125,6 +1156,19 @@ export async function executeOneIterationForVault(
       marketRequiredSourceCount: activeMarket.requiredSourceCount,
       marketRawSources: activeMarket.rawSources,
       priceAttestationPayload,
+      externalSignals: skillMintSignal
+        ? [
+            {
+              ...skillMintSignal,
+              relation: computeSkillMintRelation(
+                skillMintSignal,
+                decision.action,
+                decision.amount_bps,
+                recommendation.regime,
+              ),
+            },
+          ]
+        : undefined,
     });
   } catch (err) {
     log(

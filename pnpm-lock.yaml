@@ -77,6 +77,9 @@ importers:
       '@0glabs/0g-serving-broker':
         specifier: 0.7.4
         version: 0.7.4(@types/circomlibjs@0.1.6)(@types/crypto-js@4.2.2)(circomlibjs@0.1.7(bufferutil@4.1.0)(utf-8-validate@5.0.10))(crypto-js@4.2.0)(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
+      '@skillmint/sdk':
+        specifier: 0.4.0
+        version: 0.4.0(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -817,6 +820,7 @@ packages:
   '@safe-global/safe-gateway-typescript-sdk@3.23.1':
     resolution: {integrity: sha512-6ORQfwtEJYpalCeVO21L4XXGSdbEMfyp2hEv6cP82afKXSwvse6d3sdelgaPWUxHIsFRkWvHDdzh8IyyKHZKxw==}
     engines: {node: '>=16'}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   '@scure/base@1.1.9':
     resolution: {integrity: sha512-8YKhl8GHiNI/pU2VMaofa2Tor7PJRAjwQLBBuilkJ9L5+13yVbC7JO/wS7piioAvPSwR3JKM1IJ/u4xQzbcXKg==}
@@ -835,6 +839,11 @@ packages:
 
   '@scure/bip39@1.6.0':
     resolution: {integrity: sha512-+lF0BbLiJNwVlev4eKelw1WWLaiKXw7sSl8T6FvBlWkdX+94aGJ4o8XjUdlyhTCjd8c+B3KT3JfS8P0bLRNU6A==}
+
+  '@skillmint/sdk@0.4.0':
+    resolution: {integrity: sha512-V3rzE6DSQ/deaqWmdjydEBOoIr7KgNJcX9c9IQWMUsR6rxZBLLlqILaBzkTyzWgZtHZ+ntBe4RnfQ5lcL0ZpIw==}
+    peerDependencies:
+      ethers: ^6.0.0
 
   '@solana-program/system@0.10.0':
     resolution: {integrity: sha512-Go+LOEZmqmNlfr+Gjy5ZWAdY5HbYzk2RBewD9QinEU/bBSzpFfzqDRT55JjFRBGJUvMgf3C2vfXEGT4i8DSI4g==}
@@ -4266,6 +4275,7 @@ packages:
 
   uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   valid-url@1.0.9:
@@ -5848,6 +5858,11 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
+
+  '@skillmint/sdk@0.4.0(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))':
+    dependencies:
+      adm-zip: 0.5.17
+      ethers: 6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
 
   '@solana-program/system@0.10.0(@solana/kit@5.5.1(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10))':
     dependencies:

@@ -1,0 +1,11 @@
+{
+  "action": "Rebalance",
+  "amount_bps": 3000,
+  "market_price": 1.21,
+  "base_balance": "0.025000",
+  "risk_balance": "0.001950",
+  "tvl": "0.027362",
+  "risk_symbol": "W0G",
+  "base_symbol": "USDC.E",
+  "vault": "0x3C111FFaB9F2C78F62CC27Cc276e65E840DBC982"
+}

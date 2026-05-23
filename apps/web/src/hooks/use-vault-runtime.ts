@@ -80,6 +80,27 @@ export interface VaultAuditEntry {
   marketRequiredSourceCount?: number;
   marketRawSources?: Array<{ source: string; priceUsd?: number; ethUsd: number }>;
   priceAttestationPayload?: unknown;
+  externalSignals?: ExternalSignal[];
+}
+
+export interface ExternalSignal {
+  provider: string;
+  skillId?: string;
+  action: string;
+  amountBps: number;
+  confidence: number;
+  reason: string;
+  receiptVerified: boolean;
+  receiptRootHash: string;
+  receiptStorageScanUrl: string;
+  receiptVerification?: {
+    valid: boolean;
+    inputHashOk: boolean;
+    outputHashOk: boolean;
+    teeVerified: boolean;
+  } | null;
+  callTs: number;
+  relation?: string;
 }
 
 export interface VaultRejectionEntry {
