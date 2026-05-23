@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { Indexer, Batcher, KvClient, FixedPriceFlow__factory, MemData } from "@0gfoundation/0g-ts-sdk";
 import type { FixedPriceFlow } from "@0gfoundation/0g-ts-sdk";
 import { CHAIN, STORAGE } from "./constants.js";
+import { writeRejection, makeRejectionId, type RejectionEntry as LedgerRejectionEntry } from "./rejections-ledger.js";
 
 // Local cache mirror, namespaced by vault address. The 0G Storage write
 // remains the verifiable source of truth (proof tx is included in cached
@@ -844,6 +845,53 @@ function rejectionManifestKey(vaultAddr: string): string {
   return `rejection:manifest:${vaultAddr.toLowerCase()}`;
 }
 
+// ── Durable ledger conversion helpers ────────────────────────────────────
+
+const HUMAN_REASON_BY_CODE: Record<string, string> = {
+  InsufficientAmountOut: "Swap output fell below the slippage-protected minimum.",
+  CooldownNotElapsed: "Strategy execution is in cooldown — too soon since the last trade.",
+  AllocationExceeded: "Trade would exceed the vault's maximum allocation policy.",
+  DrawdownBreached: "Trade would breach the vault's maximum drawdown policy.",
+  PriceStale: "Oracle price was too old — trade blocked to protect against stale market data.",
+  VaultKilled: "Vault has been killed by the operator.",
+  InvalidTEESignature: "TEE signature did not match the expected signer.",
+};
+
+const HUMAN_REASON_BY_TYPE: Record<string, string> = {
+  "defensive-override": "The agent's decision was rejected by the defensive verifier.",
+  "tee-signer-mismatch": "TEE signer is not bound to the active AgentINFT.",
+  "audit-storage": "Audit storage is unhealthy — execution blocked for data integrity.",
+  "agent-sizing": "Agent computed a position size outside the safe range.",
+};
+
+function toDurablePhase(
+  phase: "state-read" | "estimateGas" | "executeStrategy" | undefined,
+  txHash: string | undefined,
+): LedgerRejectionEntry["phase"] {
+  if (phase === "executeStrategy" || (phase === undefined && txHash)) return "execution";
+  if (phase === "estimateGas") return "estimate";
+  return "preflight";
+}
+
+function toLedgerEntry(vaultAddr: string, entry: RejectionEntry): LedgerRejectionEntry {
+  const humanReason =
+    (entry.errorCode ? HUMAN_REASON_BY_CODE[entry.errorCode] : undefined) ??
+    HUMAN_REASON_BY_TYPE[entry.type] ??
+    entry.reason;
+  return {
+    id: makeRejectionId(vaultAddr, entry.timestamp, entry.type, entry.errorCode),
+    vaultAddress: vaultAddr.toLowerCase(),
+    phase: toDurablePhase(entry.phase, entry.txHash),
+    action: entry.action ?? "unknown",
+    reason: entry.reason,
+    humanReason,
+    txSent: !!entry.txHash,
+    fundsMoved: false,
+    intentHash: entry.intentHash,
+    createdAt: entry.timestamp,
+  };
+}
+
 /**
  * Persist a blocked-action entry to KV and local cache.
  * Captures the KV tx/root hash and maintains a manifest for recovery after
@@ -873,6 +921,8 @@ export function appendRejectionLog(
     path.join("vaults", vaultAddr.toLowerCase(), "rejections", `${entry.timestamp}.json`),
     entry,
   );
+  // Also persist to durable JSONL ledger (survives Render restarts).
+  writeRejection(toLedgerEntry(vaultAddr, entry));
 }
 
 /**

@@ -67,6 +67,11 @@ import {
   type PointsEntry,
 } from "./points.js";
 import { AGENT, CONTRACTS, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
+import {
+  initRejectionsLedger,
+  getRejectionsForVault,
+  getRejectionsStats,
+} from "./rejections-ledger.js";
 import { getMarketDataHealth, isMarketDataUnavailableError, updatePythOnChain } from "./market.js";
 import { decodeVaultError } from "./vault-errors.js";
 import { recoverAuditEntry, type ChainAuditEntry } from "./audit-recovery.js";
@@ -737,6 +742,7 @@ app.get("/healthz", (_req, res) => {
     // unaffected. See docs/operator-signer-mismatch.md.
     auditIndex,
     points,
+    rejectionsLedger: getRejectionsStats(),
     marketData,
     autoExecute: ctx ? ctx.signerHealth.ok && auditIndexExecutionAllowed() : false,
     signerHealth: ctx
@@ -962,14 +968,58 @@ app.get("/vault/:address/audit/:timestamp", async (req, res) => {
 app.get("/vault/:address/rejections", async (req, res) => {
   const addr = req.params.address;
   const timestamps = listVaultRejectionsFromCache(addr, 50);
-  let entries = timestamps
+  let cacheEntries = timestamps
     .map((ts) => readVaultRejectionFromCache(addr, ts))
     .filter((e): e is NonNullable<typeof e> => e !== null);
   // Fallback to KV manifest if cache is empty (e.g. after restart).
-  if (entries.length === 0) {
-    entries = await readRejectionsFromKv(addr);
+  if (cacheEntries.length === 0) {
+    cacheEntries = await readRejectionsFromKv(addr);
   }
-  res.json({ address: addr, count: entries.length, entries });
+
+  // Merge durable ledger — the restart-surviving source of truth.
+  // Deduplicate by createdAt so an entry in both cache and ledger appears once
+  // (cache is preferred while the process is live; ledger fills the gap after restart).
+  const durable = getRejectionsForVault(addr);
+  type MergedRejection = (typeof cacheEntries)[0] & {
+    id?: string;
+    humanReason?: string;
+    txSent?: boolean;
+    fundsMoved?: boolean;
+    source?: string;
+  };
+  const merged: MergedRejection[] = cacheEntries as MergedRejection[];
+  if (durable.length > 0) {
+    const cacheTs = new Set(cacheEntries.map((e) => e.timestamp));
+    for (const de of durable) {
+      if (cacheTs.has(de.createdAt)) continue;
+      merged.push({
+        timestamp: de.createdAt,
+        type: "onchain-revert",
+        phase:
+          de.phase === "execution"
+            ? "executeStrategy"
+            : de.phase === "estimate"
+              ? "estimateGas"
+              : "state-read",
+        reason: de.reason,
+        action: de.action !== "unknown" ? de.action : undefined,
+        intentHash: de.intentHash,
+        safeNoFundsMoved: !de.fundsMoved,
+        verdict: de.txSent
+          ? "Blocked safely: transaction reverted on-chain. No funds moved."
+          : "Blocked safely: no transaction was sent and no funds moved.",
+        vaultAddress: de.vaultAddress,
+        // Rich durable-ledger fields (bonus for API consumers).
+        id: de.id,
+        humanReason: de.humanReason,
+        txSent: de.txSent,
+        fundsMoved: de.fundsMoved,
+        source: "durable-ledger",
+      });
+    }
+    merged.sort((a, b) => b.timestamp - a.timestamp);
+  }
+  res.json({ address: addr, count: merged.length, entries: merged });
 });
 
 app.get("/", (_req, res) => res.redirect("/healthz"));
@@ -994,6 +1044,14 @@ app.listen(PORT, () => {
     );
   } else {
     applyBootstrapPointsAwards();
+  }
+  initRejectionsLedger();
+  const rejectionsLedger = getRejectionsStats();
+  if (!rejectionsLedger.ok) {
+    log(
+      `[server] rejections ledger unavailable: ${rejectionsLedger.lastError ?? "unknown error"}. ` +
+        "Safe blocked actions may not survive restarts; auto-execution is unaffected.",
+    );
   }
   log("[server] initializing agent (Sealed Inference broker + Storage)...");
 
