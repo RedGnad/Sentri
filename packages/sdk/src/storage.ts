@@ -15,6 +15,10 @@ const KV_READ_TIMEOUT_MS = Number(process.env.STORAGE_KV_READ_TIMEOUT_MS ?? "500
 const KV_WRITE_TIMEOUT_MS = Number(process.env.STORAGE_KV_WRITE_TIMEOUT_MS ?? "60000");
 const BLOB_DOWNLOAD_TIMEOUT_MS = Number(process.env.STORAGE_BLOB_DOWNLOAD_TIMEOUT_MS ?? "10000");
 const BLOB_UPLOAD_TIMEOUT_MS = Number(process.env.STORAGE_BLOB_UPLOAD_TIMEOUT_MS ?? "90000");
+const BLOB_DOWNLOAD_RETRIES = Number(process.env.STORAGE_BLOB_DOWNLOAD_RETRIES ?? "2");
+const BLOB_DOWNLOAD_RETRY_DELAY_MS = Number(process.env.STORAGE_BLOB_DOWNLOAD_RETRY_DELAY_MS ?? "1000");
+const BLOB_UPLOAD_VERIFY_RETRIES = Number(process.env.STORAGE_BLOB_UPLOAD_VERIFY_RETRIES ?? "3");
+const BLOB_UPLOAD_VERIFY_RETRY_DELAY_MS = Number(process.env.STORAGE_BLOB_UPLOAD_VERIFY_RETRY_DELAY_MS ?? "1500");
 
 function vaultDir(vaultAddr: string): string {
   return path.join(CACHE_DIR, "vaults", vaultAddr.toLowerCase());
@@ -45,6 +49,26 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readJsonFile(file: string): unknown | null {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8")) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function unlinkIfExists(file: string): void {
+  try {
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  } catch {
+    // Best-effort cache cleanup only.
   }
 }
 
@@ -350,6 +374,22 @@ export interface InferenceRecord {
   kvRootHash?: string;
 }
 
+function isRecoverableInferenceBlob(value: unknown, expectedIntentHash: string): boolean {
+  if (!value || typeof value !== "object") return false;
+  const raw = value as Record<string, unknown>;
+  const entry = raw.entry && typeof raw.entry === "object"
+    ? raw.entry as Record<string, unknown>
+    : raw;
+  const intentHash = typeof entry.intentHash === "string" ? entry.intentHash : null;
+  const reasoning = typeof entry.reasoning === "string" ? entry.reasoning : null;
+  return Boolean(
+    intentHash &&
+      intentHash.toLowerCase() === expectedIntentHash.toLowerCase() &&
+      reasoning &&
+      reasoning.trim().length > 0,
+  );
+}
+
 export async function saveInferenceRecord(
   vaultAddr: string,
   record: InferenceRecord,
@@ -359,6 +399,14 @@ export async function saveInferenceRecord(
   // read path with no KV node — it is what the durable audit index points at.
   const blob = await uploadJsonRecord(record, "sentri:inference:v1");
   if (!blob) throw new Error("0G Storage inference blob upload returned no result");
+  const verifiedBlob = await downloadAuditRecordBlob(blob.rootHash, {
+    forceRefresh: true,
+    retries: BLOB_UPLOAD_VERIFY_RETRIES,
+    retryDelayMs: BLOB_UPLOAD_VERIFY_RETRY_DELAY_MS,
+  });
+  if (!isRecoverableInferenceBlob(verifiedBlob, record.intentHash)) {
+    throw new Error(`0G Storage inference blob ${blob.rootHash} was not recoverable after upload`);
+  }
   const stored: InferenceRecord = {
     ...record,
     kvTxHash: blob.txHash,
@@ -604,22 +652,48 @@ async function _uploadCanonicalBlob(
  * node). Used by the audit read path once the durable index has resolved a
  * rootHash. Returns null if the blob is unavailable or unparseable.
  */
-export async function downloadAuditRecordBlob(rootHash: string): Promise<unknown | null> {
+export async function downloadAuditRecordBlob(
+  rootHash: string,
+  options: { forceRefresh?: boolean; retries?: number; retryDelayMs?: number } = {},
+): Promise<unknown | null> {
   const file = path.join(CACHE_DIR, "recovery", `${rootHash}.json`);
-  try {
-    ensureDir(path.dirname(file));
-    if (!fs.existsSync(file)) {
+  const retries = Math.max(0, options.retries ?? BLOB_DOWNLOAD_RETRIES);
+  const retryDelayMs = Math.max(0, options.retryDelayMs ?? BLOB_DOWNLOAD_RETRY_DELAY_MS);
+  ensureDir(path.dirname(file));
+
+  if (!options.forceRefresh && fs.existsSync(file)) {
+    const cached = readJsonFile(file);
+    if (cached !== null) return cached;
+    unlinkIfExists(file);
+  }
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const tmp = `${file}.${process.pid}.${Date.now()}.${attempt}.tmp`;
+    try {
+      unlinkIfExists(tmp);
       const err = await withTimeout(
-        getIndexer().download(rootHash, file, false),
+        getIndexer().download(rootHash, tmp, false),
         BLOB_DOWNLOAD_TIMEOUT_MS,
         "0G Storage blob download",
       );
-      if (err !== null) return null;
+      if (err === null) {
+        const parsed = readJsonFile(tmp);
+        if (parsed !== null) {
+          unlinkIfExists(file);
+          fs.renameSync(tmp, file);
+          return parsed;
+        }
+      }
+    } catch {
+      // Retry below. A failed/partial download must not poison the cache.
+    } finally {
+      unlinkIfExists(tmp);
     }
-    return JSON.parse(fs.readFileSync(file, "utf-8")) as unknown;
-  } catch {
-    return null;
+    if (attempt < retries && retryDelayMs > 0) {
+      await sleep(retryDelayMs);
+    }
   }
+  return null;
 }
 
 async function _readKv<T = unknown>(
