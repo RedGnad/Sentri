@@ -21,3 +21,42 @@ test("strategy target is capped by maxAllocationBps", () => {
   assert.equal(recommendation.recommendedAction, "hold");
   assert.equal(recommendation.recommendedAmountBps, 0);
 });
+
+test("strategy holds instead of treating unavailable momentum as flat", () => {
+  const recommendation = computeStrategy({
+    currentShare: 0,
+    drawdownPct: 0,
+    change24h: 0,
+    spreadPct: 0.2,
+    baseBalance: 0.25,
+    riskBalance: 0,
+    tvl: 0.25,
+    priceUsd: 0.48,
+    maxAllocationBps: 3000,
+    rebalanceThresholdBps: 300,
+    momentumAvailable: false,
+  });
+
+  assert.equal(recommendation.regime, "momentum_unavailable");
+  assert.equal(recommendation.recommendedAction, "hold");
+  assert.equal(recommendation.recommendedAmountBps, 0);
+});
+
+test("drawdown breach remains defensive even when momentum is unavailable", () => {
+  const recommendation = computeStrategy({
+    currentShare: 20,
+    drawdownPct: 2,
+    change24h: 0,
+    spreadPct: 0.2,
+    baseBalance: 0.2,
+    riskBalance: 0.1,
+    tvl: 0.25,
+    priceUsd: 0.5,
+    maxAllocationBps: 3000,
+    rebalanceThresholdBps: 300,
+    momentumAvailable: false,
+  });
+
+  assert.equal(recommendation.regime, "drawdown_breach");
+  assert.equal(recommendation.recommendedAction, "EmergencyDeleverage");
+});

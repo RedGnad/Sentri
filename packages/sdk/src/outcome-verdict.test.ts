@@ -58,6 +58,15 @@ test("deterministic hold → ok tone", () => {
   assert.match(v.text, /Holding/);
 });
 
+test("momentum unavailable hold → waiting tone", () => {
+  const v = describeOutcome({
+    status: "skipped",
+    reason: "no action needed (deterministic hold) — momentum signal unavailable",
+  });
+  assert.equal(v.tone, "waiting");
+  assert.match(v.text, /momentum signal/);
+});
+
 test("TEE signer mismatch skip → blocked tone", () => {
   const v = describeOutcome({
     status: "skipped",
@@ -100,6 +109,15 @@ test("anti-churn skip → ok tone, not a red blocked action", () => {
   });
   assert.equal(v.tone, "ok");
   assert.match(v.text, /Anti-churn hold/);
+});
+
+test("post-defensive re-entry hold → waiting tone", () => {
+  const v = describeOutcome({
+    status: "skipped",
+    reason: "post-defensive re-entry hold — previous action was EmergencyDeleverage",
+  });
+  assert.equal(v.tone, "waiting");
+  assert.match(v.text, /defensive exit/);
 });
 
 test("sub-economic trade skip → ok tone", () => {

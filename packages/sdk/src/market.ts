@@ -9,6 +9,8 @@ export interface MarketSnapshot {
   riskSymbol: string;      // ETH or W0G
   baseSymbol: string;      // USDC, USDC.E, etc.
   change24h: number;       // 24h percent change
+  change24hAvailable: boolean;
+  change24hSource?: string;
   source: string;          // "median:binance,coingecko,kraken,coinbase"
   timestamp: number;
   sourceCount: number;     // how many sources contributed (>= 2 required)
@@ -566,8 +568,9 @@ export async function getMarketSnapshot(options: MarketSnapshotOptions = {}): Pr
     );
   }
 
-  // 24h change: prefer the first source that exposes it, otherwise 0.
-  const changeSource = successes.find((s) => s.change24h !== undefined);
+  // 24h change: it drives regime classification, so track whether it is truly
+  // available instead of silently treating an unavailable source as flat (0%).
+  const changeSource = successes.find((s) => s.change24h !== undefined && Number.isFinite(s.change24h));
   const change24h = changeSource?.change24h ?? 0;
   const hasJaineOnchain = successes.some((s) => s.source === "jaine:onchain-slot0");
   const hasPyth = successes.some((s) => s.source === "pyth:0g-usd");
@@ -587,6 +590,8 @@ export async function getMarketSnapshot(options: MarketSnapshotOptions = {}): Pr
     riskSymbol: RISK_SYMBOL,
     baseSymbol: BASE_SYMBOL,
     change24h,
+    change24hAvailable: Boolean(changeSource),
+    change24hSource: changeSource?.source,
     source: `median:${priceContributors.map((s) => s.source).join(",")}`,
     timestamp: Date.now(),
     sourceCount: priceContributors.length,

@@ -122,9 +122,21 @@ export function describeOutcome(outcome: OutcomeLike): Verdict {
     };
   }
   if (has(reason, "no action needed", "deterministic hold", "amount_bps=0")) {
+    if (has(reason, "momentum signal unavailable")) {
+      return {
+        tone: "waiting",
+        text: "Holding — the momentum signal is unavailable, so the agent will not re-enter risk until the market regime is reliable.",
+      };
+    }
     return {
       tone: "ok",
       text: "Holding — the current allocation is within the target band. No action needed this cycle.",
+    };
+  }
+  if (has(reason, "post-defensive re-entry")) {
+    return {
+      tone: "waiting",
+      text: "Holding — after a defensive exit, the agent waits for market confirmation before buying risk again.",
     };
   }
   if (has(reason, "anti-churn")) {

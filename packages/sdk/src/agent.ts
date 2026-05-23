@@ -30,6 +30,8 @@ import {
   ANTICHURN_WINDOW_SEC,
   ANTICHURN_OVERRIDE_DRIFT_PP,
   ANTICHURN_REGIME_CONFIRM_CYCLES,
+  POST_DEFENSIVE_REENTRY_DELAY_SEC,
+  POST_DEFENSIVE_REENTRY_CONFIRM_CYCLES,
 } from "./strategy-constants.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -452,8 +454,11 @@ export async function discoverVaults(ctx: GlobalContext): Promise<string[]> {
  */
 export async function pushPrice(ctx: GlobalContext, maxCacheAgeMs?: number): Promise<MarketSnapshot> {
   const market = await getMarketSnapshot(maxCacheAgeMs === undefined ? undefined : { maxAgeMs: maxCacheAgeMs });
+  const changeText = market.change24hAvailable
+    ? `${market.change24h.toFixed(2)}%${market.change24hSource ? ` via ${market.change24hSource}` : ""}`
+    : "unavailable";
   log(
-    `Market: ${market.riskSymbol}=$${market.priceUsd.toFixed(4)} · 24h ${market.change24h.toFixed(2)}% · ` +
+    `Market: ${market.riskSymbol}=$${market.priceUsd.toFixed(4)} · 24h ${changeText} · ` +
       `${market.sourceCount} sources · spread ${market.spreadPct.toFixed(3)}% · ${market.health} · ${market.source}`,
   );
 
@@ -625,7 +630,10 @@ export async function executeOneIterationForVault(
   }
 
   if (recommendation.recommendedAmountBps === 0) {
-    return { status: "skipped", reason: "no action needed (deterministic hold)" };
+    const reason = recommendation.regime === "momentum_unavailable"
+      ? `no action needed (deterministic hold) — ${recommendation.rationale}`
+      : "no action needed (deterministic hold)";
+    return { status: "skipped", reason };
   }
 
   if (recommendation.recommendedAction === "Rebalance") {
@@ -1294,14 +1302,17 @@ export type Regime =
   | "down_tight"      // 24h ≤ -1% AND spread < 1%
   | "flat"            // -1% < 24h < +1%
   | "up_wide"         // 24h ≥ +1% AND spread ≥ 1%
-  | "up_tight";       // 24h ≥ +1% AND spread < 1%
+  | "up_tight"        // 24h ≥ +1% AND spread < 1%
+  | "momentum_unavailable"; // 24h momentum source unavailable; hold unless drawdown defensive
 
 function classifyRegime(input: {
   drawdownPct: number;
   change24h: number;
   spreadPct: number;
+  momentumAvailable?: boolean;
 }): Regime {
   if (input.drawdownPct >= DRAWDOWN_BREACH_PCT) return "drawdown_breach";
+  if (input.momentumAvailable === false) return "momentum_unavailable";
   if (input.change24h <= -3) return "crash";
   if (input.change24h <= -1) return input.spreadPct >= 1 ? "down_wide" : "down_tight";
   if (input.change24h < 1) return "flat";
@@ -1338,6 +1349,9 @@ function targetShareForRegime(regime: Regime, maxAllocationBps: number): number 
     case "up_tight":
       rawTarget = isAggressive ? 28 : 25;
       break;
+    case "momentum_unavailable":
+      rawTarget = 0;
+      break;
   }
   return Math.min(rawTarget, maxAllocationBps / 100);
 }
@@ -1368,12 +1382,23 @@ export function computeStrategy(input: {
   priceUsd: number;
   maxAllocationBps: number;
   rebalanceThresholdBps: number;
+  momentumAvailable?: boolean;
 }): StrategyRecommendation {
   const regime = classifyRegime({
     drawdownPct: input.drawdownPct,
     change24h: input.change24h,
     spreadPct: input.spreadPct,
+    momentumAvailable: input.momentumAvailable,
   });
+  if (regime === "momentum_unavailable") {
+    return {
+      regime,
+      targetShare: input.currentShare,
+      recommendedAction: "hold",
+      recommendedAmountBps: 0,
+      rationale: "momentum signal unavailable; holding current allocation instead of re-entering risk",
+    };
+  }
   const targetShare = targetShareForRegime(regime, input.maxAllocationBps);
   const drift = input.currentShare - targetShare;
   const holdBandPct = Math.max(3, input.rebalanceThresholdBps / 100);
@@ -1484,6 +1509,10 @@ export interface AntiChurnInput {
   secondsSinceLastExecution: number | null;
   /** Consecutive cycles the current regime has held (≥ 1). */
   regimeObservations: number;
+  /** Delay before buying risk again after a defensive EmergencyDeleverage. */
+  postDefensiveReentryDelaySec?: number;
+  /** Regime observations required before buying risk again after a defensive sell. */
+  postDefensiveReentryConfirmCycles?: number;
 }
 
 export interface AntiChurnVerdict {
@@ -1527,6 +1556,21 @@ export function evaluateAntiChurn(input: AntiChurnInput): AntiChurnVerdict {
     const nextIsSell = input.recommendedAction === "EmergencyDeleverage";
     const reverses = (lastWasBuy && nextIsSell) || (lastWasSell && nextIsBuy);
     if (reverses) {
+      if (lastWasSell && nextIsBuy) {
+        const delaySec = input.postDefensiveReentryDelaySec ?? POST_DEFENSIVE_REENTRY_DELAY_SEC;
+        const confirmCycles =
+          input.postDefensiveReentryConfirmCycles ?? POST_DEFENSIVE_REENTRY_CONFIRM_CYCLES;
+        const delaySatisfied = input.secondsSinceLastExecution >= delaySec;
+        const regimeConfirmed = input.regimeObservations >= confirmCycles;
+        if (!delaySatisfied || !regimeConfirmed) {
+          return {
+            block: true,
+            reason:
+              `post-defensive re-entry hold — previous action was EmergencyDeleverage; ` +
+              `waiting ${delaySec}s and ${confirmCycles} confirmed regime cycles before buying risk again`,
+          };
+        }
+      }
       const largeDrift = input.driftPp >= ANTICHURN_OVERRIDE_DRIFT_PP;
       const regimeConfirmed = input.regimeObservations >= ANTICHURN_REGIME_CONFIRM_CYCLES;
       if (!largeDrift && !regimeConfirmed) {
@@ -1630,7 +1674,16 @@ function buildMarketPrompt(input: {
   riskBalance: string;
   tvl: string;
   hwm: string;
-  market: { priceUsd: number; riskSymbol: string; baseSymbol: string; change24h: number; source: string; spreadPct: number };
+  market: {
+    priceUsd: number;
+    riskSymbol: string;
+    baseSymbol: string;
+    change24h: number;
+    change24hAvailable?: boolean;
+    change24hSource?: string;
+    source: string;
+    spreadPct: number;
+  };
   policy: {
     maxAllocationBps: number;
     maxDrawdownBps: number;
@@ -1663,7 +1716,11 @@ function buildMarketPrompt(input: {
     priceUsd: input.market.priceUsd,
     maxAllocationBps: input.policy.maxAllocationBps,
     rebalanceThresholdBps: input.policy.rebalanceThresholdBps,
+    momentumAvailable: input.market.change24hAvailable,
   });
+  const momentumLine = input.market.change24hAvailable === false
+    ? "unavailable"
+    : `${input.market.change24h.toFixed(2)}%${input.market.change24hSource ? ` (${input.market.change24hSource})` : ""}`;
 
   const prompt = `Treasury state (computed):
 - ${baseSymbol} balance: ${baseN.toFixed(2)} ${baseSymbol}
@@ -1676,7 +1733,7 @@ function buildMarketPrompt(input: {
 
 Market (${input.market.source}):
 - ${riskSymbol}/USD: $${input.market.priceUsd.toFixed(4)}
-- 24h change: ${input.market.change24h.toFixed(2)}%
+- 24h change: ${momentumLine}
 - Oracle spread (Pyth vs Jaine): ${spreadPct.toFixed(3)}%
 
 Policy bounds:

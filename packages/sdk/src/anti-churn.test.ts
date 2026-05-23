@@ -25,8 +25,10 @@ function base(overrides: Partial<AntiChurnInput> = {}): AntiChurnInput {
 }
 
 test("blocks a small reversal when the regime is not yet confirmed", () => {
-  // last sell → next buy, recent, regime seen once, drift below override
-  const v = evaluateAntiChurn(base());
+  // last buy → next sell, recent, regime seen once, drift below override
+  const v = evaluateAntiChurn(
+    base({ recommendedAction: "EmergencyDeleverage", lastExecutedAction: 0, regime: "flat" }),
+  );
   assert.equal(v.block, true);
   assert.match(v.reason ?? "", /anti-churn/);
 });
@@ -40,12 +42,40 @@ test("blocks a buy→sell reversal symmetrically", () => {
 });
 
 test("allows the reversal once the regime is confirmed over enough cycles", () => {
-  const v = evaluateAntiChurn(base({ regimeObservations: 2 }));
+  const v = evaluateAntiChurn(
+    base({
+      recommendedAction: "EmergencyDeleverage",
+      lastExecutedAction: 0,
+      regime: "flat",
+      regimeObservations: 2,
+    }),
+  );
   assert.equal(v.block, false);
 });
 
 test("allows the reversal when the drift is large", () => {
-  const v = evaluateAntiChurn(base({ driftPp: 6 }));
+  const v = evaluateAntiChurn(
+    base({ recommendedAction: "EmergencyDeleverage", lastExecutedAction: 0, regime: "flat", driftPp: 6 }),
+  );
+  assert.equal(v.block, false);
+});
+
+test("blocks post-defensive buy re-entry even when drift is large", () => {
+  const v = evaluateAntiChurn(base({
+    driftPp: 22,
+    regimeObservations: 20,
+    secondsSinceLastExecution: 3600,
+  }));
+  assert.equal(v.block, true);
+  assert.match(v.reason ?? "", /post-defensive re-entry/);
+});
+
+test("allows post-defensive buy re-entry after delay and confirmation", () => {
+  const v = evaluateAntiChurn(base({
+    driftPp: 22,
+    regimeObservations: 3,
+    secondsSinceLastExecution: 3 * 3600,
+  }));
   assert.equal(v.block, false);
 });
 

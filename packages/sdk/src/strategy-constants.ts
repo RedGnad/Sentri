@@ -49,3 +49,22 @@ export const ANTICHURN_OVERRIDE_DRIFT_PP = Number(process.env.ANTICHURN_OVERRIDE
 export const ANTICHURN_REGIME_CONFIRM_CYCLES = Number(
   process.env.ANTICHURN_REGIME_CONFIRM_CYCLES ?? 2,
 );
+
+/**
+ * After a defensive sell, re-entering risk immediately on the first constructive
+ * regime creates the worst UX/cost pattern for small vaults: sell fast, then
+ * buy back 30 minutes later because the target jumped. Defensive exits remain
+ * immediate; risk re-entry must wait for a short confirmation window.
+ */
+export const POST_DEFENSIVE_REENTRY_DELAY_SEC = Number(
+  process.env.POST_DEFENSIVE_REENTRY_DELAY_SEC ?? 2 * 3600,
+);
+
+/**
+ * Consecutive cycles required before a buy can re-enter risk after an
+ * EmergencyDeleverage. This confirms the new regime without touching on-chain
+ * policy/cooldown thresholds.
+ */
+export const POST_DEFENSIVE_REENTRY_CONFIRM_CYCLES = Number(
+  process.env.POST_DEFENSIVE_REENTRY_CONFIRM_CYCLES ?? 3,
+);
