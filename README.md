@@ -222,6 +222,9 @@ This is a forward-looking section.
 - Cross-chain coordination: vault funds on any chain, decisions and proofs on 0G.
 - Integration with existing treasury platforms (Karpatkey, Llama Risk, Steakhouse) — Sentri vaults as managed accounts inside their dashboards.
 - Public on-chain operator track records: every operator INFT accrues a permanent performance record (PnL, drawdown realised vs bound, frequency of defensive overrides).
+- **Composable execution layer** — Sentri will evolve from a standalone treasury vault app into a policy-bound execution layer for AI and DeFi applications. External apps should be able to request, route, or verify capital actions through Sentri while vault policy remains the final authority.
+- **Developer integration surface** — We plan to expose a stable interface for partner applications, including authenticated requests, replay protection, rate limits, execution receipts, and verifiable audit trails.
+- **Permissionless app integrations** — The long-term goal is for any AI, treasury, or DeFi product to generate intelligence while Sentri enforces what that intelligence is allowed to do with capital.
 
 The thesis: the treasury problem is not about clever trading — it is about **bounded productive capital with cryptographic recourse**. Every roadmap item makes that envelope more useful or more verifiable, never the agent more powerful relative to the vault.
 
