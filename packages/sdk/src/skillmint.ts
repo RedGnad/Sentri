@@ -1,6 +1,6 @@
 // SkillMint external advisory signal client.
 //
-// Uses @skillmint/sdk v0.4.0 — x402 payment flow (W0G on 0G mainnet),
+// Uses @skillmint/sdk v0.4.1 — x402 payment flow (W0G on 0G mainnet),
 // receipt download from 0G Storage, and full receipt verification
 // (inputHashOk + outputHashOk + teeVerified).
 //
@@ -11,22 +11,19 @@
 // NEVER expose it via NEXT_PUBLIC_* / Vercel / frontend build vars.
 // Use a dedicated low-balance wallet — NOT the agent PRIVATE_KEY.
 //
-// V3 address override: @skillmint/sdk@0.4.0 ships V1 addresses in dist.
-// Use SKILLMINT_REGISTRY_ADDRESS / SKILLMINT_ESCROW_ADDRESS env vars to
-// point at the V3 contracts until the SDK publishes a new npm release.
-// Hard guard: mainnet + skill #13 requires V3 addresses — if not set the
-// call is silently skipped and SKILLMINT_ENABLED should remain false.
+// SKILLMINT_REGISTRY_ADDRESS / SKILLMINT_ESCROW_ADDRESS env vars are kept
+// as optional overrides for future contract migrations. They are no longer
+// required since @skillmint/sdk@0.4.1 ships V3 addresses natively.
 
 import { SkillMintClient, TESTNET, MAINNET } from "@skillmint/sdk";
 import type { ReceiptVerification } from "@skillmint/sdk";
 
-// V3 mainnet contract addresses — confirmed from on-chain mint and exec txs.
-// Remove once @skillmint/sdk publishes a version with these in dist/constants.js.
+// V3 mainnet contract addresses — now matches @skillmint/sdk@0.4.1 dist/constants.js.
 export const V3_MAINNET_REGISTRY = "0xdF28e06899955092DF81f0DBea03496D1Ac8904E";
 export const V3_MAINNET_ESCROW   = "0xA0e5A7d722399f59A0Ee4B8DF740107FBC63f7ae";
 
 // Reported by the installed package; update when SDK is upgraded.
-const SKILLMINT_SDK_VERSION = "0.4.0";
+const SKILLMINT_SDK_VERSION = "0.4.1";
 
 // ── Network builder (V3 override + hard guard) ────────────────────────────
 
