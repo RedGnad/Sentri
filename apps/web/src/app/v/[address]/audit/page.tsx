@@ -94,6 +94,17 @@ function formatRiskDisplay(value: bigint): string {
   });
 }
 
+function inferSkillMintRelation(
+  sigAction: string,
+  sentriAction: string | undefined,
+): string | undefined {
+  if (!sentriAction) return undefined;
+  if (sigAction !== "hold" && sigAction !== sentriAction) return "disagrees";
+  if (sigAction === sentriAction) return "agrees";
+  if (sigAction === "hold") return "ignored";
+  return undefined;
+}
+
 function isDustExecution(amountIn: bigint, amountOut: bigint): boolean {
   return (
     amountIn > 0n &&
@@ -640,9 +651,12 @@ function AuditEntry({
                   </p>
                 </div>
               )}
-              {detail.externalSignals?.map((sig, i) =>
-                sig.provider === "skillmint" && sig.receiptVerified ? (
-                  <SkillMintSignalBlock key={i} signal={sig} />
+              {detail.externalSignals?.map((sig, i) => {
+                const sigWithRelation = sig.relation
+                  ? sig
+                  : { ...sig, relation: inferSkillMintRelation(sig.action, detail.action) };
+                return sig.provider === "skillmint" && sig.receiptVerified ? (
+                  <SkillMintSignalBlock key={i} signal={sigWithRelation} />
                 ) : sig.provider === "skillmint" && !sig.receiptVerified ? (
                   <div key={i} className="border-t border-hairline pt-4">
                     <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">
@@ -652,8 +666,8 @@ function AuditEntry({
                       SkillMint signal unavailable — receipt not verified.
                     </p>
                   </div>
-                ) : null,
-              )}
+                ) : null;
+              })}
             </div>
           ) : (
             <div className="space-y-3">
