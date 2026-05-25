@@ -133,7 +133,7 @@ export function SkillMintSignalBlock({ signal }: { signal: ExternalSignal }) {
           <Field label="Receipt root">
             {signal.receiptStorageScanUrl ? (
               <a
-                href={signal.receiptStorageScanUrl}
+                href={signal.receiptStorageScanUrl.replace("/file/", "/submission/")}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-mono text-[11px] text-amber hover:underline flex items-center gap-1"
