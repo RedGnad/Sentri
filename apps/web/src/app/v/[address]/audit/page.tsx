@@ -35,7 +35,7 @@ const ACTION_VARIANTS = ["default", "success", "warning"] as const;
 const EXPLORER =
   process.env.NEXT_PUBLIC_EXPLORER_URL ?? galileo.blockExplorers.default.url;
 const STORAGE_SCAN =
-  process.env.NEXT_PUBLIC_STORAGE_SCAN_URL ?? "https://storagescan-galileo.0g.ai";
+  process.env.NEXT_PUBLIC_STORAGE_SCAN_URL ?? "https://storagescan.0g.ai";
 
 function CopyableHash({
   value,
