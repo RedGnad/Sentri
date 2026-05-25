@@ -815,7 +815,7 @@ export async function executeOneIterationForVault(
   // or EmergencyDeleverage above the minimum threshold). Failure / timeout /
   // unavailability must never block core execution: any error returns null here.
   let skillMintSignal: SkillMintSignal | null = null;
-  if (shouldCallSkillMint(decision.action, decision.amount_bps)) {
+  if (shouldCallSkillMint(decision.action, decision.amount_bps, vaultAddress)) {
     try {
       skillMintSignal = await callSkillMint({
         vaultAddress,

@@ -135,7 +135,7 @@ export interface SkillMintSignal {
 // vault policy is the hard safety layer).
 
 let _callsToday = 0;
-let _lastCallTs = 0;
+const _lastCallTsPerVault = new Map<string, number>();
 let _dayStartMs = _startOfDayUtcMs();
 
 function _startOfDayUtcMs(): number {
@@ -164,7 +164,7 @@ export function skillMintEnabled(): boolean {
 
 const MIN_ACTION_BPS = 100;
 
-export function shouldCallSkillMint(action: string, amountBps: number): boolean {
+export function shouldCallSkillMint(action: string, amountBps: number, vaultAddress?: string): boolean {
   if (!skillMintEnabled()) return false;
   if (action !== "Rebalance" && action !== "EmergencyDeleverage") return false;
   if (amountBps < MIN_ACTION_BPS) return false;
@@ -172,7 +172,8 @@ export function shouldCallSkillMint(action: string, amountBps: number): boolean 
   const maxPerDay = Number(process.env.SKILLMINT_MAX_CALLS_PER_DAY ?? "24");
   if (_callsToday >= maxPerDay) return false;
   const minIntervalSec = Number(process.env.SKILLMINT_MIN_INTERVAL_SEC ?? "3600");
-  if (_lastCallTs > 0 && (Date.now() - _lastCallTs) / 1000 < minIntervalSec) return false;
+  const lastCallTs = vaultAddress ? (_lastCallTsPerVault.get(vaultAddress.toLowerCase()) ?? 0) : 0;
+  if (lastCallTs > 0 && (Date.now() - lastCallTs) / 1000 < minIntervalSec) return false;
   return true;
 }
 
@@ -285,7 +286,8 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
     }
 
     _callsToday++;
-    _lastCallTs = Date.now();
+    const now = Date.now();
+    if (input.vaultAddress) _lastCallTsPerVault.set(input.vaultAddress.toLowerCase(), now);
 
     return {
       provider: "skillmint",

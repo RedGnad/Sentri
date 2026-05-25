@@ -87,6 +87,7 @@ function mapInferenceOntoEntry(
     canonicalRootHash: storage?.rootHash ?? undefined,
     kvIndexTxHash: inference.kvTxHash,
     kvIndexRootHash: inference.kvRootHash,
+    externalSignals: inference.externalSignals,
     missingFields: computeMissingFields(entry, inference, storage),
   };
 }
