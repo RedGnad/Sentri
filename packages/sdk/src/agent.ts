@@ -821,8 +821,14 @@ export async function executeOneIterationForVault(
         baseBalance: baseStr,
         riskBalance: riskStr,
         tvl: tvlStr,
+        hwm: hwmStr,
         riskSymbol,
         baseSymbol,
+        drawdownPct: Number(hwmStr) > 0 ? ((Number(hwmStr) - Number(tvlStr)) / Number(hwmStr)) * 100 : 0,
+        maxDrawdownBps: policySnapshot.maxDrawdownBps,
+        maxAllocationBps: policySnapshot.maxAllocationBps,
+        oracleAgeSeconds: Math.floor((Date.now() - activeMarket.timestamp) / 1000),
+        regime: recommendation.regime,
       });
       if (skillMintSignal) {
         log(

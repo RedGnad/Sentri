@@ -188,6 +188,13 @@ export interface SkillMintCallInput {
   tvl: string;
   riskSymbol: string;
   baseSymbol: string;
+  // Vault context for richer SkillMint signal
+  drawdownPct?: number;
+  maxDrawdownBps?: number;
+  maxAllocationBps?: number;
+  oracleAgeSeconds?: number;
+  regime?: string;
+  hwm?: string;
 }
 
 export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMintSignal | null> {
@@ -211,9 +218,15 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
     base_balance: input.baseBalance,
     risk_balance: input.riskBalance,
     tvl: input.tvl,
+    high_water_mark: input.hwm,
     risk_symbol: input.riskSymbol,
     base_symbol: input.baseSymbol,
     vault: input.vaultAddress,
+    drawdown_pct: input.drawdownPct,
+    max_drawdown_bps: input.maxDrawdownBps,
+    max_allocation_bps: input.maxAllocationBps,
+    oracle_age_seconds: input.oracleAgeSeconds,
+    regime: input.regime,
   });
 
   try {
