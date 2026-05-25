@@ -67,7 +67,8 @@ export function SkillMintSignalBlock({ signal }: { signal: ExternalSignal }) {
   return (
     <div className="border-t border-hairline pt-4">
       <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-3">
-        External Skill Signal — SkillMint
+        External Skill Signal —{" "}
+        <span className="text-orchid">{signal.provider === "skillmint" ? "SkillMint" : signal.provider}</span>
       </div>
       <div className="border border-hairline bg-bg-sunk/30 p-4 space-y-4">
         <div className="flex items-center justify-between">

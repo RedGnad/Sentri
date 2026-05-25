@@ -30,6 +30,7 @@ const config: Config = {
         },
         phosphor: "#7FFF6A",
         alert: "#FF4A3D",
+        orchid: "#9D6FFF",
       },
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
