@@ -216,15 +216,20 @@ This is a forward-looking section.
 - RWA exposure as a third class once major issuers (Ondo, Maple, Backed) ship on 0G.
 - Operator INFTs — open the agent role to multiple verified operators; vault owners pick and rotate without redeploying.
 
-**v2.0 — Sentri as a treasury primitive (vision)**
+**v2.0 — Sentri as a composable policy envelope (vision)**
 
-- Composable risk envelopes across lending, perps, LP — bounded by the same Sentri policy.
+Sentri starts as a live AI treasury vault, but the broader vision is a composable policy envelope for AI-driven capital across DeFi.
+
+Any app can generate intelligence — a DAO dashboard, a lending protocol, a yield optimizer, or an agent wallet. The missing layer is deciding what that intelligence is allowed to do with capital. External apps keep their own workflow, but sensitive actions can be bounded by Sentri policy: oracle freshness, exposure caps, drawdown limits, cooldowns, slippage, signer checks, TEE attestation, and audit trails.
+
+SkillMint is the first proof of this: an external verified signal enters the Sentri policy flow, is checked against vault policy, and is recorded in the immutable audit trail. The long-term goal is to make that policy envelope reusable by any app that touches AI-driven capital.
+
+Specific roadmap items in this direction:
+
 - Cross-chain coordination: vault funds on any chain, decisions and proofs on 0G.
 - Integration with existing treasury platforms (Karpatkey, Llama Risk, Steakhouse) — Sentri vaults as managed accounts inside their dashboards.
 - Public on-chain operator track records: every operator INFT accrues a permanent performance record (PnL, drawdown realised vs bound, frequency of defensive overrides).
-- **Composable execution layer** — Sentri will evolve from a standalone treasury vault app into a policy-bound execution layer for AI and DeFi applications. External apps should be able to request, route, or verify capital actions through Sentri while vault policy remains the final authority.
-- **Developer integration surface** — We plan to expose a stable interface for partner applications, including authenticated requests, replay protection, rate limits, execution receipts, and verifiable audit trails.
-- **Permissionless app integrations** — The long-term goal is for any AI, treasury, or DeFi product to generate intelligence while Sentri enforces what that intelligence is allowed to do with capital.
+- Developer integration surface: stable interface for partner applications, including authenticated requests, replay protection, execution receipts, and verifiable audit trails.
 
 The thesis: the treasury problem is not about clever trading — it is about **bounded productive capital with cryptographic recourse**. Every roadmap item makes that envelope more useful or more verifiable, never the agent more powerful relative to the vault.
 
