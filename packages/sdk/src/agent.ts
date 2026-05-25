@@ -640,10 +640,14 @@ export async function executeOneIterationForVault(
   if (recommendation.recommendedAction === "Rebalance") {
     const currentRiskValue = Number(riskStr) * activeMarket.priceUsd;
     const maxRiskValue = Number(tvlStr) * policySnapshot.maxAllocationBps / 10000;
-    const remainingRiskHeadroom = Math.max(0, maxRiskValue - currentRiskValue);
+    // 1% safety buffer absorbs price-oracle discrepancies between the external
+    // market snapshot and the on-chain oracle used by TreasuryVault._verifyPolicy,
+    // preventing repeated AllocationExceeded reverts when the vault is near its cap.
+    const bufferUsd = Number(tvlStr) * 0.01;
+    const remainingRiskHeadroom = Math.max(0, maxRiskValue - currentRiskValue - bufferUsd);
     const maxBaseIn = ethers.parseUnits(remainingRiskHeadroom.toFixed(Number(baseDec)), baseDec);
     if (maxBaseIn === 0n) {
-      return { status: "skipped", reason: `no remaining ${riskSymbol} exposure headroom` };
+      return { status: "skipped", reason: `no remaining ${riskSymbol} exposure headroom (at or near allocation cap)` };
     }
   }
 
