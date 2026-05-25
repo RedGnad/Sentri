@@ -298,7 +298,7 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
       reason,
       receiptVerified,
       receiptRootHash: result.receiptRootHash,
-      receiptStorageScanUrl: client.receiptUrl(result.receiptRootHash),
+      receiptStorageScanUrl: client.receiptUrl(result.receiptRootHash).replace("/file/", "/submission/"),
       receiptVerification,
       callTs: _lastCallTs,
     };
@@ -333,7 +333,7 @@ export async function verifySkillMintReceipt(
     privateKey: "0x" + "1".repeat(64), // read-only; fetchReceipt needs no signing
     network,
   });
-  const storageUrl = client.receiptUrl(rootHash);
+  const storageUrl = client.receiptUrl(rootHash).replace("/file/", "/submission/");
   try {
     const receipt = await withTimeout(
       client.fetchReceipt(rootHash),

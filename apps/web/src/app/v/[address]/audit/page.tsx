@@ -586,7 +586,7 @@ function AuditEntry({
                     <div className="space-y-1">
                       <CopyableHash value={(detail.canonicalRootHash ?? detail.storageRootHash)!} />
                       <a
-                        href={`${STORAGE_SCAN}/file/${detail.canonicalRootHash ?? detail.storageRootHash}`}
+                        href={`${STORAGE_SCAN}/submission/${detail.canonicalRootHash ?? detail.storageRootHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="font-mono text-[10px] text-amber hover:underline flex items-center gap-1"
