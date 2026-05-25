@@ -967,7 +967,19 @@ export async function executeOneIterationForVault(
       marketRequiredSourceCount: activeMarket.requiredSourceCount,
       marketRawSources: activeMarket.rawSources,
       priceAttestationPayload,
-      externalSignals: skillMintSignal ? [skillMintSignal] : undefined,
+      externalSignals: skillMintSignal
+        ? [
+            {
+              ...skillMintSignal,
+              relation: computeSkillMintRelation(
+                skillMintSignal,
+                decision.action,
+                decision.amount_bps,
+                recommendation.regime,
+              ),
+            },
+          ]
+        : undefined,
     });
     inferenceRootHash = savedInference.rootHash;
     // Durable audit index (Render persistent disk). Written BEFORE the tx so a
