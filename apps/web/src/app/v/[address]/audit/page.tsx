@@ -334,8 +334,8 @@ function AuditEntry({
             {actionLabel}
           </Badge>
         </div>
-        <span className="font-mono text-[10px] text-ink-faint tabular">
-          {date.toISOString().slice(0, 19).replace("T", " ")} UTC
+        <span className="font-mono text-[10px] text-ink-faint tabular" title={`${date.toISOString().slice(0, 19)} UTC`}>
+          {date.toLocaleString([], { dateStyle: "short", timeStyle: "medium" })}
         </span>
       </header>
 
@@ -394,12 +394,8 @@ function AuditEntry({
         <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">
           Intent deadline
         </div>
-        <code className="font-mono text-[11px] text-ink-dim break-all">
-          {new Date(Number(deadline) * 1000)
-            .toISOString()
-            .slice(0, 19)
-            .replace("T", " ")}{" "}
-          UTC
+        <code className="font-mono text-[11px] text-ink-dim break-all" title={`${new Date(Number(deadline) * 1000).toISOString().slice(0, 19)} UTC`}>
+          {new Date(Number(deadline) * 1000).toLocaleString([], { dateStyle: "short", timeStyle: "medium" })}
         </code>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 border-t border-hairline">
@@ -732,7 +728,7 @@ function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
           {REJECTION_TYPE_LABEL[entry.type] ?? entry.type}
         </p>
         <p className="font-mono text-[9px] text-ink-faint">
-          {date.toISOString().slice(0, 19).replace("T", " ")} UTC
+          <span title={`${date.toISOString().slice(0, 19)} UTC`}>{date.toLocaleString([], { dateStyle: "short", timeStyle: "medium" })}</span>
         </p>
       </div>
     </div>

@@ -224,7 +224,10 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
       "SkillMint executeX402",
     );
 
-    if (!result.receiptRootHash) return null;
+    if (!result.receiptRootHash) {
+      console.warn("[skillmint] executeX402 returned no receiptRootHash — call succeeded but output is missing");
+      return null;
+    }
 
     // Download receipt from 0G Storage and verify it end-to-end.
     let receiptVerification: ReceiptVerification | null = null;
@@ -264,6 +267,7 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
       // Skill #13 uses short_reason; fall back to reason for other skills.
       reason = String(parsed.short_reason ?? parsed.reason ?? "");
     } catch {
+      console.warn("[skillmint] failed to parse skill output — executeX402 may have returned malformed JSON");
       return null;
     }
 
@@ -283,7 +287,9 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
       receiptVerification,
       callTs: _lastCallTs,
     };
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[skillmint] callSkillMint failed: ${msg}`);
     return null;
   }
 }
