@@ -29,6 +29,21 @@ export interface AuditRecoveryDeps {
   readInference(vaultAddress: string, intentHash: string): Promise<InferenceRecord | null>;
 }
 
+function computeMissingFields(
+  entry: ChainAuditEntry,
+  inference: InferenceLike,
+  storage?: { rootHash?: string; txHash?: string },
+): string[] {
+  const missing: string[] = [];
+  if (!entry.txHash) missing.push("txHash");
+  if (!storage?.rootHash) missing.push("canonicalRootHash");
+  if (!storage?.txHash) missing.push("canonicalStorageTxHash");
+  if (!inference.reasoning) missing.push("reasoning");
+  if (!inference.signedPayloadHash) missing.push("signedPayloadHash");
+  if (!inference.chatID) missing.push("chatID");
+  return missing;
+}
+
 function mapInferenceOntoEntry(
   entry: ChainAuditEntry,
   inference: InferenceLike,
@@ -67,10 +82,12 @@ function mapInferenceOntoEntry(
     marketRequiredSourceCount: inference.marketRequiredSourceCount,
     marketRawSources: inference.marketRawSources,
     priceAttestationPayload: inference.priceAttestationPayload,
-    storageTxHash: storage?.txHash ?? inference.kvTxHash,
-    storageRootHash: storage?.rootHash ?? inference.kvRootHash,
+    // Canonical field names — match CachedAuditEntry schema used by the live cache.
+    canonicalStorageTxHash: storage?.txHash ?? undefined,
+    canonicalRootHash: storage?.rootHash ?? undefined,
     kvIndexTxHash: inference.kvTxHash,
     kvIndexRootHash: inference.kvRootHash,
+    missingFields: computeMissingFields(entry, inference, storage),
   };
 }
 
@@ -109,7 +126,16 @@ export async function recoverAuditEntry(
       if (kvAudit) return mapInferenceOntoEntry(entry, kvAudit as unknown as InferenceLike, "inference-fallback");
     }
     const inference = await deps.readInference(vaultAddress, entry.intentHash);
-    if (!inference) return entry;
+    if (!inference) {
+      return {
+        ...entry,
+        missingFields: [
+          ...(!entry.txHash ? ["txHash"] : []),
+          "reasoning", "canonicalRootHash", "canonicalStorageTxHash",
+          "signedPayloadHash", "chatID", "provider",
+        ],
+      };
+    }
     return mapInferenceOntoEntry(entry, inference as unknown as InferenceLike, "inference-fallback");
   } catch {
     return entry;

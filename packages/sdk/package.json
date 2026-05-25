@@ -18,6 +18,7 @@
     "award-points": "tsx src/award-points.ts",
     "skillmint:verify-root": "tsx src/skillmint-verify-root.ts",
     "skillmint:execute-once": "tsx src/skillmint-execute-once.ts",
+    "skillmint:wrap-w0g": "tsx src/wrap-w0g.ts",
     "test": "node --import tsx --test src/*.test.ts"
   },
   "dependencies": {

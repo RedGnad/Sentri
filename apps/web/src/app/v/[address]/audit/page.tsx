@@ -35,6 +35,8 @@ const ACTION_LABELS = [
 const ACTION_VARIANTS = ["default", "success", "warning"] as const;
 const EXPLORER =
   process.env.NEXT_PUBLIC_EXPLORER_URL ?? galileo.blockExplorers.default.url;
+const STORAGE_SCAN =
+  process.env.NEXT_PUBLIC_STORAGE_SCAN_URL ?? "https://storagescan-galileo.0g.ai";
 
 function CopyableHash({
   value,
@@ -442,6 +444,28 @@ function AuditEntry({
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
                 Sealed Inference · TEE Signature Verified
               </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
+                  ✓ On-chain proof verified
+                </span>
+                <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
+                  ✓ TEE reasoning recovered
+                </span>
+                {(detail.canonicalRootHash ?? detail.storageRootHash) && (
+                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
+                    ✓ Storage root available
+                  </span>
+                )}
+                {detail.txHash ? (
+                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
+                    ✓ Execution tx available
+                  </span>
+                ) : (
+                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-ink-faint/10 text-ink-faint border border-hairline">
+                    Execution tx: not recorded
+                  </span>
+                )}
+              </div>
               <div>
                 <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-2">
                   Agent reasoning
@@ -546,7 +570,7 @@ function AuditEntry({
                 </Field>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 border-t border-hairline pt-4">
-                {detail.txHash && (
+                {detail.txHash ? (
                   <Field label="Vault TX">
                     <a
                       href={`${EXPLORER}/tx/${detail.txHash}`}
@@ -558,23 +582,45 @@ function AuditEntry({
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </Field>
+                ) : (
+                  <Field label="Vault TX">
+                    <span className="font-mono text-[11px] text-ink-faint">not recorded</span>
+                  </Field>
                 )}
-                {detail.canonicalStorageTxHash && (
+                {(detail.canonicalStorageTxHash ?? detail.storageTxHash) ? (
                   <Field label="Canonical blob TX">
                     <a
-                      href={`${EXPLORER}/tx/${detail.canonicalStorageTxHash}`}
+                      href={`${EXPLORER}/tx/${detail.canonicalStorageTxHash ?? detail.storageTxHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-mono text-[12px] text-amber hover:underline tabular flex items-center gap-1"
                     >
-                      {detail.canonicalStorageTxHash.slice(0, 10)}…{" "}
+                      {(detail.canonicalStorageTxHash ?? detail.storageTxHash)!.slice(0, 10)}…{" "}
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   </Field>
+                ) : (
+                  <Field label="Canonical blob TX">
+                    <span className="font-mono text-[11px] text-ink-faint">not recorded</span>
+                  </Field>
                 )}
-                {detail.canonicalRootHash && (
+                {(detail.canonicalRootHash ?? detail.storageRootHash) ? (
                   <Field label="Canonical root">
-                    <CopyableHash value={detail.canonicalRootHash} />
+                    <div className="space-y-1">
+                      <CopyableHash value={(detail.canonicalRootHash ?? detail.storageRootHash)!} />
+                      <a
+                        href={`${STORAGE_SCAN}/file/${detail.canonicalRootHash ?? detail.storageRootHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-mono text-[10px] text-amber hover:underline flex items-center gap-1"
+                      >
+                        StorageScan <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    </div>
+                  </Field>
+                ) : (
+                  <Field label="Canonical root">
+                    <span className="font-mono text-[11px] text-ink-faint">not recorded</span>
                   </Field>
                 )}
               </div>
@@ -633,11 +679,34 @@ function AuditEntry({
               )}
             </div>
           ) : (
-            <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
-              On-chain proof verified. Full reasoning recovery is pending for
-              this historical execution. Signer, attestation, intent hash,
-              response hash and vault log remain verifiable on-chain.
-            </p>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
+                  ✓ On-chain proof verified
+                </span>
+                <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-amber/10 text-amber border border-amber/20">
+                  TEE reasoning: not recovered
+                </span>
+                {detail?.txHash && (
+                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
+                    ✓ Execution tx available
+                  </span>
+                )}
+              </div>
+              <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
+                Signer, attestation, intent hash, response hash and vault log remain verifiable on-chain.
+              </p>
+              {detail?.txHash && (
+                <a
+                  href={`${EXPLORER}/tx/${detail.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[11px] text-amber hover:underline flex items-center gap-1"
+                >
+                  View execution tx {detail.txHash.slice(0, 10)}… <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
           )}
         </div>
       )}
