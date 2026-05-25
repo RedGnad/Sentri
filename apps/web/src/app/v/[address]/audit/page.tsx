@@ -13,7 +13,6 @@ import {
   useVaultAuditDetail,
   useVaultRejections,
   type VaultRejectionEntry,
-  type ExternalSignal,
 } from "@/hooks/use-vault-runtime";
 import {
   ChevronDown,
