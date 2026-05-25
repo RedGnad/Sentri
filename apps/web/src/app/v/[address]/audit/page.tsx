@@ -443,28 +443,6 @@ function AuditEntry({
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
                 Sealed Inference · TEE Signature Verified
               </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
-                  ✓ On-chain proof verified
-                </span>
-                <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
-                  ✓ TEE reasoning recovered
-                </span>
-                {(detail.canonicalRootHash ?? detail.storageRootHash) && (
-                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
-                    ✓ Storage root available
-                  </span>
-                )}
-                {detail.txHash ? (
-                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
-                    ✓ Execution tx available
-                  </span>
-                ) : (
-                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-ink-faint/10 text-ink-faint border border-hairline">
-                    Execution tx: not recorded
-                  </span>
-                )}
-              </div>
               <div>
                 <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-2">
                   Agent reasoning
@@ -680,17 +658,9 @@ function AuditEntry({
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
-                <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
-                  ✓ On-chain proof verified
-                </span>
                 <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-amber/10 text-amber border border-amber/20">
                   TEE reasoning: not recovered
                 </span>
-                {detail?.txHash && (
-                  <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-phosphor/10 text-phosphor border border-phosphor/20">
-                    ✓ Execution tx available
-                  </span>
-                )}
               </div>
               <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
                 Signer, attestation, intent hash, response hash and vault log remain verifiable on-chain.
