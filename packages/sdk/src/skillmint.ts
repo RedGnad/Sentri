@@ -300,7 +300,7 @@ export async function callSkillMint(input: SkillMintCallInput): Promise<SkillMin
       receiptRootHash: result.receiptRootHash,
       receiptStorageScanUrl: client.receiptUrl(result.receiptRootHash).replace("/file/", "/submission/"),
       receiptVerification,
-      callTs: _lastCallTs,
+      callTs: now,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

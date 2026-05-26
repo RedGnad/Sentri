@@ -644,10 +644,13 @@ function AuditEntry({
                   <div className="font-mono text-[9px] uppercase tracking-kicker text-alert mb-1.5">
                     0G Storage write warning
                   </div>
-                  <p className="font-mono text-[11px] text-alert/80 break-all">
-                    {detail.storageError ||
+                  <p className="font-mono text-[11px] text-alert/80">
+                    {(
+                      detail.storageError ||
                       detail.canonicalStorageError ||
-                      detail.kvIndexError}
+                      detail.kvIndexError ||
+                      ""
+                    ).replace(/\s*\(action=.*$/s, "").slice(0, 160)}
                   </p>
                 </div>
               )}
