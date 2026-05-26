@@ -1771,9 +1771,14 @@ function buildMarketPrompt(input: {
 
   // Deterministic vol-adjusted regime-aware recommendation. Computed in TS so
   // the LLM never has to do float math; LLM's job is to confirm or override.
+  // When already fully deleveraged (riskBalance ≈ 0), the drawdown is locked in
+  // and holding stablecoins indefinitely does not help recovery. Let market
+  // conditions drive re-entry; the POST_DEFENSIVE_REENTRY guards gate the timing.
+  const effectiveDrawdownPct = riskN <= 0 ? 0 : drawdownPct;
+
   const recommendation = computeStrategy({
     currentShare: riskSharePct,
-    drawdownPct,
+    drawdownPct: effectiveDrawdownPct,
     change24h: input.market.change24h,
     spreadPct,
     baseBalance: baseN,
