@@ -637,23 +637,6 @@ function AuditEntry({
                   </Field>
                 )}
               </div>
-              {(detail.storageError ||
-                detail.canonicalStorageError ||
-                detail.kvIndexError) && (
-                <div className="border-t border-hairline pt-4">
-                  <div className="font-mono text-[9px] uppercase tracking-kicker text-alert mb-1.5">
-                    0G Storage write warning
-                  </div>
-                  <p className="font-mono text-[11px] text-alert/80">
-                    {(
-                      detail.storageError ||
-                      detail.canonicalStorageError ||
-                      detail.kvIndexError ||
-                      ""
-                    ).replace(/\s*\(action=.*$/s, "").slice(0, 160)}
-                  </p>
-                </div>
-              )}
               {detail.externalSignals?.map((sig, i) => {
                 const sigWithRelation = sig.relation
                   ? sig
