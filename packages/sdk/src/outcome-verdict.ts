@@ -175,10 +175,16 @@ export function describeOutcome(outcome: OutcomeLike): Verdict {
       text: "Defensive hold — the proposed trade would breach the policy drawdown limit; blocked by the on-chain guard.",
     };
   }
+  if (has(reason, "slippage backoff")) {
+    return {
+      tone: "waiting",
+      text: "Holding — a recent entry could not clear the pool's slippage guard, so the agent is waiting for the price to come back into range before retrying. No funds moved.",
+    };
+  }
   if (has(reason, "slippage")) {
     return {
       tone: "waiting",
-      text: "Skipped — the swap exceeded the slippage guard. The agent retries next cycle.",
+      text: "Skipped — the swap exceeded the slippage guard. The agent holds briefly, then retries.",
     };
   }
   if (has(reason, "defensive override", "model disagreement")) {
