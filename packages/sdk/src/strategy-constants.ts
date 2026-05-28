@@ -68,3 +68,14 @@ export const POST_DEFENSIVE_REENTRY_DELAY_SEC = Number(
 export const POST_DEFENSIVE_REENTRY_CONFIRM_CYCLES = Number(
   process.env.POST_DEFENSIVE_REENTRY_CONFIRM_CYCLES ?? 3,
 );
+
+/**
+ * After a risk buy reverts on the pool's on-chain slippage guard
+ * (InsufficientAmountOut), the same buy keeps reverting every cycle until the
+ * pool price moves back within `policy.maxSlippageBps` of the oracle. Re-running
+ * Sealed Inference each cycle to send a tx that can only revert wastes a TEE
+ * call and floods the audit trail with identical safe rejections. Hold the buy
+ * for this window before retrying. Safety regimes (drawdown_breach, crash)
+ * bypass it so a defensive exit is never delayed. Overridable via env.
+ */
+export const SLIPPAGE_BACKOFF_SEC = Number(process.env.SLIPPAGE_BACKOFF_SEC ?? 30 * 60);

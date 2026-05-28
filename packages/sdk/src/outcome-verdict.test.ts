@@ -127,3 +127,13 @@ test("sub-economic trade skip → ok tone", () => {
   });
   assert.equal(v.tone, "ok");
 });
+
+test("slippage backoff skip → waiting tone, distinct from a raw slippage revert", () => {
+  const v = describeOutcome({
+    status: "skipped",
+    reason: "slippage backoff — a recent buy reverted on the pool slippage guard; retrying in 1500s",
+  });
+  assert.equal(v.tone, "waiting");
+  assert.match(v.text, /back into range|come back/i);
+  assert.match(v.text, /No funds moved/i);
+});
