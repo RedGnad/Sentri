@@ -7,7 +7,7 @@
     "test:contracts": "cd contracts && forge test -v",
     "deploy:galileo": "cd contracts && forge script script/Deploy.s.sol --rpc-url galileo --broadcast",
     "deploy:trustless": "cd contracts && forge script script/DeployTrustlessOracle.s.sol --rpc-url galileo --broadcast",
-    "oracle:pyth-smoke": "tsx scripts/pyth-smoke.ts",
+    "oracle:pyth-smoke": "node_modules/.pnpm/node_modules/.bin/tsx scripts/pyth-smoke.ts",
     "dev": "pnpm --filter web dev",
     "build:web": "pnpm --filter web build",
     "build:sdk": "cd packages/sdk && tsc",
