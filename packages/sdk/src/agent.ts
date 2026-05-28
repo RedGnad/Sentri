@@ -33,6 +33,7 @@ import {
   ANTICHURN_REGIME_CONFIRM_CYCLES,
   POST_DEFENSIVE_REENTRY_DELAY_SEC,
   POST_DEFENSIVE_REENTRY_CONFIRM_CYCLES,
+  SLIPPAGE_BACKOFF_SEC,
 } from "./strategy-constants.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -723,6 +724,32 @@ export async function executeOneIterationForVault(
     }
   }
 
+  // Slippage backoff gate (pre-LLM). A risk buy that reverts on the pool's
+  // on-chain slippage guard (InsufficientAmountOut) will keep reverting every
+  // cycle until the pool price moves back within `policy.maxSlippageBps` of the
+  // oracle. Re-running Sealed Inference each cycle to send a tx that can only
+  // revert wastes a TEE call and floods the audit trail with identical safe
+  // rejections. Hold the buy for the backoff window instead. Only the buy
+  // direction is gated; safety regimes (drawdown_breach, crash) bypass it so a
+  // defensive exit is never delayed. Nothing is sent on chain; the on-chain
+  // slippage guard stays the hard barrier.
+  if (recommendation.recommendedAction === "Rebalance") {
+    const isSafetyRegime =
+      recommendation.regime === "drawdown_breach" || recommendation.regime === "crash";
+    const backoffRemainingSec = getSlippageBackoffRemainingSec(vaultAddress);
+    if (!isSafetyRegime && backoffRemainingSec > 0) {
+      log(
+        `[slippage-backoff] skip vault=${vaultAddress} remaining=${backoffRemainingSec}s — ` +
+          `a recent ${riskSymbol} buy reverted on the pool slippage guard; holding before retry ` +
+          "(no inference call, no tx).",
+      );
+      return {
+        status: "skipped",
+        reason: `slippage backoff — a recent buy reverted on the pool slippage guard; retrying in ${backoffRemainingSec}s`,
+      };
+    }
+  }
+
   log("Requesting Sealed Inference (TEE)...");
   const inference = await requestInference(prompt, TREASURY_SYSTEM_PROMPT);
   log(
@@ -1043,6 +1070,12 @@ export async function executeOneIterationForVault(
     const waited = await tx.wait();
     if (!waited) throw new Error("executeStrategy transaction was sent but no receipt was returned");
     receipt = waited;
+    // A swap confirmed — the pool is back within slippage range, so clear any
+    // armed buy backoff.
+    if (getSlippageBackoffRemainingSec(vaultAddress) > 0) {
+      log(`[slippage-backoff] clear vault=${vaultAddress} — execution confirmed`);
+    }
+    clearSlippageBackoff(vaultAddress);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // Custom-error selectors = keccak256("Name()")[:4] (verified via ethers.id).
@@ -1095,6 +1128,13 @@ export async function executeOneIterationForVault(
       return { status: "skipped", reason: "oracle price stale" };
     } else if (msg.includes("InsufficientAmountOut")) {
       await mkRejection("On-chain revert: swap slippage guard triggered", "InsufficientAmountOut");
+      // Arm the pre-LLM backoff so the next cycles hold this buy instead of
+      // burning a TEE call into another guaranteed slippage revert. Armed ONLY
+      // here, on the exact InsufficientAmountOut slippage guard — never on an
+      // oracle/TEE/auth/generic revert (those take their own branches above and
+      // the decoded fallback below).
+      const until = recordSlippageBackoff(vaultAddress);
+      log(`[slippage-backoff] set vault=${vaultAddress} expiry=${new Date(until).toISOString()} reason=InsufficientAmountOut`);
       return { status: "skipped", reason: "swap reverted on slippage guard" };
     } else if (msg.includes("VaultKilled")) {
       await mkRejection("On-chain revert: vault killed", "VaultKilled");
@@ -1109,6 +1149,14 @@ export async function executeOneIterationForVault(
     if (decoded) {
       log(`On-chain revert decoded: ${decoded.name} (${decoded.selector}) — ${decoded.message}`);
       await mkRejection(`On-chain revert: ${decoded.name} — ${decoded.message}`, decoded.name);
+      // The router's InsufficientAmountOut may surface as a raw selector (its
+      // ABI is not on the vault interface), so it lands here rather than the
+      // string branch above. Arm the backoff on this EXACT decoded name only —
+      // every other decoded error (TEE/auth/oracle/replay/kill) must NOT.
+      if (decoded.name === "InsufficientAmountOut") {
+        const until = recordSlippageBackoff(vaultAddress);
+        log(`[slippage-backoff] set vault=${vaultAddress} expiry=${new Date(until).toISOString()} reason=InsufficientAmountOut(decoded)`);
+      }
       if (decoded.name === "InvalidTEESignature") {
         log(
           "Execution blocked: recovered TEE signer is not bound to the active AgentINFT. " +
@@ -1560,6 +1608,49 @@ export function recordRegimeObservation(vaultAddress: string, regime: Regime): n
   }
   regimeObservationHistory.set(key, { regime, observations: 1 });
   return 1;
+}
+
+/**
+ * Per-vault slippage backoff — graceful degradation under temporary
+ * liquidity/slippage constraints. Set when a risk buy reverts on the pool's
+ * on-chain slippage guard; while active, the pre-LLM gate holds the buy instead
+ * of re-running Sealed Inference into a tx that can only revert again. Cleared
+ * the moment any execution confirms. Process-local (lost on restart, which only
+ * costs one extra retry); safety regimes bypass the gate so funds are never at
+ * risk from a cold start.
+ *
+ * This mitigates retry churn (wasted TEE calls + tx + audit spam) under
+ * temporary pool/slippage constraints; it does NOT solve the underlying
+ * on-chain fee/slippage budget tension (the pool's fixed swap fee consumed
+ * inside policy.maxSlippageBps). That is a contract-level concern, deliberately
+ * untouched here.
+ */
+const slippageBackoffHistory = new Map<string, { until: number }>();
+
+/** Arm (or re-arm) the buy backoff for a vault; returns the expiry epoch ms. */
+export function recordSlippageBackoff(vaultAddress: string, nowMs: number = Date.now()): number {
+  const until = nowMs + SLIPPAGE_BACKOFF_SEC * 1000;
+  slippageBackoffHistory.set(vaultAddress.toLowerCase(), { until });
+  return until;
+}
+
+export function clearSlippageBackoff(vaultAddress: string): void {
+  slippageBackoffHistory.delete(vaultAddress.toLowerCase());
+}
+
+/** Remaining backoff in whole seconds, or 0 if none is active (expired entries are swept). */
+export function getSlippageBackoffRemainingSec(
+  vaultAddress: string,
+  nowMs: number = Date.now(),
+): number {
+  const key = vaultAddress.toLowerCase();
+  const entry = slippageBackoffHistory.get(key);
+  if (!entry) return 0;
+  if (nowMs >= entry.until) {
+    slippageBackoffHistory.delete(key);
+    return 0;
+  }
+  return Math.ceil((entry.until - nowMs) / 1000);
 }
 
 export interface AntiChurnInput {
