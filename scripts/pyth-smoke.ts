@@ -1,72 +1,65 @@
 #!/usr/bin/env tsx
 /**
- * pnpm oracle:pyth-smoke
+ * pnpm oracle:pyth-smoke   (run with: node --env-file=.env.local --import tsx scripts/pyth-smoke.ts)
  *
- * Part 1 hard-stop check: verify that the Pyth pull oracle is operational
- * on 0G chain before integrating it into the vault.
+ * Part 1 hard-stop check: verify the Pyth pull oracle is operational on
+ * 0G MAINNET before integrating it into the V2 trustless-oracle vault.
  *
  * Outcome:
- *   EXIT 0  — Pyth works on 0G; safe to integrate.
- *   EXIT 1  — Pyth not reachable on 0G; DO NOT integrate until resolved.
+ *   EXIT 0  — Pyth works on 0G mainnet; safe to integrate.
+ *   EXIT 1  — Pyth not reachable / update failed; DO NOT integrate until resolved.
  *
- * ── Address research ────────────────────────────────────────────────────────
+ * ── Addresses (verified on-chain 2026-05-29) ────────────────────────────────
  *
- * 0G Galileo testnet (chain ID 16602) is a relatively new EVM chain.
- * Pyth's canonical EVM contract address on many chains is:
- *   0x4305FB66699C3B2702D4d05CF36551390A4c69C3
+ * 0G Labs has an official Pyth partnership: 2000+ feeds live on 0G mainnet.
+ * The OLD canonical EVM address (0x4305…) is EMPTY on 0G (testnet and mainnet) —
+ * the earlier version of this script targeted it on testnet and would hard-stop
+ * with a false negative. The correct deployment is:
  *
- * However, 0G is NOT in the official Pyth supported chain list as of May 2026.
- * The script will:
- *   1. Probe the known canonical address for Pyth bytecode.
- *   2. If no bytecode → report blocker, exit 1.
- *   3. If bytecode found → attempt getUpdateFee + updatePriceFeeds + read.
+ *   Pyth contract (0G mainnet, chain 16661): 0x2880aB155794e7179c9eE2e38200202908C17B43
+ *     (bytecode present, getValidTimePeriod()=60 — confirmed live)
+ *   Source: https://docs.pyth.network/price-feeds/contract-addresses/evm
  *
  * ── Feed ID ──────────────────────────────────────────────────────────────────
  *
- * W0G/USD: No Pyth price ID found as of this writing.
- *   Reason: W0G is a wrapped version of 0G's native token. Pyth publishers
- *   typically add feeds for tokens with sufficient trading volume and price
- *   provider support. W0G has no confirmed Pyth feed.
- *
- * Fallback: ETH/USD
- *   Feed ID: 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace
- *   This is appropriate for our vault which trades MockWETH (ETH-like) vs MockUSDC.
- *   Assumption: MockWETH represents a $ETH-like risk asset; ETH/USD is the
- *   correct oracle for slippage and policy enforcement.
+ * Crypto.0G/USD: 0xfa9e8d4591613476ad0961732475dc08969d248faca270cc6c47efe009ea3070
+ *   This is the correct feed for the vault's risk asset (W0G = wrapped 0G),
+ *   replacing the previous ETH/USD proxy. Verified live on Hermes (~$0.425,
+ *   ~27 bps confidence, fresh), consistent with the keeper SentriPriceFeed.
  */
 
-import { createPublicClient, createWalletClient, http, parseEther, formatUnits } from "viem";
+import { createPublicClient, createWalletClient, http, formatUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { defineChain } from "viem";
 
-// ── 0G Chain definition ──────────────────────────────────────────────────────
+// ── 0G mainnet chain definition ──────────────────────────────────────────────
 
-const og0GChain = defineChain({
-  id: 16602,
-  name: "0G Galileo Testnet",
+const RPC_URL = process.env.RPC_URL ?? "https://evmrpc.0g.ai";
+const EXPLORER = "https://chainscan.0g.ai";
+
+const og0GMainnet = defineChain({
+  id: 16661,
+  name: "0G Mainnet",
   nativeCurrency: { name: "0G", symbol: "OG", decimals: 18 },
-  rpcUrls: {
-    default: { http: ["https://evmrpc-testnet.0g.ai"] },
-  },
-  blockExplorers: {
-    default: { name: "ChainScan", url: "https://chainscan-galileo.0g.ai" },
-  },
+  rpcUrls: { default: { http: [RPC_URL] } },
+  blockExplorers: { default: { name: "ChainScan", url: EXPLORER } },
 });
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants (verified on-chain) ─────────────────────────────────────────────
 
-// Pyth canonical address on many EVM chains. MUST be verified for 0G.
-// Source: https://docs.pyth.network/price-feeds/contract-addresses/evm
-const PYTH_CANDIDATE_ADDRESS = "0x4305FB66699C3B2702D4d05CF36551390A4c69C3";
+// Pyth pull-oracle contract on 0G mainnet.
+const PYTH_ADDRESS = "0x2880aB155794e7179c9eE2e38200202908C17B43";
 
-// ETH/USD feed (fallback; W0G/USD not available)
-const ETH_USD_FEED_ID =
-  "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace";
+// Crypto.0G/USD feed — matches the vault's W0G risk asset.
+const FEED_ID_0G_USD =
+  "0xfa9e8d4591613476ad0961732475dc08969d248faca270cc6c47efe009ea3070";
 
-// Hermes REST endpoint for price updates
 const HERMES_URL = "https://hermes.pyth.network";
 
-// Minimal Pyth ABI
+// pythMaxConfBps the vault will enforce — used here only to flag a wide spread.
+const PYTH_MAX_CONF_BPS = 200;
+
+// Minimal Pyth ABI.
 const PYTH_ABI = [
   {
     name: "getUpdateFee",
@@ -105,164 +98,158 @@ const PYTH_ABI = [
   },
 ] as const;
 
-// ── Main ─────────────────────────────────────────────────────────────────────
+const og = (wei: bigint) => `${wei} wei (${formatUnits(wei, 18)} OG)`;
 
 async function main() {
-  console.log("=== Sentri Pyth Smoke Test — 0G Galileo ===\n");
+  console.log("=== Sentri Pyth Smoke Test — 0G MAINNET (chain 16661) ===\n");
+  console.log(`RPC          : ${RPC_URL}`);
+  console.log(`Pyth contract: ${PYTH_ADDRESS}`);
+  console.log(`Feed (0G/USD): ${FEED_ID_0G_USD}\n`);
 
   const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) {
-    console.error("PRIVATE_KEY env var required");
+    console.error("PRIVATE_KEY env var required (put it in .env.local and run with --env-file=.env.local)");
     process.exit(1);
   }
 
-  const account = privateKeyToAccount(`0x${privateKey.replace("0x", "")}`);
-  const publicClient = createPublicClient({
-    chain: og0GChain,
-    transport: http(),
-  });
-  const walletClient = createWalletClient({
-    chain: og0GChain,
-    transport: http(),
-    account,
-  });
+  const account = privateKeyToAccount(`0x${privateKey.replace(/^0x/, "")}`);
+  const publicClient = createPublicClient({ chain: og0GMainnet, transport: http() });
+  const walletClient = createWalletClient({ chain: og0GMainnet, transport: http(), account });
 
-  // ── Step 1: Check Pyth contract presence ────────────────────────────────
+  console.log(`Canary wallet: ${account.address}`);
+  const balance = await publicClient.getBalance({ address: account.address });
+  console.log(`Balance      : ${og(balance)}\n`);
 
-  console.log(`[1/7] Checking Pyth bytecode at ${PYTH_CANDIDATE_ADDRESS}...`);
-  const bytecode = await publicClient.getBytecode({ address: PYTH_CANDIDATE_ADDRESS as `0x${string}` });
-
+  // ── Step 1: Pyth contract presence ──────────────────────────────────────
+  console.log(`[1/6] Checking Pyth bytecode at ${PYTH_ADDRESS}...`);
+  const bytecode = await publicClient.getBytecode({ address: PYTH_ADDRESS as `0x${string}` });
   if (!bytecode || bytecode === "0x") {
-    console.error("\n❌ HARD STOP: No Pyth contract found at", PYTH_CANDIDATE_ADDRESS, "on 0G Galileo.");
-    console.error("\nBlocker details:");
-    console.error("  - 0G Galileo (chain ID 16602) is not yet in the official Pyth EVM deployment list.");
-    console.error("  - The Pyth canonical address may differ or Pyth may not be deployed on this chain.");
-    console.error("\nAction required before Trustless Oracle integration:");
-    console.error("  1. Check https://docs.pyth.network/price-feeds/contract-addresses/evm for 0G.");
-    console.error("  2. Contact Pyth / 0G team to confirm deployment or request deployment.");
-    console.error("  3. Re-run this smoke test with the confirmed address.");
-    console.error("\nCurrent Sentri standard vault (SentriPriceFeed) is unaffected and stable.");
+    console.error(`\n❌ HARD STOP: no Pyth contract at ${PYTH_ADDRESS} on 0G mainnet. Do not integrate.`);
     process.exit(1);
   }
-
   console.log(`   ✓ Bytecode found (${bytecode.length / 2 - 1} bytes)`);
 
   // ── Step 2: Fetch updateData from Hermes ────────────────────────────────
-
-  console.log(`\n[2/7] Fetching updateData from Hermes for feed ${ETH_USD_FEED_ID.slice(0, 10)}...`);
+  console.log(`\n[2/6] Fetching 0G/USD updateData from Hermes...`);
   let updateData: string[];
   try {
-    const hermesRes = await fetch(
-      `${HERMES_URL}/v2/updates/price/latest?ids[]=${ETH_USD_FEED_ID}`
-    );
-    if (!hermesRes.ok) throw new Error(`Hermes HTTP ${hermesRes.status}`);
-    const hermesJson = await hermesRes.json() as {
+    const res = await fetch(`${HERMES_URL}/v2/updates/price/latest?ids[]=${FEED_ID_0G_USD}`);
+    if (!res.ok) throw new Error(`Hermes HTTP ${res.status}`);
+    const json = (await res.json()) as {
       binary: { data: string[] };
-      parsed: Array<{
-        id: string;
-        price: { price: string; conf: string; expo: number; publish_time: number };
-      }>;
+      parsed: Array<{ price: { price: string; conf: string; expo: number; publish_time: number } }>;
     };
-    updateData = hermesJson.binary.data;
-    const parsed = hermesJson.parsed?.[0];
-    if (parsed) {
-      const { price: p } = parsed;
+    updateData = json.binary.data;
+    const p = json.parsed?.[0]?.price;
+    if (p) {
       const norm = Number(p.price) * Math.pow(10, p.expo);
-      console.log(`   ✓ Hermes response:`);
-      console.log(`     raw price   : ${p.price}`);
-      console.log(`     expo        : ${p.expo}`);
-      console.log(`     conf        : ${p.conf}`);
-      console.log(`     publishTime : ${p.publish_time} (${new Date(p.publish_time * 1000).toISOString()})`);
-      console.log(`     normalized  : $${norm.toFixed(2)}`);
-      console.log(`     confBps     : ${Math.round(Number(p.conf) / Number(p.price) * 10_000)} bps`);
+      console.log(`   ✓ Hermes 0G/USD: $${norm.toFixed(5)} | conf ${Math.round(Number(p.conf) / Number(p.price) * 10_000)} bps | published ${new Date(p.publish_time * 1000).toISOString()}`);
     }
   } catch (err) {
-    console.error("   ✗ Failed to fetch from Hermes:", err);
+    console.error("   ✗ Hermes fetch failed:", err);
     process.exit(1);
   }
-
   const updateDataBytes = updateData.map((d) => `0x${d}` as `0x${string}`);
 
-  // ── Step 3: getUpdateFee ─────────────────────────────────────────────────
-
-  console.log(`\n[3/7] Calling getUpdateFee...`);
+  // ── Step 3: getUpdateFee + cost preflight ───────────────────────────────
+  console.log(`\n[3/6] getUpdateFee + gas/balance preflight...`);
   let fee: bigint;
   try {
     fee = await publicClient.readContract({
-      address: PYTH_CANDIDATE_ADDRESS as `0x${string}`,
+      address: PYTH_ADDRESS as `0x${string}`,
       abi: PYTH_ABI,
       functionName: "getUpdateFee",
       args: [updateDataBytes],
     });
-    console.log(`   ✓ Update fee: ${fee} wei (${formatUnits(fee, 18)} OG)`);
   } catch (err) {
-    console.error("   ✗ getUpdateFee failed:", err);
-    console.error("   → Contract at address may not implement IPyth interface.");
+    console.error("   ✗ getUpdateFee failed (not an IPyth contract?):", err);
     process.exit(1);
   }
+  const gasEstimate = await publicClient.estimateContractGas({
+    address: PYTH_ADDRESS as `0x${string}`,
+    abi: PYTH_ABI,
+    functionName: "updatePriceFeeds",
+    args: [updateDataBytes],
+    value: fee,
+    account,
+  });
+  const gasPrice = await publicClient.getGasPrice();
+  const estGasCost = gasEstimate * gasPrice;
+  const estTotal = fee + estGasCost;
+  console.log(`   Pyth update fee : ${og(fee)}`);
+  console.log(`   est. gas        : ${gasEstimate} @ ${gasPrice} wei/gas → ${og(estGasCost)}`);
+  console.log(`   est. total cost : ${og(estTotal)}`);
+  if (balance <= estTotal) {
+    console.error(`\n❌ HARD STOP: balance ${og(balance)} < est. total ${og(estTotal)}. Fund the canary wallet. No tx sent.`);
+    process.exit(1);
+  }
+  console.log(`   ✓ Balance covers fee + gas`);
 
-  // ── Step 4: Submit updatePriceFeeds ─────────────────────────────────────
-
-  console.log(`\n[4/7] Calling updatePriceFeeds (fee=${fee} wei)...`);
-  let txHash: string;
+  // ── Step 4: updatePriceFeeds (the only on-chain write) ──────────────────
+  console.log(`\n[4/6] Broadcasting updatePriceFeeds (value=${fee} wei)...`);
+  let gasUsed: bigint;
+  let effGasPrice: bigint;
+  let txHash: `0x${string}`;
   try {
     txHash = await walletClient.writeContract({
-      address: PYTH_CANDIDATE_ADDRESS as `0x${string}`,
+      address: PYTH_ADDRESS as `0x${string}`,
       abi: PYTH_ABI,
       functionName: "updatePriceFeeds",
       args: [updateDataBytes],
       value: fee,
     });
-    console.log(`   ✓ Tx submitted: ${txHash}`);
-
-    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}` });
-    console.log(`   ✓ Confirmed in block ${receipt.blockNumber}, gas used: ${receipt.gasUsed}`);
+    console.log(`   tx: ${EXPLORER}/tx/${txHash}`);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") throw new Error(`tx reverted (status=${receipt.status})`);
+    gasUsed = receipt.gasUsed;
+    effGasPrice = receipt.effectiveGasPrice;
+    console.log(`   ✓ updatePriceFeeds SUCCESS — block ${receipt.blockNumber}, gasUsed ${gasUsed}`);
   } catch (err) {
-    console.error("   ✗ updatePriceFeeds failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/InsufficientFee/i.test(msg)) console.error("   ✗ InsufficientFee — value sent was below getUpdateFee.");
+    console.error("   ✗ updatePriceFeeds failed:", msg);
     process.exit(1);
   }
 
-  // ── Step 5: getPriceNoOlderThan ──────────────────────────────────────────
-
-  console.log(`\n[5/7] Calling getPriceNoOlderThan (maxAge=60s)...`);
-  let priceResult: { price: bigint; conf: bigint; expo: number; publishTime: bigint };
+  // ── Step 5: getPriceNoOlderThan (StalePrice check) ──────────────────────
+  console.log(`\n[5/6] getPriceNoOlderThan(0G/USD, maxAge=60s)...`);
   try {
-    priceResult = await publicClient.readContract({
-      address: PYTH_CANDIDATE_ADDRESS as `0x${string}`,
+    const r = (await publicClient.readContract({
+      address: PYTH_ADDRESS as `0x${string}`,
       abi: PYTH_ABI,
       functionName: "getPriceNoOlderThan",
-      args: [`0x${ETH_USD_FEED_ID.replace("0x", "")}`, 60n],
-    }) as typeof priceResult;
-
-    const { price, conf, expo, publishTime } = priceResult;
-    const norm = Number(price) * Math.pow(10, expo);
-    const confBps = Math.round(Number(conf) / Number(price) * 10_000);
-
-    console.log(`\n   ✓ Pyth price verified on-chain:`);
-    console.log(`     raw price   : ${price}`);
-    console.log(`     expo        : ${expo}`);
-    console.log(`     conf        : ${conf}`);
-    console.log(`     publishTime : ${publishTime} (${new Date(Number(publishTime) * 1000).toISOString()})`);
-    console.log(`     normalized  : $${norm.toFixed(2)}`);
-    console.log(`     confBps     : ${confBps} bps`);
-    console.log(`     tx hash     : ${txHash}`);
+      args: [FEED_ID_0G_USD as `0x${string}`, 60n],
+    })) as { price: bigint; conf: bigint; expo: number; publishTime: bigint };
+    const norm = Number(r.price) * Math.pow(10, r.expo);
+    const confBps = Math.round(Number(r.conf) / Number(r.price) * 10_000);
+    console.log(`   ✓ getPriceNoOlderThan SUCCESS (no StalePrice):`);
+    console.log(`     price       : ${r.price} (normalized $${norm.toFixed(5)})`);
+    console.log(`     conf        : ${r.conf} (${confBps} bps)`);
+    console.log(`     expo        : ${r.expo}`);
+    console.log(`     publishTime : ${r.publishTime} (${new Date(Number(r.publishTime) * 1000).toISOString()})`);
+    if (confBps > PYTH_MAX_CONF_BPS) {
+      console.warn(`     ⚠ confidence ${confBps} bps exceeds pythMaxConfBps=${PYTH_MAX_CONF_BPS} — the vault would reject this update.`);
+    }
   } catch (err) {
-    console.error("   ✗ getPriceNoOlderThan failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/StalePrice|0OlderThan|getPriceNoOlderThan/i.test(msg)) console.error("   ✗ StalePrice — price older than 60s after update.");
+    console.error("   ✗ getPriceNoOlderThan failed:", msg);
     process.exit(1);
   }
 
-  // ── Step 6: Summary ──────────────────────────────────────────────────────
+  // ── Step 6: Cost + config summary ───────────────────────────────────────
+  const actualGasCost = gasUsed * effGasPrice;
+  console.log(`\n[6/6] Actual cost:`);
+  console.log(`   Pyth update fee : ${og(fee)}`);
+  console.log(`   gas             : ${gasUsed} @ ${effGasPrice} wei/gas → ${og(actualGasCost)}`);
+  console.log(`   TOTAL spent     : ${og(fee + actualGasCost)}`);
 
-  console.log(`\n=== ✅ SMOKE TEST PASSED ===`);
-  console.log(`\nPyth pull oracle is operational on 0G Galileo.`);
-  console.log(`Safe to integrate TrustlessOracleVault.\n`);
-  console.log(`Configuration for deployment:`);
-  console.log(`  PYTH_CONTRACT_ADDRESS=${PYTH_CANDIDATE_ADDRESS}`);
-  console.log(`  PYTH_PRICE_ID=${ETH_USD_FEED_ID}`);
+  console.log(`\n=== ✅ SMOKE TEST PASSED — Pyth pull oracle operational on 0G mainnet ===`);
+  console.log(`\nV2 deployment config:`);
+  console.log(`  PYTH_CONTRACT_ADDRESS=${PYTH_ADDRESS}`);
+  console.log(`  PYTH_PRICE_ID=${FEED_ID_0G_USD}   # Crypto.0G/USD`);
   console.log(`  pythMaxAge=60`);
-  console.log(`  pythMaxConfBps=200 (2%)`);
-  console.log(`\nNote: ETH/USD feed used (W0G/USD not available on Pyth as of May 2026).`);
-  console.log(`      This is appropriate for MockWETH risk asset; matches SentriPriceFeed convention.`);
+  console.log(`  pythMaxConfBps=${PYTH_MAX_CONF_BPS}`);
 }
 
 main().catch((err) => {
