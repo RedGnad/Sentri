@@ -1027,19 +1027,45 @@ export async function executeOneIterationForVault(
     return { status: "skipped", reason: finalFreshness.reason };
   }
 
-  // Execute. Keep this try/catch scoped only to executeStrategy so post-tx
-  // bookkeeping failures cannot be misreported as blocked actions.
+  // Execute. Keep this try/catch scoped only to executeStrategy / executeStrategyWithPyth
+  // so post-tx bookkeeping failures cannot be misreported as blocked actions.
+  //
+  // Oracle mode is determined by ORACLE_MODE env var (per-process) or the vault's
+  // on-chain oracleMode() return value (per-vault). When "trustless-pyth", we fetch
+  // a Pyth price update from Hermes and forward it with the tx — the vault verifies
+  // the price on-chain in the same transaction. Standard ("standard-evidence") uses
+  // the keeper-pushed SentriPriceFeed path unchanged.
+  const oracleMode = process.env.ORACLE_MODE ?? "standard-evidence";
+
   let receipt: ethers.TransactionReceipt;
   try {
-    const tx = await vault.executeStrategy(
-      ACTION_MAP[decision.action],
-      amountIn,
-      intentHash,
-      inference.signedResponse,
-      inference.teeSignature,
-      inference.teeAttestation,
-      deadline,
-    );
+    let tx: ethers.TransactionResponse;
+
+    if (oracleMode === "trustless-pyth") {
+      const { updateData, fee, priceId } = await _fetchPythUpdateData(vault);
+      log(`[trustless-pyth] priceId=${priceId} updateDataHash=${ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(updateData))).slice(0,10)} fee=${fee}wei`);
+      tx = await vault.executeStrategyWithPyth(
+        ACTION_MAP[decision.action],
+        amountIn,
+        intentHash,
+        inference.signedResponse,
+        inference.teeSignature,
+        inference.teeAttestation,
+        deadline,
+        updateData,
+        { value: fee },
+      );
+    } else {
+      tx = await vault.executeStrategy(
+        ACTION_MAP[decision.action],
+        amountIn,
+        intentHash,
+        inference.signedResponse,
+        inference.teeSignature,
+        inference.teeAttestation,
+        deadline,
+      );
+    }
     const waited = await tx.wait();
     if (!waited) throw new Error("executeStrategy transaction was sent but no receipt was returned");
     receipt = waited;
@@ -1828,4 +1854,53 @@ override only if a critical reason justifies it (state your reason in
 short_reason). Respond with the JSON object only.`;
 
   return { prompt, recommendation };
+}
+
+// ── Trustless Oracle: Pyth Hermes fetch ──────────────────────────────────────
+
+const HERMES_URL = process.env.HERMES_URL ?? "https://hermes.pyth.network";
+const PYTH_PRICE_ID =
+  process.env.PYTH_PRICE_ID ??
+  "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"; // ETH/USD
+
+/**
+ * Fetch Pyth updateData from Hermes for the configured priceId, then estimate
+ * the on-chain fee via getUpdateFee. Returns the bytes to include as calldata
+ * and the wei fee to forward as msg.value in executeStrategyWithPyth.
+ *
+ * oracleMode = "trustless-pyth" only; never called on the standard path.
+ */
+async function _fetchPythUpdateData(
+  vault: ethers.Contract,
+): Promise<{ updateData: string[]; fee: bigint; priceId: string }> {
+  const priceId = PYTH_PRICE_ID;
+
+  // 1. Fetch latest binary VAA from Hermes.
+  const hermesRes = await fetch(
+    `${HERMES_URL}/v2/updates/price/latest?ids[]=${priceId}`,
+  );
+  if (!hermesRes.ok) {
+    throw new Error(`Hermes fetch failed: HTTP ${hermesRes.status}`);
+  }
+  const hermesJson = (await hermesRes.json()) as { binary: { data: string[] } };
+  const rawData: string[] = hermesJson.binary.data;
+  if (!rawData?.length) throw new Error("Hermes returned empty updateData");
+
+  const updateData = rawData.map((d) => (d.startsWith("0x") ? d : `0x${d}`));
+
+  // 2. Estimate Pyth fee from the vault's pyth() contract reference.
+  //    The vault exposes its Pyth contract address via pyth().
+  let fee = 1n; // sensible fallback (1 wei) if fee read fails
+  try {
+    const PYTH_ABI = [
+      "function getUpdateFee(bytes[] calldata updateData) external view returns (uint256 fee)",
+    ];
+    const pythAddr: string = await vault.pyth();
+    const pythContract = new ethers.Contract(pythAddr, PYTH_ABI, vault.runner);
+    fee = await pythContract.getUpdateFee(updateData);
+  } catch {
+    log("[trustless-pyth] Warning: could not read Pyth fee; defaulting to 1 wei");
+  }
+
+  return { updateData, fee, priceId };
 }
