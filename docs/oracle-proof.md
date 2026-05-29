@@ -41,11 +41,12 @@ Bounds: `pythMaxAge = 60s`, `pythMaxConfBps = 200`.
 ## Verify it yourself (read-only, no keys)
 
 ```bash
-pnpm --filter @steward/sdk verify:trustless-execution -- \
+pnpm install
+pnpm --filter @steward/sdk verify:summary -- \
   --tx 0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa
 ```
 
-Expected output: 9/9 checks PASS, ending with `✅ Verified trustless executeStrategyWithPyth execution`. The verifier reads chain only (no key, no broker).
+Expected output: 9/9 underlying checks PASS, then a summary box ending with `VERDICT: PASS`. `verify:summary` wraps `verify:trustless-execution` (Pyth + TEE signer + policy + explorer) and prints the off-chain 0G Storage anchors (root + storage tx + indexer URL) for the audit blob. Read-only — no key, no broker.
 
 ## What is proven
 
