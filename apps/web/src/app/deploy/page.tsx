@@ -6,9 +6,12 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { decodeEventLog, parseUnits } from "viem";
+import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/page-header";
+import { TrustlessVaultPanel } from "@/components/trustless-vault-panel";
 import { useCreateVault } from "@/hooks/use-factory";
 import { useApproveUsdc, useUsdcBalance, useUsdcAllowance, useMintUsdc } from "@/hooks/use-vault";
 import {
@@ -23,11 +26,13 @@ import {
 import { formatUSDC, cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
+type VaultType = "standard" | "trustless" | null;
 
 export default function DeployPage() {
   const router = useRouter();
   const { address } = useAccount();
 
+  const [vaultType, setVaultType] = useState<VaultType>(null);
   const [step, setStep] = useState<Step>(1);
   const [tier, setTier] = useState<number>(PresetTier.Balanced);
   const [depositAmount, setDepositAmount] = useState<string>("1000");
@@ -92,20 +97,43 @@ export default function DeployPage() {
 
   // ── Render ───────────────────────────────────────────────────────────
 
+  const subtitle =
+    vaultType === "trustless"
+      ? "Premium high-assurance execution path"
+      : vaultType === "standard"
+        ? "Preset policy · optional seed deposit · owner-controlled after deployment"
+        : "Choose an execution tier";
+
   return (
     <div className="space-y-10 max-w-3xl">
-      <PageHeader
-        num="02"
-        section="Deploy"
-        title="New Vault"
-        subtitle="Preset policy · optional seed deposit · owner-controlled after deployment"
-      />
+      <PageHeader num="02" section="Deploy" title="New Vault" subtitle={subtitle} />
 
-      <Stepper current={step} />
-
-      {step === 1 && (
-        <PresetStep tier={tier} setTier={setTier} onNext={() => setStep(2)} />
+      {vaultType === null && (
+        <VaultTypeSelect
+          onStandard={() => setVaultType("standard")}
+          onTrustless={() => setVaultType("trustless")}
+        />
       )}
+
+      {vaultType === "trustless" && (
+        <TrustlessVaultPanel onBack={() => setVaultType(null)} />
+      )}
+
+      {vaultType === "standard" && (
+        <div className="space-y-10">
+          <button
+            type="button"
+            onClick={() => setVaultType(null)}
+            className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber transition-colors"
+          >
+            ← Vault type
+          </button>
+
+          <Stepper current={step} />
+
+          {step === 1 && (
+            <PresetStep tier={tier} setTier={setTier} onNext={() => setStep(2)} />
+          )}
 
       {step === 2 && (
         <DepositStep
@@ -144,6 +172,77 @@ export default function DeployPage() {
           onBack={() => setStep(3)}
         />
       )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VaultTypeSelect({
+  onStandard,
+  onTrustless,
+}: {
+  onStandard: () => void;
+  onTrustless: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <h2 className="font-serif text-3xl text-ink">Choose an execution tier</h2>
+      <p className="font-serif italic text-base text-ink-dim">
+        Two paths, one agent doctrine. Standard for cheap, frequent retail treasuries; Trustless
+        Oracle for premium, high-assurance execution on larger capital.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button
+          type="button"
+          onClick={onStandard}
+          className="group border border-hairline hover:border-hairline-strong bg-bg-elev/20 p-6 text-left transition-colors flex flex-col"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Badge variant="success">Live</Badge>
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">Retail</span>
+          </div>
+          <h3 className="font-serif text-2xl text-ink mb-2">Standard Vault</h3>
+          <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
+            Keeper-attested oracle. Low-cost, frequent rebalancing, no per-execution oracle fee.
+            The retail-friendly path.
+          </p>
+          <ul className="space-y-1.5 mb-5">
+            <li className="font-mono text-[10px] text-ink-dim">· cheap · frequent execution</li>
+            <li className="font-mono text-[10px] text-ink-dim">· sealed TEE reasoning + on-chain policy</li>
+            <li className="font-mono text-[10px] text-ink-dim">· any treasury size</li>
+          </ul>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-amber group-hover:text-ink transition-colors">
+            Create →
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onTrustless}
+          className="group border border-orchid/30 hover:border-orchid/60 bg-bg-elev/30 p-6 text-left transition-colors flex flex-col"
+        >
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <Badge variant="warning">Premium</Badge>
+            <Badge variant="success">
+              <ShieldCheck className="h-3 w-3" /> Verified Oracle
+            </Badge>
+          </div>
+          <h3 className="font-serif text-2xl text-ink mb-2">Trustless Oracle Vault</h3>
+          <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
+            Pyth price verified on-chain at execution. High-assurance, larger capital,
+            lower-frequency. You pay for execution assurance.
+          </p>
+          <ul className="space-y-1.5 mb-5">
+            <li className="font-mono text-[10px] text-ink-dim">· verified oracle per execution</li>
+            <li className="font-mono text-[10px] text-ink-dim">· recommended ≥ $1,000 treasury</li>
+            <li className="font-mono text-[10px] text-ink-dim">· validated on 0G mainnet</li>
+          </ul>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-phosphor group-hover:text-ink transition-colors">
+            Explore tier →
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
