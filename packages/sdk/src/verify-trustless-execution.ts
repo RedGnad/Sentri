@@ -2,13 +2,13 @@
 /**
  * pnpm --filter @steward/sdk verify:trustless-execution --tx <hash>
  *
- * Read-only, key-less judge proof for ONE executeStrategyWithPyth() transaction
- * on the canary vault. Parses the TrustlessOracleExecution event, cross-checks
- * the on-chain execution log (for the TEE signer), and re-reads AgentINFT
- * authorization. Exits 1 on any failure.
+ * Read-only, key-less verifier for ONE executeStrategyWithPyth() transaction
+ * on the Reference V2 vault. Parses the TrustlessOracleExecution event,
+ * cross-checks the on-chain execution log (for the TEE signer), and re-reads
+ * AgentINFT authorization. Exits 1 on any failure.
  *
  * Checks:
- *  - event present and emitted by the canary vault
+ *  - event present and emitted by the expected V2 vault
  *  - event.agent == expected operator
  *  - executionLogCount incremented (>= 1) and a log matches this intentHash
  *  - Pyth freshness: (log.timestamp - pythPublishTime) <= pythMaxAge (60s)
