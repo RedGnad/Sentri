@@ -99,7 +99,10 @@ async function readAuditFromChain(
   if (count === 0) return [];
   const start = Math.max(0, count - limit);
   const indices = Array.from({ length: count - start }, (_, i) => start + i);
-  const txHashesByLogIndex = await readStrategyExecutedTxHashes(vaultAddress, context);
+  const [txHashesByLogIndex, txHashesByIntent] = await Promise.all([
+    readStrategyExecutedTxHashes(vaultAddress, context),
+    readTrustlessExecutionTxHashesByIntent(vaultAddress, context),
+  ]);
   const logs = await Promise.all(
     indices.map(
       (i) =>
@@ -122,7 +125,7 @@ async function readAuditFromChain(
       teeSigner: log[7],
       teeAttestation: log[8],
       deadline: Number(log[9]),
-      txHash: txHashesByLogIndex.get(indices[k]),
+      txHash: txHashesByLogIndex.get(indices[k]) ?? txHashesByIntent.get(String(log[5]).toLowerCase()),
     }))
     .reverse();
 }
@@ -149,6 +152,37 @@ async function readStrategyExecutedTxHashes(
       const parsed = iface.parseLog(raw);
       if (!parsed) continue;
       hashes.set(Number(parsed.args.logIndex), raw.transactionHash);
+    }
+  } catch {
+    // Tx hash enrichment is best-effort; executionLogs remain authoritative.
+  }
+  return hashes;
+}
+
+async function readTrustlessExecutionTxHashesByIntent(
+  vaultAddress: string,
+  context: GlobalContext,
+): Promise<Map<string, string>> {
+  const hashes = new Map<string, string>();
+  try {
+    const iface = new ethers.Interface([
+      "event TrustlessOracleExecution(address indexed vault, address indexed agent, bytes32 indexed intentHash, bytes32 responseHash, bytes32 pythPriceId, uint256 pythPrice, uint256 pythPublishTime, uint256 pythConfBps, uint256 amountIn, uint256 amountOut, uint256 timestamp)",
+    ]);
+    const event = iface.getEvent("TrustlessOracleExecution");
+    if (!event) return hashes;
+    const latest = await context.provider.getBlockNumber();
+    const defaultFromBlock = Math.max(0, latest - 1_000_000);
+    const fromBlock = Number(process.env.SENTRI_AUDIT_EVENT_FROM_BLOCK ?? defaultFromBlock);
+    const logs = await context.provider.getLogs({
+      address: vaultAddress,
+      fromBlock,
+      toBlock: "latest",
+      topics: [event.topicHash],
+    });
+    for (const raw of logs) {
+      const parsed = iface.parseLog(raw);
+      if (!parsed) continue;
+      hashes.set(String(parsed.args.intentHash).toLowerCase(), raw.transactionHash);
     }
   } catch {
     // Tx hash enrichment is best-effort; executionLogs remain authoritative.

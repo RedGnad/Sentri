@@ -101,7 +101,70 @@ test("audit recovery unwraps sentri.audit.v1 storage envelopes", async () => {
   assert.equal(recovered.storageRootHash, "0xroot");
 });
 
+test("audit recovery maps V2 TeeReceipt fields from a sentri.inference.v1 blob", async () => {
+  const recovered = await recoverAuditEntry("0xvault", entry, deps({
+    findByTxHash: (txHash) => txHash === "0xtx"
+      ? {
+          vaultAddress: "0xvault",
+          txHash,
+          logIndex: 2,
+          intentHash: "0xintent",
+          responseHash: "0xresponse",
+          rootHash: "0xroot",
+          storageTxHash: "0xstorage",
+          action: "Rebalance",
+          createdAt: 1,
+          updatedAt: 2,
+        }
+      : null,
+    downloadBlob: async (rootHash) => rootHash === "0xroot"
+      ? {
+          schema: "sentri.inference.v1",
+          vault: "0xvault",
+          vaultAddress: "0xvault",
+          agent: "0xagent",
+          AgentINFT: "0xinft",
+          oracleMode: "trustless-pyth",
+          intentHash: "0xintent",
+          responseHash: "0xresponse",
+          teeSigner: "0xsigner",
+          provider: "0xprovider",
+          model: "0GM",
+          reasoning: "V2 reasoning survived storage recovery",
+          txHash: "0xtx",
+          amountIn: "1000",
+          amountOut: "2000",
+          pythPriceId: "0xpyth",
+          pythPublishTime: 1779410100,
+          confidenceBps: 22,
+          executionLogCount: 3,
+        }
+      : null,
+  })) as Record<string, unknown>;
+
+  assert.equal(recovered.source, "index-recovered");
+  assert.equal(recovered.reasoning, "V2 reasoning survived storage recovery");
+  assert.equal(recovered.oracleMode, "trustless-pyth");
+  assert.equal(recovered.AgentINFT, "0xinft");
+  assert.equal(recovered.txHash, "0xtx");
+  assert.equal(recovered.amountIn, "1000");
+  assert.equal(recovered.amountOut, "2000");
+  assert.equal(recovered.pythPriceId, "0xpyth");
+  assert.equal(recovered.confidenceBps, 22);
+  assert.equal(recovered.storageRootHash, "0xroot");
+});
+
 test("audit recovery falls back to the chain-only entry when no record resolves", async () => {
   const recovered = await recoverAuditEntry("0xvault", entry, deps());
-  assert.equal(recovered, entry);
+  assert.deepEqual(recovered, {
+    ...entry,
+    missingFields: [
+      "reasoning",
+      "canonicalRootHash",
+      "canonicalStorageTxHash",
+      "signedPayloadHash",
+      "chatID",
+      "provider",
+    ],
+  });
 });

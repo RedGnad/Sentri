@@ -16,6 +16,7 @@
     "inspect-vault": "tsx src/inspect-vault.ts",
     "verify:trustless-canary": "tsx src/verify-trustless-canary.ts",
     "verify:trustless-execution": "tsx src/verify-trustless-execution.ts",
+    "verify:v2-audit-record": "tsx src/verify-v2-audit-record.ts",
     "preflight:trustless-execution": "tsx src/preflight-trustless-execution.ts",
     "execute:trustless-canary": "tsx src/execute-trustless-canary.ts",
     "backfill-audit-index": "tsx src/backfill-audit-index.ts",

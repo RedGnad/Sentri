@@ -6,6 +6,7 @@
  *
  *   simulate (default):  pnpm --filter @steward/sdk execute:trustless-canary
  *   send:                pnpm --filter @steward/sdk execute:trustless-canary -- --send
+ *   new V2 vault:        pnpm --filter @steward/sdk execute:trustless-canary -- --vault <address> --send
  *
  * One-shot, single-vault driver for a P4 executeStrategyWithPyth() proof on the
  * canary vault. It does NOT modify the TEE / execution flow — it reuses the
@@ -23,11 +24,31 @@ import { initAuditIndex } from "./audit-index.js";
 import { initRejectionsLedger } from "./rejections-ledger.js";
 
 const CANARY_VAULT = "0x86cE22c597D0C4EC309ba166360686C39A3f40ed";
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+function argValue(name: string): string | null {
+  const idx = process.argv.indexOf(name);
+  return idx >= 0 ? process.argv[idx + 1] ?? null : null;
+}
+
+function targetVault(): string {
+  const vault = argValue("--vault") ?? process.env.TRUSTLESS_VAULT_ADDRESS ?? CANARY_VAULT;
+  if (!ADDRESS_RE.test(vault)) {
+    console.error("Refusing to run: --vault/TRUSTLESS_VAULT_ADDRESS must be a 20-byte 0x address.");
+    process.exit(1);
+  }
+  return vault;
+}
 
 async function main() {
   const send = process.argv.includes("--send");
   const mode = send ? "SEND" : "SIMULATE";
-  console.log(`=== execute-trustless-canary [${mode}] — vault ${CANARY_VAULT} ===\n`);
+  const vaultAddress = targetVault();
+  const isGenesisCanary = vaultAddress.toLowerCase() === CANARY_VAULT.toLowerCase();
+  console.log(
+    `=== execute-trustless-canary [${mode}] — ${isGenesisCanary ? "Genesis Canary" : "V2 target"} ` +
+      `${vaultAddress} ===\n`,
+  );
 
   if (process.env.ORACLE_MODE !== "trustless-pyth") {
     console.error("Refusing to run: set ORACLE_MODE=trustless-pyth (the vault uses executeStrategyWithPyth in this mode).");
@@ -69,13 +90,14 @@ async function main() {
     return;
   }
 
-  console.log("SEND — requesting sealed inference and executing executeStrategyWithPyth on the canary...\n");
-  const outcome = await executeOneIterationForVault(ctx, CANARY_VAULT, market);
+  console.log("SEND — writing durable inference, then executing executeStrategyWithPyth...\n");
+  const outcome = await executeOneIterationForVault(ctx, vaultAddress, market);
   if (outcome.status === "executed") {
     console.log(`\n=== executed — ${outcome.action} · tx ${outcome.txHash} ===`);
     console.log(`amountIn ${outcome.amountIn} → amountOut ${outcome.amountOut}`);
     console.log("Verify it:");
     console.log(`  pnpm --filter @steward/sdk verify:trustless-execution -- --tx ${outcome.txHash}`);
+    console.log(`  pnpm --filter @steward/sdk verify:v2-audit-record -- --tx ${outcome.txHash}`);
   } else {
     console.log(`\n=== ${outcome.status} — ${outcome.reason} ===`);
     console.log("No funds moved. If this is a safe skip (slippage/cooldown/etc.), re-run when conditions allow,");

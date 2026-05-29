@@ -17,7 +17,14 @@ import {
   requestInference,
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
-import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog, saveInferenceRecord } from "./storage.js";
+import {
+  initStorage,
+  appendAuditLog,
+  savePortfolioState,
+  appendRejectionLog,
+  saveInferenceRecord,
+  type InferenceRecord,
+} from "./storage.js";
 import { shouldCallSkillMint, callSkillMint, computeSkillMintRelation, type SkillMintSignal } from "./skillmint.js";
 import { writeAuditIndexRecord } from "./audit-index.js";
 import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
@@ -595,6 +602,18 @@ export async function executeOneIterationForVault(
   // the agent's reads take an off-chain path. Standard mode is unchanged.
   const oracleMode = process.env.ORACLE_MODE ?? "standard-evidence";
   const isTrustless = oracleMode === "trustless-pyth";
+  let trustlessPythPriceId: string | undefined;
+  if (isTrustless) {
+    try {
+      trustlessPythPriceId = (await vault.pythPriceId()) as string;
+    } catch (err) {
+      log(
+        `SKIPPED_AUDIT_STORAGE: trustless vault ${vaultAddress.slice(0, 10)}... ` +
+          `pythPriceId unavailable before audit record: ${err instanceof Error ? err.message : err}`,
+      );
+      return { status: "skipped", reason: "trustless pythPriceId unavailable; no funds moved" };
+    }
+  }
 
   const stateFreshness = await ensureFreshOracle(
     ctx,
@@ -1004,70 +1023,84 @@ export async function executeOneIterationForVault(
   // 0G Storage rootHash of the durable, downloadable inference record — set
   // pre-tx so the post-tx index append can re-reference the same blob.
   let inferenceRootHash = "";
-  try {
-    const savedInference = await saveInferenceRecord(vaultAddress, {
-      schema: "sentri.inference.v1",
-      timestamp: Date.now(),
-      vaultAddress,
-      logIndex: Number(logCount),
+  let inferenceStorageTxHash = "";
+  const v2AuditFields = isTrustless
+    ? {
+        vault: vaultAddress,
+        agent: ctx.walletAddress,
+        AgentINFT: ctx.agentNFTAddress,
+        oracleMode: "trustless-pyth",
+        pythPriceId: trustlessPythPriceId,
+        plannedAction: decision.action,
+      }
+    : {};
+  const inferenceRecord: InferenceRecord = {
+    schema: "sentri.inference.v1",
+    timestamp: Date.now(),
+    vaultAddress,
+    logIndex: Number(logCount),
+    action: decision.action,
+    amount: formattedAmountIn,
+    amountIn: amountIn.toString(),
+    intent,
+    intentHash,
+    responseHash: inference.responseHash,
+    rawResponseHash: inference.rawResponseHash,
+    signedPayloadHash: inference.signedPayloadHash,
+    modelResponse: inference.modelResponse,
+    signedResponse: inference.signedResponse,
+    teeSignature: inference.teeSignature,
+    teeSigner: inference.teeSignerAddress,
+    recoveredSigner: inference.recoveredSignerAddress,
+    expectedSigner: inference.teeSignerAddress,
+    signerMatchedProvider: inference.recoveredSignerAddress.toLowerCase() === inference.teeSignerAddress.toLowerCase(),
+    teeAttestation: inference.teeAttestation,
+    deadline,
+    processResponseVerified: inference.processResponseVerified,
+    verified: inference.verified,
+    provider: inference.provider,
+    providerEndpoint: inference.endpoint,
+    model: inference.model,
+    verifiability: inference.verifiability,
+    chatID: inference.chatID,
+    decision: {
       action: decision.action,
-      amount: formattedAmountIn,
-      amountIn: amountIn.toString(),
-      intent,
-      intentHash,
-      responseHash: inference.responseHash,
-      rawResponseHash: inference.rawResponseHash,
-      signedPayloadHash: inference.signedPayloadHash,
-      modelResponse: inference.modelResponse,
-      signedResponse: inference.signedResponse,
-      teeSignature: inference.teeSignature,
-      teeSigner: inference.teeSignerAddress,
-      recoveredSigner: inference.recoveredSignerAddress,
-      expectedSigner: inference.teeSignerAddress,
-      signerMatchedProvider: inference.recoveredSignerAddress.toLowerCase() === inference.teeSignerAddress.toLowerCase(),
-      teeAttestation: inference.teeAttestation,
-      deadline,
-      processResponseVerified: inference.processResponseVerified,
-      verified: inference.verified,
-      provider: inference.provider,
-      providerEndpoint: inference.endpoint,
-      model: inference.model,
-      verifiability: inference.verifiability,
-      chatID: inference.chatID,
-      decision: {
-        action: decision.action,
-        amount_bps: decision.amount_bps,
-        rule_id: decision.rule_id,
-        reasoning: decision.reasoning,
-        short_reason: decision.short_reason,
-        confidence: decision.confidence,
-      },
-      reasoning,
-      amountBps: decision.amount_bps,
-      ruleId: decision.rule_id,
-      confidence: confidenceScore,
-      marketPrice: activeMarket.priceUsd,
-      marketSource: activeMarket.source,
-      marketSpreadPct: activeMarket.spreadPct,
-      marketSourceCount: activeMarket.sourceCount,
-      marketRequiredSourceCount: activeMarket.requiredSourceCount,
-      marketRawSources: activeMarket.rawSources,
-      priceAttestationPayload,
-      externalSignals: skillMintSignal
-        ? [
-            {
-              ...skillMintSignal,
-              relation: computeSkillMintRelation(
-                skillMintSignal,
-                decision.action,
-                decision.amount_bps,
-                recommendation.regime,
-              ),
-            },
-          ]
-        : undefined,
-    });
+      amount_bps: decision.amount_bps,
+      rule_id: decision.rule_id,
+      reasoning: decision.reasoning,
+      short_reason: decision.short_reason,
+      confidence: decision.confidence,
+    },
+    reasoning,
+    amountBps: decision.amount_bps,
+    ruleId: decision.rule_id,
+    confidence: confidenceScore,
+    marketPrice: activeMarket.priceUsd,
+    marketSource: activeMarket.source,
+    marketSpreadPct: activeMarket.spreadPct,
+    marketSourceCount: activeMarket.sourceCount,
+    marketRequiredSourceCount: activeMarket.requiredSourceCount,
+    marketRawSources: activeMarket.rawSources,
+    priceAttestationPayload,
+    externalSignals: skillMintSignal
+      ? [
+          {
+            ...skillMintSignal,
+            relation: computeSkillMintRelation(
+              skillMintSignal,
+              decision.action,
+              decision.amount_bps,
+              recommendation.regime,
+            ),
+          },
+        ]
+      : undefined,
+    ...v2AuditFields,
+  };
+  try {
+    const savedInference = await saveInferenceRecord(vaultAddress, inferenceRecord);
     inferenceRootHash = savedInference.rootHash;
+    inferenceStorageTxHash = savedInference.txHash;
     // Durable audit index (Render persistent disk). Written BEFORE the tx so a
     // crash between here and confirmation still leaves the execution
     // recoverable by intentHash. An index-write failure throws into the catch
@@ -1267,12 +1300,48 @@ export async function executeOneIterationForVault(
   const idx = (await vault.executionLogCount()) - 1n;
   const latestLog = await vault.executionLogs(idx);
   const amountOut = latestLog[3] as bigint;
+  const executionLogCountAfter = Number(idx + 1n);
+  const trustlessPythPrice = isTrustless ? latestLog[10] as bigint | undefined : undefined;
+  const trustlessPythPublishTime = isTrustless ? latestLog[11] as bigint | undefined : undefined;
+  const trustlessPythConfBps = isTrustless ? latestLog[12] as bigint | undefined : undefined;
   const formattedAmountOut =
     decision.action === "EmergencyDeleverage"
       ? ethers.formatUnits(amountOut, baseDec)
       : ethers.formatUnits(amountOut, riskDec);
 
   log(`TX confirmed: ${receipt.hash}. Saving audit + state to 0G Storage...`);
+
+  let finalInferenceRootHash = inferenceRootHash;
+  let finalInferenceStorageTxHash = inferenceStorageTxHash;
+  if (isTrustless) {
+    try {
+      const finalInference = await saveInferenceRecord(vaultAddress, {
+        ...inferenceRecord,
+        timestamp: chainTimestampMs,
+        txHash: receipt.hash,
+        logIndex: Number(idx),
+        amountOut: amountOut.toString(),
+        pythPrice: trustlessPythPrice?.toString(),
+        pythPublishTime: trustlessPythPublishTime === undefined ? undefined : Number(trustlessPythPublishTime),
+        pythConfBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+        confidenceBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+        executionLogCount: executionLogCountAfter,
+        preTxRootHash: inferenceRootHash,
+        preTxStorageTxHash: inferenceStorageTxHash,
+      });
+      finalInferenceRootHash = finalInference.rootHash;
+      finalInferenceStorageTxHash = finalInference.txHash;
+      log(
+        `[trustless-pyth] final TeeReceipt saved root=${finalInferenceRootHash.slice(0, 10)}... ` +
+          `tx=${finalInferenceStorageTxHash.slice(0, 10)}...`,
+      );
+    } catch (err) {
+      log(
+        `CRITICAL: V2 final TeeReceipt write failed for ${vaultAddress.slice(0, 10)}... ` +
+          `after confirmed tx ${receipt.hash}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
 
   try {
     await appendAuditLog(vaultAddress, {
@@ -1304,6 +1373,24 @@ export async function executeOneIterationForVault(
       reasoning,
       confidence: confidenceScore,
       txHash: receipt.hash,
+      ...(isTrustless
+        ? {
+            amountIn: amountIn.toString(),
+            amountOut: amountOut.toString(),
+            agent: ctx.walletAddress,
+            AgentINFT: ctx.agentNFTAddress,
+            oracleMode: "trustless-pyth",
+            pythPriceId: trustlessPythPriceId,
+            pythPrice: trustlessPythPrice?.toString(),
+            pythPublishTime: trustlessPythPublishTime === undefined ? undefined : Number(trustlessPythPublishTime),
+            pythConfBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+            confidenceBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+            plannedAction: decision.action,
+            executionLogCount: executionLogCountAfter,
+            preTxRootHash: inferenceRootHash,
+            preTxStorageTxHash: inferenceStorageTxHash,
+          }
+        : {}),
       marketPrice: activeMarket.priceUsd,
       marketSource: activeMarket.source,
       marketSpreadPct: activeMarket.spreadPct,
@@ -1343,7 +1430,8 @@ export async function executeOneIterationForVault(
       logIndex: Number(idx),
       intentHash,
       responseHash: inference.responseHash,
-      rootHash: inferenceRootHash,
+      rootHash: isTrustless ? finalInferenceRootHash : inferenceRootHash,
+      storageTxHash: isTrustless ? finalInferenceStorageTxHash : undefined,
       action: decision.action,
       createdAt: Date.now(),
       updatedAt: Date.now(),

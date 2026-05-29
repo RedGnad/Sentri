@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParsedVaultData, type VaultTier } from "@/hooks/use-vault";
+import { TRUSTLESS_VAULT } from "@/config/contracts";
 import { formatUSDC, shortenAddress, bpsToPercent, cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,8 @@ export function VaultCard({
   const status = vault.isKilled ? "killed" : vault.isPaused ? "paused" : "active";
   const allocPct = vault.policy ? bpsToPercent(vault.policy.maxAllocationBps) : "—";
   const isV2 = (tier ?? vault.tier) === "v2";
+  const isGenesisCanary =
+    isV2 && address.toLowerCase() === TRUSTLESS_VAULT.canaryVault.toLowerCase();
 
   return (
     <Link
@@ -50,7 +53,7 @@ export function VaultCard({
         <span className="flex items-center gap-2 shrink-0">
           {isV2 && (
             <Badge className="border-orchid/50 text-orchid px-1.5 py-0.5">
-              Advanced · V2
+              {isGenesisCanary ? "Genesis Canary · V2" : "Advanced · V2"}
             </Badge>
           )}
           <StatusDot status={status} />

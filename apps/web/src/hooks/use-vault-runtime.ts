@@ -41,6 +41,8 @@ export interface VaultAuditEntry {
   logIndex: number;
   action: string;
   amount: string;
+  amountIn?: string;
+  amountOut?: string;
   intent?: unknown;
   intentHash: string;
   responseHash: string;
@@ -80,6 +82,18 @@ export interface VaultAuditEntry {
   marketRequiredSourceCount?: number;
   marketRawSources?: Array<{ source: string; priceUsd?: number; ethUsd: number }>;
   priceAttestationPayload?: unknown;
+  agent?: string;
+  AgentINFT?: string;
+  oracleMode?: string;
+  pythPriceId?: string;
+  pythPrice?: string;
+  pythPublishTime?: number;
+  pythConfBps?: number;
+  confidenceBps?: number;
+  plannedAction?: string;
+  executionLogCount?: number;
+  preTxRootHash?: string;
+  preTxStorageTxHash?: string;
   externalSignals?: ExternalSignal[];
 }
 

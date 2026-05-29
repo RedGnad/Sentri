@@ -438,15 +438,13 @@ export const ERC20_ABI = [
   { type: "function", name: "decimals", inputs: [], outputs: [{ type: "uint8" }], stateMutability: "view" },
 ] as const satisfies Abi;
 
-// ── Trustless Oracle Vault (V2) — premium tier ──────────────────────────────
-// Deployed + validated on 0G mainnet (canary). The live agent does NOT yet
-// operate trustless vaults end-to-end, so the UI presents this as a validated,
-// Live Beta / Advanced tier — opt-in, not the default path. These are public
-// on-chain addresses referenced for proof; the V2 contract source stays isolated
-// on its own branch. A canonical executeStrategyWithPyth execution is verified
-// on mainnet (executionTx below).
+// ── Trustless Oracle Vault (V2) — Genesis Canary ────────────────────────────
+// Deployed + validated on 0G mainnet as a proof vault. It is NOT the final
+// public V2 vault until a V2 execution has the same durable audit
+// reasoning recovery as Standard vaults. These public on-chain addresses remain
+// referenced for proof; the Standard path is unaffected.
 export const TRUSTLESS_VAULT = {
-  status: "Live Beta · verified on 0G mainnet",
+  status: "Genesis Canary · proof vault",
   explorer: "https://chainscan.0g.ai",
   factory: "0xA3588d1964F7CeCDcFac15e38D286554955CF58C",
   implementation: "0x0F8b9A0c064306F938912658c96c681D8655140B",
