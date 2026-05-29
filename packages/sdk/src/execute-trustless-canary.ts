@@ -1,0 +1,80 @@
+#!/usr/bin/env tsx
+/**
+ * SECURE-BOX ONLY. Run where the agent key (0x981F…) and the 0G compute broker
+ * live — never on an untrusted machine. The key is read from the environment
+ * (.env), never hardcoded, never logged.
+ *
+ *   simulate (default):  pnpm --filter @steward/sdk execute:trustless-canary
+ *   send:                pnpm --filter @steward/sdk execute:trustless-canary -- --send
+ *
+ * One-shot, single-vault driver for a P4 executeStrategyWithPyth() proof on the
+ * canary vault. It does NOT modify the TEE / execution flow — it reuses the
+ * agent's setupGlobalContext() + executeOneIterationForVault() exactly as the
+ * live server does, scoped to the one canary vault address (the live agent never
+ * sees it: discoverVaults reads the standard factory, not VaultFactoryV2).
+ *
+ * Requires ORACLE_MODE=trustless-pyth so the vault path uses executeStrategyWithPyth.
+ * Run `preflight:trustless-execution` first; it gates the conditions read-only.
+ */
+
+import { setupGlobalContext, executeOneIterationForVault } from "./agent.js";
+import { getMarketSnapshot } from "./market.js";
+
+const CANARY_VAULT = "0x86cE22c597D0C4EC309ba166360686C39A3f40ed";
+
+async function main() {
+  const send = process.argv.includes("--send");
+  const mode = send ? "SEND" : "SIMULATE";
+  console.log(`=== execute-trustless-canary [${mode}] — vault ${CANARY_VAULT} ===\n`);
+
+  if (process.env.ORACLE_MODE !== "trustless-pyth") {
+    console.error("Refusing to run: set ORACLE_MODE=trustless-pyth (the vault uses executeStrategyWithPyth in this mode).");
+    process.exit(1);
+  }
+  if (!process.env.PRIVATE_KEY) {
+    console.error("Refusing to run: PRIVATE_KEY must be provided via the environment (.env on the secure box), not hardcoded.");
+    process.exit(1);
+  }
+
+  // Context setup validates the agent wallet, the 0G provider/broker, and the
+  // TEE signer-health gate (recovered signer bound to the active AgentINFT).
+  const ctx = await setupGlobalContext();
+  console.log(`agent wallet : ${ctx.walletAddress}`);
+  console.log(`signer health: ${ctx.signerHealth.ok ? "OK (TEE signer bound)" : "BLOCKED"}`);
+  if (!ctx.signerHealth.ok) {
+    console.error(
+      `✗ signer-health gate BLOCKED — provider signer ${ctx.signerHealth.providerSigner} ` +
+        `not bound to expected ${ctx.signerHealth.expectedSigner}. Aborting; funds untouched.`,
+    );
+    process.exit(1);
+  }
+
+  const market = await getMarketSnapshot();
+  console.log(`market       : ${market.riskSymbol}=$${market.priceUsd.toFixed(5)} (sources ${market.sourceCount}/${market.requiredSourceCount})\n`);
+
+  if (!send) {
+    console.log("SIMULATE only — context, broker, signer-health and market are ready.");
+    console.log("No inference requested, no transaction sent.");
+    console.log("Re-run with `-- --send` to perform the single trustless execution.");
+    console.log("(The vault still re-verifies Pyth + slippage on-chain; a swap that cannot clear reverts safely.)");
+    return;
+  }
+
+  console.log("SEND — requesting sealed inference and executing executeStrategyWithPyth on the canary...\n");
+  const outcome = await executeOneIterationForVault(ctx, CANARY_VAULT, market);
+  if (outcome.status === "executed") {
+    console.log(`\n=== executed — ${outcome.action} · tx ${outcome.txHash} ===`);
+    console.log(`amountIn ${outcome.amountIn} → amountOut ${outcome.amountOut}`);
+    console.log("Verify it:");
+    console.log(`  pnpm --filter @steward/sdk verify:trustless-execution -- --tx ${outcome.txHash}`);
+  } else {
+    console.log(`\n=== ${outcome.status} — ${outcome.reason} ===`);
+    console.log("No funds moved. If this is a safe skip (slippage/cooldown/etc.), re-run when conditions allow,");
+    console.log("or use one of the documented expected-revert proofs in docs/runbook-p4-trustless-execution.md.");
+  }
+}
+
+main().catch((err) => {
+  console.error("\n💥 execution driver failed:", err instanceof Error ? err.message : err);
+  process.exit(1);
+});

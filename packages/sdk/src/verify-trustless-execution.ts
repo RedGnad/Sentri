@@ -1,0 +1,155 @@
+#!/usr/bin/env tsx
+/**
+ * pnpm --filter @steward/sdk verify:trustless-execution --tx <hash>
+ *
+ * Read-only, key-less judge proof for ONE executeStrategyWithPyth() transaction
+ * on the canary vault. Parses the TrustlessOracleExecution event, cross-checks
+ * the on-chain execution log (for the TEE signer), and re-reads AgentINFT
+ * authorization. Exits 1 on any failure.
+ *
+ * Checks:
+ *  - event present and emitted by the canary vault
+ *  - event.agent == expected operator
+ *  - executionLogCount incremented (>= 1) and a log matches this intentHash
+ *  - Pyth freshness: (log.timestamp - pythPublishTime) <= pythMaxAge (60s)
+ *  - Pyth confidence: pythConfBps <= pythMaxConfBps (200)
+ *  - recovered TEE signer (from the log) is bound to the AgentINFT
+ *
+ * Prints intentHash, responseHash, signer, pythPrice, pythPublishTime,
+ * pythConfBps, amountIn, amountOut.
+ */
+
+import { ethers } from "ethers";
+
+const RPC = process.env.RPC_URL ?? "https://evmrpc.0g.ai";
+const EXPLORER = "https://chainscan.0g.ai";
+
+const A = {
+  vault: "0x86cE22c597D0C4EC309ba166360686C39A3f40ed",
+  agent: "0x981F6E0Ea94f45fDB8ee7680DC862212E3C720e0",
+  agentNFT: "0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951",
+};
+const PYTH_MAX_AGE = 60n;
+const PYTH_MAX_CONF_BPS = 200n;
+const ACTIONS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"];
+
+const EXEC_EVENT_ABI = [
+  "event TrustlessOracleExecution(address indexed vault, address indexed agent, bytes32 indexed intentHash, bytes32 responseHash, bytes32 pythPriceId, uint256 pythPrice, uint256 pythPublishTime, uint256 pythConfBps, uint256 amountIn, uint256 amountOut, uint256 timestamp)",
+];
+const VAULT_ABI = [
+  "function executionLogCount() view returns (uint256)",
+  "function executionLogs(uint256) view returns (uint256 timestamp, uint8 action, uint256 amountIn, uint256 amountOut, uint256 tvlAfter, bytes32 intentHash, bytes32 responseHash, address teeSigner, bytes32 teeAttestation, uint256 deadline, uint256 pythPrice, uint256 pythPublishTime, uint256 pythConfBps)",
+];
+const INFT_ABI = ["function isActiveAgentWithSigner(address,address) view returns (bool)"];
+
+let failures = 0;
+function check(label: string, ok: boolean, detail: string) {
+  console.log(`  ${ok ? "✓" : "✗"} ${label}: ${detail}`);
+  if (!ok) failures++;
+}
+const eqAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+function parseTxArg(): string {
+  const i = process.argv.indexOf("--tx");
+  const tx = i >= 0 ? process.argv[i + 1] : undefined;
+  if (!tx || !/^0x[0-9a-fA-F]{64}$/.test(tx)) {
+    console.error("Usage: verify:trustless-execution --tx <0x… 32-byte tx hash>");
+    process.exit(1);
+  }
+  return tx;
+}
+
+async function main() {
+  const txHash = parseTxArg();
+  console.log("=== Verify trustless execution — 0G mainnet ===\n");
+  console.log(`tx : ${EXPLORER}/tx/${txHash}\n`);
+
+  const provider = new ethers.JsonRpcProvider(RPC);
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) {
+    console.error("✗ transaction not found / not yet mined.");
+    process.exit(1);
+  }
+  check("tx status success", receipt.status === 1, `status=${receipt.status}`);
+
+  // Parse TrustlessOracleExecution from the receipt logs.
+  const iface = new ethers.Interface(EXEC_EVENT_ABI);
+  let ev: ethers.LogDescription | null = null;
+  let emitter = "";
+  for (const log of receipt.logs) {
+    try {
+      const parsed = iface.parseLog({ topics: log.topics as string[], data: log.data });
+      if (parsed?.name === "TrustlessOracleExecution") {
+        ev = parsed;
+        emitter = log.address;
+        break;
+      }
+    } catch {
+      /* not our event */
+    }
+  }
+  if (!ev) {
+    console.error("✗ no TrustlessOracleExecution event in this tx — not a trustless execution.");
+    process.exit(1);
+  }
+
+  const a = ev.args;
+  check("emitted by canary vault", eqAddr(emitter, A.vault), emitter);
+  check("event.vault == canary vault", eqAddr(a.vault, A.vault), a.vault);
+  check("event.agent == operator", eqAddr(a.agent, A.agent), a.agent);
+
+  const stalenessSec = a.timestamp - a.pythPublishTime;
+  check(
+    "Pyth freshness within maxAge",
+    stalenessSec >= 0n && stalenessSec <= PYTH_MAX_AGE,
+    `${stalenessSec}s (<= ${PYTH_MAX_AGE}s)`,
+  );
+  check("Pyth confidence within bound", a.pythConfBps <= PYTH_MAX_CONF_BPS, `${a.pythConfBps}bps (<= ${PYTH_MAX_CONF_BPS})`);
+
+  // Cross-check the on-chain execution log (the event has no teeSigner field).
+  const vault = new ethers.Contract(A.vault, VAULT_ABI, provider);
+  const count: bigint = await vault.executionLogCount();
+  check("executionLogCount incremented", count >= 1n, count.toString());
+
+  let matched: Awaited<ReturnType<typeof vault.executionLogs>> | null = null;
+  for (let i = count - 1n; i >= 0n && i > count - 11n; i--) {
+    const log = await vault.executionLogs(i);
+    if (eqAddr(log.intentHash, a.intentHash)) {
+      matched = log;
+      break;
+    }
+  }
+  if (!matched) {
+    console.error("✗ no execution log matches this tx's intentHash (within the last 10).");
+    process.exit(1);
+  }
+  const teeSigner: string = matched.teeSigner;
+  check("log pyth fields match event", matched.pythPrice === a.pythPrice, `price ${matched.pythPrice}`);
+
+  const inft = new ethers.Contract(A.agentNFT, INFT_ABI, provider);
+  const signerBound: boolean = await inft.isActiveAgentWithSigner(A.agent, teeSigner);
+  check("recovered TEE signer bound to AgentINFT", signerBound, teeSigner);
+
+  console.log("\n=== Execution detail ===");
+  console.log(`  action        : ${ACTIONS[Number(matched.action)] ?? matched.action}`);
+  console.log(`  intentHash    : ${a.intentHash}`);
+  console.log(`  responseHash  : ${a.responseHash}`);
+  console.log(`  teeSigner     : ${teeSigner}`);
+  console.log(`  pythPriceId   : ${a.pythPriceId}`);
+  console.log(`  pythPrice     : ${a.pythPrice}`);
+  console.log(`  pythPublishTime: ${a.pythPublishTime} (${new Date(Number(a.pythPublishTime) * 1000).toISOString()})`);
+  console.log(`  pythConfBps   : ${a.pythConfBps}`);
+  console.log(`  amountIn      : ${a.amountIn}`);
+  console.log(`  amountOut     : ${a.amountOut}`);
+
+  if (failures > 0) {
+    console.error(`\n✗ ${failures} check(s) failed.`);
+    process.exit(1);
+  }
+  console.log("\n✅ Verified trustless executeStrategyWithPyth execution on the canary vault.");
+}
+
+main().catch((err) => {
+  console.error("\n💥 verify failed:", err instanceof Error ? err.message : err);
+  process.exit(1);
+});
