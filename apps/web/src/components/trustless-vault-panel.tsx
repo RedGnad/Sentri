@@ -1,6 +1,5 @@
 "use client";
 
-import { ExternalLink, ShieldCheck, Lock, Coins, Gauge } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TRUSTLESS_VAULT, EARLY_ACCESS_URL } from "@/config/contracts";
@@ -20,27 +19,21 @@ function ProofRow({ label, value, href }: { label: string; value: string; href: 
       <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">{label}</span>
       <span className="flex items-center gap-2 font-mono text-[12px] text-amber tabular">
         {short}
-        <ExternalLink className="h-3 w-3 text-ink-faint group-hover:text-amber transition-colors" />
       </span>
     </a>
   );
 }
 
 function Pillar({
-  icon,
   title,
   children,
 }: {
-  icon: React.ReactNode;
   title: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="border border-hairline bg-bg-elev/20 p-5">
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-phosphor">{icon}</span>
-        <h3 className="font-mono text-[10px] uppercase tracking-kicker text-ink">{title}</h3>
-      </div>
+      <h3 className="font-mono text-[10px] uppercase tracking-kicker text-ink mb-3">{title}</h3>
       <div className="space-y-1.5">{children}</div>
     </div>
   );
@@ -57,9 +50,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
       <div className="border-l-2 border-phosphor/60 pl-5 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Advanced · Live Beta</Badge>
-          <Badge variant="success">
-            <ShieldCheck className="h-3 w-3" /> Verified Oracle
-          </Badge>
+          <Badge variant="success">Verified Oracle</Badge>
           <span className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-phosphor">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
             {T.status}
@@ -74,19 +65,19 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
           execution transaction before policy checks and swap execution.
         </p>
         <p className="font-mono text-[10px] text-ink-faint leading-relaxed max-w-2xl">
-          ⚠ V2 executions may cost more gas due to pull-oracle updates.
+          V2 executions may cost more gas due to pull-oracle updates.
         </p>
       </div>
 
       {/* Two pillars: trust model + economics */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Pillar icon={<Lock className="h-4 w-4" />} title="Trust model">
+        <Pillar title="Trust model">
           <Point>Pyth pull oracle verified on-chain in the same transaction.</Point>
           <Point>Confidence-interval and staleness bounds enforced by the contract.</Point>
           <Point>Sealed TEE reasoning (private strategy, verifiable proof).</Point>
           <Point>On-chain policy bounds + owner kill-switch.</Point>
         </Pillar>
-        <Pillar icon={<Coins className="h-4 w-4" />} title="Economics">
+        <Pillar title="Economics">
           <Point>
             Oracle fee ≈ <span className="text-ink">{T.oracleFeeOg} OG</span> per execution
             (pull-based, paid on-chain).
@@ -96,10 +87,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
             <span className="text-ink">≥ ${T.recommendedMinTreasuryUsd.toLocaleString()}</span>.
           </Point>
           <Point>
-            <span className="inline-flex items-center gap-1">
-              <Gauge className="h-3 w-3" /> Lower-frequency, higher-value execution
-            </span>{" "}
-            — not micro-vault retail.
+            Lower-frequency, higher-value execution — not micro-vault retail.
           </Point>
         </Pillar>
       </div>

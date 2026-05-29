@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { decodeEventLog, parseUnits } from "viem";
-import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -224,9 +223,7 @@ function VaultTypeSelect({
         >
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <Badge variant="warning">Advanced · Live Beta</Badge>
-            <Badge variant="success">
-              <ShieldCheck className="h-3 w-3" /> Verified Oracle
-            </Badge>
+            <Badge variant="success">Verified Oracle</Badge>
           </div>
           <h3 className="font-serif text-2xl text-ink mb-2">Trustless Oracle Vault</h3>
           <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
