@@ -170,46 +170,6 @@ export default function VaultAuditPage() {
         </span>
       </div>
 
-      {visibleRejections.length > 0 && (
-        <div className="border border-hairline bg-bg-elev/10 mb-4">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3 text-left"
-            onClick={() => setRejectionsExpanded((v) => !v)}
-          >
-            <span className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-kicker">
-              {blockedActions.length > 0 && (
-                <span className="flex items-center gap-2 text-alert">
-                  <ShieldX className="h-3.5 w-3.5" />
-                  {blockedActions.length} blocked action
-                  {blockedActions.length === 1 ? "" : "s"}
-                </span>
-              )}
-              {verifierHolds.length > 0 && (
-                <span className="flex items-center gap-2 text-amber">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  {verifierHolds.length} verifier hold
-                  {verifierHolds.length === 1 ? "" : "s"}
-                </span>
-              )}
-            </span>
-            {rejectionsExpanded ? (
-              <ChevronUp className="h-4 w-4 text-ink-dim" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-ink-dim" />
-            )}
-          </button>
-          {rejectionsExpanded && (
-            <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
-              {groupRejections([...blockedActions, ...verifierHolds]).map(
-                (group, i) => (
-                  <RejectionGroup key={i} entries={group} />
-                ),
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {logCount === 0 ? (
         <div className="border border-hairline bg-bg-elev/20 py-20 text-center">
           <p className="font-serif italic text-xl text-ink-dim mb-2">
@@ -264,6 +224,50 @@ export default function VaultAuditPage() {
             />
           );
         })
+      )}
+
+      {visibleRejections.length > 0 && (
+        <div className="border border-hairline bg-bg-elev/10 mt-6">
+          <button
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-bg-elev/20 transition-colors"
+            onClick={() => setRejectionsExpanded((v) => !v)}
+          >
+            <span className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+              <span className="inline-block w-1 h-1 rounded-full bg-phosphor shrink-0" />
+              <span>Policy enforcement</span>
+              {blockedActions.length > 0 && (
+                <>
+                  <span className="text-ink-faint">·</span>
+                  <span>
+                    {blockedActions.length} rejected
+                  </span>
+                </>
+              )}
+              {verifierHolds.length > 0 && (
+                <>
+                  <span className="text-ink-faint">·</span>
+                  <span>
+                    {verifierHolds.length} verifier hold{verifierHolds.length === 1 ? "" : "s"}
+                  </span>
+                </>
+              )}
+            </span>
+            {rejectionsExpanded ? (
+              <ChevronUp className="h-4 w-4 text-ink-dim" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-ink-dim" />
+            )}
+          </button>
+          {rejectionsExpanded && (
+            <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
+              {groupRejections([...blockedActions, ...verifierHolds]).map(
+                (group, i) => (
+                  <RejectionGroup key={i} entries={group} />
+                ),
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
