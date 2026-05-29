@@ -14,6 +14,7 @@
     "setup-broker": "tsx src/setup-broker.ts",
     "check-signer": "tsx src/check-agent-signer.ts",
     "inspect-vault": "tsx src/inspect-vault.ts",
+    "inspect:storage-roots": "tsx src/inspect-storage-roots.ts",
     "verify:trustless-canary": "tsx src/verify-trustless-canary.ts",
     "verify:trustless-execution": "tsx src/verify-trustless-execution.ts",
     "preflight:trustless-execution": "tsx src/preflight-trustless-execution.ts",
