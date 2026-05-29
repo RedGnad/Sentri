@@ -136,7 +136,14 @@ For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proo
 
 **Exact scope (no overclaiming).** Pyth price is pull-verified on-chain per execution. The TEE binding is signer-based (ECDSA recovery against the AgentINFT-bound signer); the contract does not parse the full TEE attestation report, and there is **no on-chain Jaine/Pyth cross-check yet**.
 
-Verify it yourself (read-only, no key): `pnpm --filter @steward/sdk verify:trustless-canary` (deploy + authorization) and `verify:trustless-execution -- --tx 0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa` (the execution).
+Verify it yourself (read-only, no key) from a fresh clone:
+
+```bash
+pnpm install
+pnpm --filter @steward/sdk verify:summary -- --tx 0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa
+```
+
+Output ends with `VERDICT: PASS`. This wraps `verify:trustless-execution` (Pyth + TEE + policy + explorer) and prints the off-chain 0G Storage anchors for the audit blob. Supplementary: `pnpm --filter @steward/sdk verify:trustless-canary` verifies the deploy + factory authorization separately.
 
 ### 0G Galileo Testnet (chain `16602`)
 
@@ -215,7 +222,7 @@ The chain verifies: registered agent caller, active Agent INFT bound to the reco
 
 The chain does **not** verify the full TEE attestation report, does not parse the model JSON, and does not compute the strategy itself. The agent decides; the contract enforces bounds. A malicious agent inside the bounded envelope can still pick the worst-of-allowed actions, but cannot exceed risk exposure, drawdown, slippage, or cooldown.
 
-The market price uses a 2-source minimum: on mainnet the agent fetches Jaine `slot0()` on-chain plus Pyth `0G/USD` via Hermes, both must succeed and agree within the spread bound, and the median is keeper-pushed to `SentriPriceFeed`. Pyth on-chain pull evidence path is implemented; trading still uses `SentriPriceFeed` enforcement. CoinGecko is opportunistic for 24h change only and never gates trading.
+Standard vaults use `SentriPriceFeed` enforcement: on mainnet the agent fetches Jaine `slot0()` on-chain plus Pyth `0G/USD` via Hermes, both must succeed and agree within the spread bound, and the median is keeper-pushed to `SentriPriceFeed`. Advanced opt-in vaults use `executeStrategyWithPyth` with a Pyth pull update verified on-chain in the same transaction as the swap (see [`docs/oracle-proof.md`](./docs/oracle-proof.md), canonical tx `0x45ab…7317fa`). CoinGecko is opportunistic for 24h change only and never gates trading.
 
 For the complete enumeration, see [`docs/architecture.md#trust-boundary`](./docs/architecture.md#trust-boundary).
 
@@ -227,7 +234,7 @@ This is a forward-looking section.
 
 **Next hardening (weeks)**
 
-- Pyth on-chain pull integration: **live on mainnet as the Advanced tier** (see "Trustless Oracle Vault — Advanced Tier" above) — the vault reads the deployed Pyth contract (`0x2880ab15…7b43`) directly via `updatePriceFeeds`, and a canonical economic execution is verified on mainnet (tx `0x45ab…7317fa`). Remaining: extend the standard runtime to auto-cycle Advanced vaults (currently on-demand per vault) and surface per-vault tier selection in the deploy UI.
+- **Extend the standard keeper runtime to auto-cycle Advanced vaults** — each Advanced execution is currently triggered on-demand per vault. Surface per-vault tier selection in the deploy UI. (Pyth pull integration itself is already live on mainnet for the Advanced tier — see "Trustless Oracle Vault — Advanced Tier" above; canonical tx `0x45ab…7317fa`.)
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
 - - Harden canonical audit recovery from 0G Storage Log/blob + KV index: canonical blobs and root-based recovery are live; next step is full generic offline verification and restart-proof indexing without demo recovery records.
 - Third-party security audit.

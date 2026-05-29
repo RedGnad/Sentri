@@ -69,7 +69,9 @@ A high-assurance tier that removes the keeper-pushed step: each executeStrategyW
 • Pyth (0G mainnet): 0x2880aB155794e7179c9eE2e38200202908C17B43 — feed Crypto.0G/USD 0xfa9e8d45…ea3070
 • createVault tx: 0x81cff80ace50a2cfb8051c015505667c5df7812e754a0c4b56a6fdf410f4fcb8
 • setAuthorizedFactory tx (owner): 0x7c018f9fbd7050a7369267be0272c7a31bf9a9bf7cb16eea5c224446887a3d55
-• Read-only verification (no key): pnpm --filter @steward/sdk verify:trustless-canary
+• Read-only verification (no key, single command from a fresh clone):
+  pnpm install && pnpm --filter @steward/sdk verify:summary -- --tx 0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa
+  (Output ends with VERDICT: PASS. Wraps verify:trustless-execution + 0G Storage anchors. Supplementary deploy + authorization check: pnpm --filter @steward/sdk verify:trustless-canary)
 
 A canonical executeStrategyWithPyth execution is verified on 0G mainnet (tx hash + verify command in the README "Trustless Oracle Vault — Advanced Tier" section, docs/runbook-p4-trustless-execution.md, and the one-page docs/oracle-proof.md).
 
@@ -90,14 +92,14 @@ Exact scope (no overclaiming): the TEE binding is signer-based (ECDSA recovery a
 
 Solidity 0.8.24 + Foundry + OpenZeppelin v5. 105 tests passing across 6 suites. TypeScript agent runtime using @0glabs/0g-serving-broker (TeeML) and @0gfoundation/0g-ts-sdk (Storage). Next.js 14 + wagmi v2 + viem dashboard, editorial Bloomberg-meets-academic-paper design.
 
-Pyth on-chain pull evidence path is implemented; trading still uses SentriPriceFeed enforcement. The owner has slippage-guarded deleverage recourse through emergencyDeleverageAndWithdraw(minBaseOut).
+Standard vaults use SentriPriceFeed enforcement (Jaine slot0 + Pyth Hermes off-chain quorum, keeper-pushed). Advanced opt-in vaults use executeStrategyWithPyth with a Pyth pull update verified on-chain in the same transaction as the swap (live on mainnet — canonical tx 0x45ab…7317fa; see docs/oracle-proof.md). The owner has slippage-guarded deleverage recourse through emergencyDeleverageAndWithdraw(minBaseOut).
 
 
 → Roadmap (forward-looking — not live in v1)
 
 v1.1 — hardening (weeks):
 
-• Pyth on-chain pull integration — vault reads Pyth's deployed contract (0x2880ab15…7b43) directly via updatePriceFeeds, removing the keeper-pushed step.
+• Extend the standard keeper runtime to auto-cycle Advanced vaults — each Advanced execution is currently triggered on-demand per vault (Pyth pull integration itself is already live on mainnet for the Advanced tier — see canonical tx 0x45ab…7317fa above).
 • Jaine TWAP cross-check on slot0() once observation cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
 • Complete canonical audit recovery from 0G Storage Log/blob + KV index: blob already written per execution; harden download path for full offline verification.
 • Third-party security audit.
