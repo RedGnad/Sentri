@@ -95,3 +95,20 @@ Canonical execution: **`0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0b
 verified on-chain in the same tx (price 0.42406745, 22 bps conf, 9 s fresh);
 `executionLogCount` 0 → 1. `verify:trustless-execution --tx <that hash>` passes
 all checks. The trustless oracle execution path is now end-to-end verified.
+
+## Merge-readiness (V2-complet → main) — NOT merged yet
+
+Prepared so a future V2-complet merge cannot regress the product:
+
+- `apps/web` on this branch is synced to `main` (dual-tier "Advanced · Live Beta"
+  deploy page). The earlier V2 deploy page that **defaulted to `trustless-pyth`**
+  is removed — Standard is the path, V2 is opt-in only. No "coming soon".
+- No global `ORACLE_MODE=trustless-pyth`: the agent defaults to `standard-evidence`
+  (`process.env.ORACLE_MODE ?? "standard-evidence"`); `render.yaml` sets no
+  ORACLE_MODE; the trustless path is reached only via the explicit one-shot
+  driver. No existing vault is auto-migrated.
+- Standard execution path is byte-identical; every V2 read/exec change is gated on
+  `ORACLE_MODE === "trustless-pyth"` / `isTrustless`.
+- **Test note:** the 3 failing `audit-recovery` tests (suite reports 77/80) fail
+  **identically on `main`** and are unrelated to V2 — not introduced here. All
+  other sdk tests pass; tsc + lint clean.

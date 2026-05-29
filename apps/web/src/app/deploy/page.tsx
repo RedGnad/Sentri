@@ -6,9 +6,12 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { decodeEventLog, parseUnits } from "viem";
+import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/page-header";
+import { TrustlessVaultPanel } from "@/components/trustless-vault-panel";
 import { useCreateVault } from "@/hooks/use-factory";
 import { useApproveUsdc, useUsdcBalance, useUsdcAllowance, useMintUsdc } from "@/hooks/use-vault";
 import {
@@ -23,32 +26,15 @@ import {
 import { formatUSDC, cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
-type OracleMode = "standard-evidence" | "trustless-pyth";
-
-const ORACLE_MODES: { mode: OracleMode; label: string; description: string; bullets: string[]; recommended: boolean }[] = [
-  {
-    mode: "standard-evidence",
-    label: "Standard Evidence Oracle",
-    description: "Jaine + Pyth evidence checked by the agent, keeper-pushed to SentriPriceFeed before execution.",
-    bullets: ["Price pushed by authorized keeper", "Multi-source off-chain sanity check", "Live on mainnet today"],
-    recommended: false,
-  },
-  {
-    mode: "trustless-pyth",
-    label: "Trustless Pyth Oracle",
-    description: "A Pyth-signed price update is verified by the vault in the same transaction before funds move. The keeper is removed from the execution path.",
-    bullets: ["Pyth update carried in the execution tx", "On-chain freshness + confidence check", "No keeper-pushed price feed"],
-    recommended: true,
-  },
-];
+type VaultType = "standard" | "trustless" | null;
 
 export default function DeployPage() {
   const router = useRouter();
   const { address } = useAccount();
 
+  const [vaultType, setVaultType] = useState<VaultType>(null);
   const [step, setStep] = useState<Step>(1);
   const [tier, setTier] = useState<number>(PresetTier.Balanced);
-  const [oracleMode, setOracleMode] = useState<OracleMode>("trustless-pyth");
   const [depositAmount, setDepositAmount] = useState<string>("1000");
 
   const { data: usdcBalance } = useUsdcBalance(address);
@@ -111,20 +97,43 @@ export default function DeployPage() {
 
   // ── Render ───────────────────────────────────────────────────────────
 
+  const subtitle =
+    vaultType === "trustless"
+      ? "Premium high-assurance execution path"
+      : vaultType === "standard"
+        ? "Preset policy · optional seed deposit · owner-controlled after deployment"
+        : "Choose an execution tier";
+
   return (
     <div className="space-y-10 max-w-3xl">
-      <PageHeader
-        num="02"
-        section="Deploy"
-        title="New Vault"
-        subtitle="Preset policy · optional seed deposit · owner-controlled after deployment"
-      />
+      <PageHeader num="02" section="Deploy" title="New Vault" subtitle={subtitle} />
 
-      <Stepper current={step} />
-
-      {step === 1 && (
-        <PresetStep tier={tier} setTier={setTier} oracleMode={oracleMode} setOracleMode={setOracleMode} onNext={() => setStep(2)} />
+      {vaultType === null && (
+        <VaultTypeSelect
+          onStandard={() => setVaultType("standard")}
+          onTrustless={() => setVaultType("trustless")}
+        />
       )}
+
+      {vaultType === "trustless" && (
+        <TrustlessVaultPanel onBack={() => setVaultType(null)} />
+      )}
+
+      {vaultType === "standard" && (
+        <div className="space-y-10">
+          <button
+            type="button"
+            onClick={() => setVaultType(null)}
+            className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber transition-colors"
+          >
+            ← Vault type
+          </button>
+
+          <Stepper current={step} />
+
+          {step === 1 && (
+            <PresetStep tier={tier} setTier={setTier} onNext={() => setStep(2)} />
+          )}
 
       {step === 2 && (
         <DepositStep
@@ -142,7 +151,6 @@ export default function DeployPage() {
       {step === 3 && (
         <ConfirmStep
           tier={tier}
-          oracleMode={oracleMode}
           depositAmount={depositAmount}
           onBack={() => setStep(2)}
           onNext={() => setStep(4)}
@@ -164,6 +172,77 @@ export default function DeployPage() {
           onBack={() => setStep(3)}
         />
       )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VaultTypeSelect({
+  onStandard,
+  onTrustless,
+}: {
+  onStandard: () => void;
+  onTrustless: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <h2 className="font-serif text-3xl text-ink">Choose an execution tier</h2>
+      <p className="font-serif italic text-base text-ink-dim">
+        Two paths, one agent doctrine. Standard for cheap, frequent retail treasuries; Trustless
+        Oracle for premium, high-assurance execution on larger capital.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <button
+          type="button"
+          onClick={onStandard}
+          className="group border border-hairline hover:border-hairline-strong bg-bg-elev/20 p-6 text-left transition-colors flex flex-col"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Badge variant="success">Live</Badge>
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">Retail</span>
+          </div>
+          <h3 className="font-serif text-2xl text-ink mb-2">Standard Vault</h3>
+          <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
+            Keeper-attested oracle. Low-cost, frequent rebalancing, no per-execution oracle fee.
+            The retail-friendly path.
+          </p>
+          <ul className="space-y-1.5 mb-5">
+            <li className="font-mono text-[10px] text-ink-dim">· cheap · frequent execution</li>
+            <li className="font-mono text-[10px] text-ink-dim">· sealed TEE reasoning + on-chain policy</li>
+            <li className="font-mono text-[10px] text-ink-dim">· any treasury size</li>
+          </ul>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-amber group-hover:text-ink transition-colors">
+            Create →
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onTrustless}
+          className="group border border-orchid/30 hover:border-orchid/60 bg-bg-elev/30 p-6 text-left transition-colors flex flex-col"
+        >
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <Badge variant="warning">Advanced · Live Beta</Badge>
+            <Badge variant="success">
+              <ShieldCheck className="h-3 w-3" /> Verified Oracle
+            </Badge>
+          </div>
+          <h3 className="font-serif text-2xl text-ink mb-2">Trustless Oracle Vault</h3>
+          <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
+            Fresh Pyth market data verified on-chain inside the execution transaction, before
+            policy checks and swap. Higher-assurance, opt-in.
+          </p>
+          <ul className="space-y-1.5 mb-5">
+            <li className="font-mono text-[10px] text-ink-dim">· verified oracle per execution</li>
+            <li className="font-mono text-[10px] text-ink-dim">· recommended ≥ $1,000 treasury · higher gas</li>
+            <li className="font-mono text-[10px] text-ink-dim">· verified on 0G mainnet</li>
+          </ul>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-phosphor group-hover:text-ink transition-colors">
+            Explore tier →
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -189,111 +268,53 @@ function Stepper({ current }: { current: Step }) {
   );
 }
 
-function PresetStep({
-  tier, setTier, oracleMode, setOracleMode, onNext,
-}: {
-  tier: number; setTier: (t: number) => void;
-  oracleMode: OracleMode; setOracleMode: (m: OracleMode) => void;
-  onNext: () => void;
-}) {
+function PresetStep({ tier, setTier, onNext }: { tier: number; setTier: (t: number) => void; onNext: () => void }) {
   const tiers = [PresetTier.Conservative, PresetTier.Balanced, PresetTier.Aggressive] as const;
   return (
-    <div className="space-y-8">
-      {/* ── Risk preset ── */}
-      <div className="space-y-5">
-        <h2 className="font-serif text-3xl text-ink">Choose a risk preset</h2>
-        <p className="font-serif italic text-base text-ink-dim">
-          Presets are the fastest safe path: max {RISK_SYMBOL} exposure, drawdown freeze,
-          slippage cap, and minimum action spacing. The vault owner can update these
-          bounds on-chain after deployment.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {tiers.map((t) => {
-            const preset = PRESET_LABELS[t];
-            const selected = tier === t;
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTier(t)}
-                className={cn(
-                  "border p-5 text-left transition-colors",
-                  selected ? "border-amber bg-bg-elev/40" : "border-hairline hover:border-hairline-strong bg-bg-elev/20",
-                )}
-              >
-                <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-2">
-                  Tier {String(t).padStart(2, "0")}
+    <div className="space-y-6">
+      <h2 className="font-serif text-3xl text-ink">Choose a risk preset</h2>
+      <p className="font-serif italic text-base text-ink-dim">
+        Presets are the fastest safe path: max {RISK_SYMBOL} exposure, drawdown freeze,
+        slippage cap, and minimum action spacing. The vault owner can update these
+        bounds on-chain after deployment.
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {tiers.map((t) => {
+          const preset = PRESET_LABELS[t];
+          const selected = tier === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTier(t)}
+              className={cn(
+                "border p-5 text-left transition-colors",
+                selected ? "border-amber bg-bg-elev/40" : "border-hairline hover:border-hairline-strong bg-bg-elev/20",
+              )}
+            >
+              <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-2">
+                Tier {String(t).padStart(2, "0")}
+              </div>
+              <h3 className="font-serif text-2xl text-ink mb-2">{preset.name}</h3>
+              <p className="text-[12px] text-ink-dim leading-relaxed mb-4 min-h-[40px]">{preset.description}</p>
+              <ul className="space-y-1.5">
+                {preset.bullets.map((b) => (
+                  <li key={b} className="font-mono text-[10px] text-ink-dim">· {b}</li>
+                ))}
+              </ul>
+              {selected && (
+                <div className="font-mono text-[9px] uppercase tracking-kicker text-amber mt-4 flex items-center gap-1.5">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />
+                  Selected
                 </div>
-                <h3 className="font-serif text-2xl text-ink mb-2">{preset.name}</h3>
-                <p className="text-[12px] text-ink-dim leading-relaxed mb-4 min-h-[40px]">{preset.description}</p>
-                <ul className="space-y-1.5">
-                  {preset.bullets.map((b) => (
-                    <li key={b} className="font-mono text-[10px] text-ink-dim">· {b}</li>
-                  ))}
-                </ul>
-                {selected && (
-                  <div className="font-mono text-[9px] uppercase tracking-kicker text-amber mt-4 flex items-center gap-1.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />
-                    Selected
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
-          The agent can check often; the vault enforces how often it may actually execute.
-        </p>
+              )}
+            </button>
+          );
+        })}
       </div>
-
-      {/* ── Oracle mode ── */}
-      <div className="space-y-4">
-        <div>
-          <h3 className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-1">Oracle mode</h3>
-          <p className="font-serif italic text-sm text-ink-dim">
-            Choose how the execution price is verified. Trustless Pyth is recommended: the vault verifies the price on-chain, removing the keeper from the execution path.
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {ORACLE_MODES.map(({ mode, label, description, bullets, recommended }) => {
-            const selected = oracleMode === mode;
-            return (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setOracleMode(mode)}
-                className={cn(
-                  "border p-5 text-left transition-colors",
-                  selected ? "border-amber bg-bg-elev/40" : "border-hairline hover:border-hairline-strong bg-bg-elev/20",
-                )}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">Oracle</span>
-                  {recommended && (
-                    <span className="font-mono text-[9px] uppercase tracking-kicker text-phosphor border border-phosphor/30 px-1.5 py-0.5">
-                      Recommended
-                    </span>
-                  )}
-                </div>
-                <h4 className="font-serif text-xl text-ink mb-1.5">{label}</h4>
-                <p className="text-[11px] text-ink-dim leading-relaxed mb-3">{description}</p>
-                <ul className="space-y-1">
-                  {bullets.map((b) => (
-                    <li key={b} className="font-mono text-[10px] text-ink-dim">· {b}</li>
-                  ))}
-                </ul>
-                {selected && (
-                  <div className="font-mono text-[9px] uppercase tracking-kicker text-amber mt-3 flex items-center gap-1.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber" />
-                    Selected
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
+      <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+        The agent can check often; the vault enforces how often it may actually execute.
+      </p>
       <div className="flex justify-end">
         <Button onClick={onNext}>Continue → Deposit</Button>
       </div>
@@ -380,20 +401,17 @@ function DepositStep({
 
 function ConfirmStep({
   tier,
-  oracleMode,
   depositAmount,
   onBack,
   onNext,
 }: {
   tier: number;
-  oracleMode: OracleMode;
   depositAmount: string;
   onBack: () => void;
   onNext: () => void;
 }) {
   const preset = PRESET_LABELS[tier];
   const depositNum = Number(depositAmount) || 0;
-  const oracleMeta = ORACLE_MODES.find((o) => o.mode === oracleMode)!;
 
   return (
     <div className="space-y-6">
@@ -412,18 +430,6 @@ function ConfirmStep({
         <ConfirmRow label="Owner" value="You (the connected wallet)" />
         <ConfirmRow label="Agent" value="0G Sealed Inference (shared)" />
         <ConfirmRow label="Strategy" value={`Stables-first · max 30% ${RISK_SYMBOL} · auto-deleverage on drawdown`} />
-        <ConfirmRow
-          label="Oracle mode"
-          value={oracleMeta.label}
-          valueClass={oracleMode === "trustless-pyth" ? "text-phosphor" : "text-ink"}
-        />
-        {oracleMode === "trustless-pyth" && (
-          <ConfirmRow
-            label="Price verification"
-            value="Pyth-signed update verified on-chain in the same tx — no keeper-pushed price feed"
-            valueClass="text-ink-dim"
-          />
-        )}
       </ul>
 
       <div className="flex justify-between">

@@ -200,9 +200,11 @@ export default function VaultAuditPage() {
           </button>
           {rejectionsExpanded && (
             <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
-              {[...blockedActions, ...verifierHolds].map((r, i) => (
-                <RejectionRow key={i} entry={r} />
-              ))}
+              {groupRejections([...blockedActions, ...verifierHolds]).map(
+                (group, i) => (
+                  <RejectionGroup key={i} entries={group} />
+                ),
+              )}
             </div>
           )}
         </div>
@@ -708,18 +710,122 @@ const REJECTION_PHASE_LABEL: Record<string, string> = {
   "executeStrategy": "Execute tx",
 };
 
-function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
-  const date = new Date(entry.timestamp);
+// Identical rejections (same type + errorCode + action + phase) recur every
+// cycle when a skip never executes a tx — the slippage guard and the defensive
+// verifier re-evaluate the same condition each loop. Collapse them into one
+// counted, time-ranged, expandable group so the trail stays honest (nothing
+// removed, every occurrence still reachable) without reading as noise.
+function rejectionGroupKey(entry: VaultRejectionEntry): string {
+  return `${entry.type}|${entry.errorCode ?? ""}|${entry.action ?? ""}|${entry.phase ?? ""}`;
+}
+
+function groupRejections(
+  entries: VaultRejectionEntry[],
+): VaultRejectionEntry[][] {
+  const groups = new Map<string, VaultRejectionEntry[]>();
+  const order: string[] = [];
+  for (const entry of entries) {
+    const key = rejectionGroupKey(entry);
+    const existing = groups.get(key);
+    if (existing) {
+      existing.push(entry);
+    } else {
+      groups.set(key, [entry]);
+      order.push(key);
+    }
+  }
+  return order.map((key) => groups.get(key)!);
+}
+
+function resolveSafeVerdict(entry: VaultRejectionEntry): string | null {
   const isVerifierHold = entry.type === "defensive-override";
-  const safeVerdict =
+  return (
     entry.verdict ??
     (entry.errorCode === "PriceStale"
       ? "Blocked safely: oracle price was stale. No funds moved."
       : entry.safeNoFundsMoved
         ? "Blocked safely: no funds moved."
-      : isVerifierHold
-        ? "Verifier hold: model disagreed with policy, so no trade was sent."
-      : null);
+        : isVerifierHold
+          ? "Verifier hold: model disagreed with policy, so no trade was sent."
+          : null)
+  );
+}
+
+function RejectionGroup({ entries }: { entries: VaultRejectionEntry[] }) {
+  const [open, setOpen] = useState(false);
+  if (entries.length === 1) {
+    return <RejectionRow entry={entries[0]} />;
+  }
+  const first = entries[0];
+  const isVerifierHold = first.type === "defensive-override";
+  const verdict = resolveSafeVerdict(first);
+  const times = entries.map((e) => e.timestamp);
+  const earliest = new Date(Math.min(...times));
+  const latest = new Date(Math.max(...times));
+  const fmt = (d: Date) =>
+    d.toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+  const label =
+    first.action ?? REJECTION_TYPE_LABEL[first.type] ?? first.type;
+  return (
+    <div className="py-2.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full grid grid-cols-[auto_1fr_auto] gap-3 items-start text-left"
+      >
+        {isVerifierHold ? (
+          <ShieldCheck className="h-3.5 w-3.5 text-amber mt-0.5 shrink-0" />
+        ) : (
+          <ShieldX className="h-3.5 w-3.5 text-alert mt-0.5 shrink-0" />
+        )}
+        <div>
+          {verdict && (
+            <p
+              className={`font-mono text-[11px] leading-snug mb-1 ${isVerifierHold ? "text-amber" : "text-phosphor"}`}
+            >
+              {verdict}
+            </p>
+          )}
+          <p className="font-mono text-[11px] text-ink leading-snug">{label}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-ink-dim">
+            {first.errorCode && (
+              <code className="text-alert/80">{first.errorCode}</code>
+            )}
+            {first.phase && (
+              <span>phase: {REJECTION_PHASE_LABEL[first.phase] ?? first.phase}</span>
+            )}
+            {first.action && <span>action: {first.action}</span>}
+            <span>
+              first {fmt(earliest)} → last {fmt(latest)}
+            </span>
+          </div>
+        </div>
+        <div className="text-right shrink-0 flex items-center gap-2">
+          <span className="font-mono text-[10px] text-ink tabular">
+            ×{entries.length}
+          </span>
+          {open ? (
+            <ChevronUp className="h-3.5 w-3.5 text-ink-dim" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 text-ink-dim" />
+          )}
+        </div>
+      </button>
+      {open && (
+        <div className="mt-2 border-t border-hairline divide-y divide-hairline">
+          {entries.map((e, i) => (
+            <RejectionRow key={i} entry={e} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
+  const date = new Date(entry.timestamp);
+  const isVerifierHold = entry.type === "defensive-override";
+  const safeVerdict = resolveSafeVerdict(entry);
   return (
     <div className="py-2.5 grid grid-cols-[auto_1fr_auto] gap-3 items-start">
       {isVerifierHold ? (
