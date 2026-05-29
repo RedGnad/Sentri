@@ -401,11 +401,12 @@ export const ERC20_ABI = [
 // ── Trustless Oracle Vault (V2) — premium tier ──────────────────────────────
 // Deployed + validated on 0G mainnet (canary). The live agent does NOT yet
 // operate trustless vaults end-to-end, so the UI presents this as a validated,
-// activation-pending PREMIUM tier — never a live create flow. These are public
+// Live Beta / Advanced tier — opt-in, not the default path. These are public
 // on-chain addresses referenced for proof; the V2 contract source stays isolated
-// on its own branch.
+// on its own branch. A canonical executeStrategyWithPyth execution is verified
+// on mainnet (executionTx below).
 export const TRUSTLESS_VAULT = {
-  status: "Validated on 0G mainnet · activation pending",
+  status: "Live Beta · verified on 0G mainnet",
   explorer: "https://chainscan.0g.ai",
   factory: "0xA3588d1964F7CeCDcFac15e38D286554955CF58C",
   implementation: "0x0F8b9A0c064306F938912658c96c681D8655140B",
@@ -413,6 +414,7 @@ export const TRUSTLESS_VAULT = {
   pyth: "0x2880aB155794e7179c9eE2e38200202908C17B43",
   pythFeedId: "0xfa9e8d4591613476ad0961732475dc08969d248faca270cc6c47efe009ea3070",
   pythFeedLabel: "Crypto.0G/USD",
+  executionTx: "0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa",
   oracleFeeOg: 0.2,
   recommendedMinTreasuryUsd: 1000,
 } as const;

@@ -56,7 +56,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
       {/* Status + identity */}
       <div className="border-l-2 border-phosphor/60 pl-5 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="warning">Premium</Badge>
+          <Badge variant="warning">Advanced · Live Beta</Badge>
           <Badge variant="success">
             <ShieldCheck className="h-3 w-3" /> Verified Oracle
           </Badge>
@@ -70,9 +70,11 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
           You pay for execution assurance.
         </p>
         <p className="text-[13px] text-ink-dim leading-relaxed max-w-2xl">
-          A premium execution tier for serious treasuries. Every action is gated by a price
-          that is cryptographically verified on-chain at the moment of execution — not pushed by
-          a keeper. Built for larger capital, lower-frequency, higher-value moves.
+          Higher-assurance vault path. Fresh Pyth market data is verified on-chain inside the
+          execution transaction before policy checks and swap execution.
+        </p>
+        <p className="font-mono text-[10px] text-ink-faint leading-relaxed max-w-2xl">
+          ⚠ V2 executions may cost more gas due to pull-oracle updates.
         </p>
       </div>
 
@@ -113,6 +115,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
         <div className="divide-y divide-hairline">
           <ProofRow label="VaultFactoryV2" value={T.factory} href={`${T.explorer}/address/${T.factory}`} />
           <ProofRow label="Canary vault" value={T.canaryVault} href={`${T.explorer}/address/${T.canaryVault}`} />
+          <ProofRow label="Canonical execution" value={T.executionTx} href={`${T.explorer}/tx/${T.executionTx}`} />
           <ProofRow label="Pyth oracle" value={T.pyth} href={`${T.explorer}/address/${T.pyth}`} />
           <div className="flex items-center justify-between gap-4 px-5 h-12">
             <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
@@ -130,9 +133,8 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
 
       {/* Honest status note */}
       <p className="font-mono text-[11px] text-ink-faint leading-relaxed border border-hairline bg-bg-elev/10 px-5 py-4">
-        The trustless oracle path is deployed and validated on 0G mainnet (contracts above).
-        Autonomous operation for client vaults is being finalized — this tier opens to selected
-        treasuries first.
+        Live Beta — deployed and verified on 0G mainnet (a canonical executeStrategyWithPyth
+        execution is linked above). Opt-in, not the default path; Standard vaults are unaffected.
       </p>
 
       {/* CTA */}
@@ -145,7 +147,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
           ← Vault type
         </button>
         <a href={EARLY_ACCESS_URL} target="_blank" rel="noopener noreferrer">
-          <Button className={cn("min-w-[200px]")}>Request Early Access</Button>
+          <Button className={cn("min-w-[200px]")}>Request Beta Access</Button>
         </a>
       </div>
     </div>
