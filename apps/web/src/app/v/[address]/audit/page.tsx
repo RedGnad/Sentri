@@ -261,6 +261,7 @@ export default function VaultAuditPage() {
               teeSigner={teeSigner}
               teeAttestation={teeAttestation}
               deadline={deadline}
+              isV2={vault?.tier === "v2"}
             />
           );
         })
@@ -283,6 +284,7 @@ function AuditEntry({
   teeSigner,
   teeAttestation,
   deadline,
+  isV2,
 }: {
   vaultAddress: `0x${string}`;
   index: number;
@@ -297,12 +299,13 @@ function AuditEntry({
   teeSigner: string;
   teeAttestation: string;
   deadline: bigint;
+  isV2: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const tsMs = Number(timestamp) * 1000;
   const { data: detail } = useVaultAuditDetail(
-    expanded ? vaultAddress : undefined,
-    expanded ? tsMs : null,
+    expanded && !isV2 ? vaultAddress : undefined,
+    expanded && !isV2 ? tsMs : null,
   );
 
   // Reveal is a single, stable phase: from the moment the panel opens it shows
@@ -431,19 +434,37 @@ function AuditEntry({
         </div>
       </div>
 
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-5 h-12 border-t border-hairline font-mono text-[11px] uppercase tracking-kicker text-amber hover:text-ink transition-colors"
-      >
-        <span>∎ {expanded ? "Hide" : "Reveal"} TEE reasoning</span>
-        {expanded ? (
-          <ChevronUp className="h-3 w-3" />
-        ) : (
-          <ChevronDown className="h-3 w-3" />
-        )}
-      </button>
+      {isV2 ? (
+        <div className="border-t border-hairline px-5 py-5 bg-bg-sunk/40">
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-orchid/10 text-orchid border border-orchid/30">
+                TEE proof hashes verified
+              </span>
+            </div>
+            <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
+              TEE proof hashes verified · reasoning record unavailable for this V2 execution.
+            </p>
+            <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
+              Signer, attestation, intent hash, response hash and vault log remain verifiable on-chain.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex items-center justify-between px-5 h-12 border-t border-hairline font-mono text-[11px] uppercase tracking-kicker text-amber hover:text-ink transition-colors"
+        >
+          <span>∎ {expanded ? "Hide" : "Reveal"} TEE reasoning</span>
+          {expanded ? (
+            <ChevronUp className="h-3 w-3" />
+          ) : (
+            <ChevronDown className="h-3 w-3" />
+          )}
+        </button>
+      )}
 
-      {expanded && (
+      {!isV2 && expanded && (
         <div className="border-t border-hairline px-5 py-5 bg-bg-sunk/40">
           {!hasEnrichedReasoning && !detailIsTerminalFallback && !revealTimedOut ? (
             <p className="font-mono text-[11px] text-ink-faint">

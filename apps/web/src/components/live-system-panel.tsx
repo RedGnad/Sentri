@@ -141,7 +141,7 @@ export function LiveSystemPanel({
       value:
         snapshot.protocol.standardVaultsCount !== null &&
         snapshot.protocol.v2VaultsCount !== null
-          ? `${snapshot.protocol.standardVaultsCount} standard · ${snapshot.protocol.v2VaultsCount} V2`
+          ? `${snapshot.protocol.standardVaultsCount} Standard · ${snapshot.protocol.v2VaultsCount} Advanced`
           : "breakdown pending",
       state:
         snapshot.protocol.standardVaultsCount !== null &&
@@ -177,7 +177,7 @@ export function LiveSystemPanel({
       value:
         snapshot.protocol.standardExecutions !== null &&
         snapshot.protocol.v2Executions !== null
-          ? `${metricValue(snapshot.protocol.standardExecutions, "standard")} · ${metricValue(snapshot.protocol.v2Executions, "V2")}`
+          ? `${metricValue(snapshot.protocol.standardExecutions, "Standard")} · ${metricValue(snapshot.protocol.v2Executions, "Advanced")}`
           : "breakdown pending",
       state:
         snapshot.protocol.standardExecutions !== null &&

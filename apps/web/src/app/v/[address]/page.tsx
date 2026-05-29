@@ -140,6 +140,7 @@ export default function VaultOverviewPage() {
     withdrawAmount.length > 0 && withdrawWei > vault.balance;
   const isOwner = connected?.toLowerCase() === vault.owner.toLowerCase();
   const hasOnChainExecutions = vault.logCount > 0n;
+  const isV2 = vault.tier === "v2";
 
   return (
     <div className="space-y-8">
@@ -177,11 +178,16 @@ export default function VaultOverviewPage() {
           <AgentDot
             status={agentState?.runtime?.lastOutcome?.status}
             hasOnChainExecutions={hasOnChainExecutions}
+            isV2={isV2}
           />
         </header>
         <div className="px-5 py-5">
           {!agentState?.portfolio && !agentState?.runtime ? (
-            hasOnChainExecutions ? (
+            isV2 ? (
+              <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
+                Advanced V2 execution proof is available on-chain. The standard live agent runtime is not attached to this beta vault.
+              </p>
+            ) : hasOnChainExecutions ? (
               <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
                 Runtime syncing… on-chain execution history available.
               </p>
@@ -536,9 +542,11 @@ function Field({
 function AgentDot({
   status,
   hasOnChainExecutions = false,
+  isV2 = false,
 }: {
   status?: string;
   hasOnChainExecutions?: boolean;
+  isV2?: boolean;
 }) {
   if (status === "executed") {
     return (
@@ -565,9 +573,9 @@ function AgentDot({
     );
   }
   return (
-    <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-dim flex items-center gap-1.5">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-ink-dim" />
-      {hasOnChainExecutions ? "Syncing" : "No iterations yet"}
+    <span className={`font-mono text-[9px] uppercase tracking-kicker flex items-center gap-1.5 ${isV2 ? "text-orchid" : "text-ink-dim"}`}>
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${isV2 ? "bg-orchid" : "bg-ink-dim"}`} />
+      {isV2 ? "Advanced V2" : hasOnChainExecutions ? "Syncing" : "No iterations yet"}
     </span>
   );
 }
