@@ -116,7 +116,12 @@ export async function recoverAuditEntry(
       const blob = await deps.downloadBlob(idxRec.rootHash);
       const inference = unwrapAuditBlob(blob);
       if (inference) {
-        return mapInferenceOntoEntry(entry, inference, "index-recovered", {
+        // The durable index can carry the on-chain execution tx hash even when
+        // the chain fallback didn't resolve it — e.g. V2 trustless executions,
+        // whose tx is a TrustlessOracleExecution event, not StrategyExecuted.
+        // Surface it so the audit row shows the Vault TX instead of "not recorded".
+        const merged = { ...entry, txHash: entry.txHash ?? idxRec.txHash };
+        return mapInferenceOntoEntry(merged, inference, "index-recovered", {
           rootHash: idxRec.rootHash,
           txHash: idxRec.storageTxHash,
         });
