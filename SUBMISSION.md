@@ -71,7 +71,7 @@ A high-assurance tier that removes the keeper-pushed step: each executeStrategyW
 • setAuthorizedFactory tx (owner): 0x7c018f9fbd7050a7369267be0272c7a31bf9a9bf7cb16eea5c224446887a3d55
 • Read-only verification (no key): pnpm --filter @steward/sdk verify:trustless-canary
 
-A canonical executeStrategyWithPyth execution is verified on 0G mainnet (tx hash + verify command in the README "Trustless Oracle Vault — Advanced Tier" section, docs/runbook-p4-trustless-execution.md, and the one-page JUDGE_ORACLE_PROOF.md).
+A canonical executeStrategyWithPyth execution is verified on 0G mainnet (tx hash + verify command in the README "Trustless Oracle Vault — Advanced Tier" section, docs/runbook-p4-trustless-execution.md, and the one-page docs/oracle-proof.md).
 
 Exact scope (no overclaiming): the TEE binding is signer-based (ECDSA recovery against the AgentINFT-bound signer); the contract does not parse the full TEE attestation report on-chain, and there is no on-chain Jaine/Pyth cross-check yet. Source on the feature/trustless-oracle-vault branch.
 

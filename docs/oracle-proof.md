@@ -1,6 +1,6 @@
-# Sentri Oracle Path — Proof Sheet for Judges
+# Sentri · Oracle Path Verification
 
-A one-page reference for evaluating Sentri's dual oracle architecture.
+A one-page reference for Sentri's dual oracle architecture: the Standard tier (keeper-pushed quorum) and the Advanced tier (Pyth pull oracle verified on-chain in the same transaction as the swap).
 
 ## Dual oracle architecture
 
@@ -57,7 +57,7 @@ Expected output: 9/9 checks PASS, ending with `✅ Verified trustless executeStr
 
 ## What is NOT claimed
 
-- **No full TEE hardware attestation parsing on-chain.** TEE binding on-chain is signer-based (ECDSA against the AgentINFT-bound signer). See [`JUDGE_TEE_TRUST_BOUNDARY.md`](./JUDGE_TEE_TRUST_BOUNDARY.md).
+- **No full TEE hardware attestation parsing on-chain.** TEE binding on-chain is signer-based (ECDSA against the AgentINFT-bound signer). See [`tee-trust-boundary.md`](./tee-trust-boundary.md).
 - **No on-chain Jaine ↔ Pyth cross-check.** The Advanced tier trusts the Pyth pull oracle as the single on-chain price source for that execution (bounded by `pythMaxAge` and `pythMaxConfBps`). Standard tier uses a 2-of-2 off-chain quorum.
 
 ## Why opt-in, not default

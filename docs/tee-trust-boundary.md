@@ -1,6 +1,6 @@
-# Sentri TEE Path — Trust Boundary for Judges
+# Sentri · TEE Trust Boundary
 
-Sentri's threat model: **the agent proposes, the vault disposes.** The agent runs in a 0G Compute TEE and signs its responses; the vault enforces every policy and limit on-chain regardless of what the agent decides. The product's strength is what is verified on-chain, not the LLM's reasoning.
+Sentri's threat model: **the agent proposes, the vault disposes.** The agent runs in a 0G Compute TEE and signs its responses; the vault enforces every policy and limit on-chain regardless of what the agent decides. The protocol's strength is what is verified on-chain, not the LLM's reasoning.
 
 This page spells out — explicitly, with no overclaiming — what is verified at each layer.
 
@@ -58,4 +58,4 @@ The vault's role is to **enforce** the envelope cryptographically and economical
 The TEE is the layer that lets the protocol bind a signer to a sealed inference session without trusting the LLM — but the contract never depends on the TEE attestation itself; it depends on the AgentINFT-bound signer.
 
 ---
-*See also: [`JUDGE_ORACLE_PROOF.md`](./JUDGE_ORACLE_PROOF.md) for the Pyth oracle path. Canonical mainnet execution: tx `0x45ab1a82…7317fa`.*
+*See also: [`oracle-proof.md`](./oracle-proof.md) for the Pyth oracle path. Canonical mainnet execution: tx `0x45ab1a82…7317fa`.*

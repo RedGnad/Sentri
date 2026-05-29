@@ -118,7 +118,7 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 An advanced execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction as the swap**. **Live on 0G mainnet with a verified `executeStrategyWithPyth` tx** (see canonical execution below). **Opt-in per vault** — the Standard keeper path remains the default for vaults too small to amortize the Pyth update fee.
 
-For a single-page judge reference see [`JUDGE_ORACLE_PROOF.md`](./JUDGE_ORACLE_PROOF.md) (oracle path proof) and [`JUDGE_TEE_TRUST_BOUNDARY.md`](./JUDGE_TEE_TRUST_BOUNDARY.md) (TEE trust boundary).
+For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proof.md) (oracle path verification) and [`docs/tee-trust-boundary.md`](./docs/tee-trust-boundary.md) (TEE trust boundary).
 
 | Contract / tx | Address |
 |---|---|
