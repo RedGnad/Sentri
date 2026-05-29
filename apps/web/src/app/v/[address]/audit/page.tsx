@@ -120,7 +120,7 @@ export default function VaultAuditPage() {
 
   const { data: vault, isLoading: vaultLoading } = useParsedVaultData(address);
   const logCount = vault ? Number(vault.logCount) : 0;
-  const { data: rejectionsData } = useVaultRejections(address);
+  const { data: rejectionsData, isLoading: rejectionsLoading } = useVaultRejections(address);
   const visibleRejections =
     rejectionsData?.entries.filter(
       (entry) => entry.errorCode !== "CooldownNotElapsed",
@@ -169,6 +169,57 @@ export default function VaultAuditPage() {
           Public · no wallet required · verifiable on-chain
         </span>
       </div>
+
+      {/* Policy enforcement summary — reserves its space while the async
+          rejections endpoint loads so the bar does not pop in after the
+          executions render. Neutral styling: defensive proof, not alarm. */}
+      {rejectionsLoading ? (
+        <div className="border border-hairline bg-bg-elev/10 h-[46px] mb-4 opacity-50" aria-hidden />
+      ) : (
+        visibleRejections.length > 0 && (
+          <div className="border border-hairline bg-bg-elev/10 mb-4">
+            <button
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-bg-elev/20 transition-colors"
+              onClick={() => setRejectionsExpanded((v) => !v)}
+            >
+              <span className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+                <span className="inline-block w-1 h-1 rounded-full bg-phosphor shrink-0" />
+                <span>Policy enforcement</span>
+                {blockedActions.length > 0 && (
+                  <>
+                    <span className="text-ink-faint">·</span>
+                    <span>
+                      {blockedActions.length} rejected
+                    </span>
+                  </>
+                )}
+                {verifierHolds.length > 0 && (
+                  <>
+                    <span className="text-ink-faint">·</span>
+                    <span>
+                      {verifierHolds.length} verifier hold{verifierHolds.length === 1 ? "" : "s"}
+                    </span>
+                  </>
+                )}
+              </span>
+              {rejectionsExpanded ? (
+                <ChevronUp className="h-4 w-4 text-ink-dim" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-ink-dim" />
+              )}
+            </button>
+            {rejectionsExpanded && (
+              <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
+                {groupRejections([...blockedActions, ...verifierHolds]).map(
+                  (group, i) => (
+                    <RejectionGroup key={i} entries={group} />
+                  ),
+                )}
+              </div>
+            )}
+          </div>
+        )
+      )}
 
       {logCount === 0 ? (
         <div className="border border-hairline bg-bg-elev/20 py-20 text-center">
@@ -226,49 +277,6 @@ export default function VaultAuditPage() {
         })
       )}
 
-      {visibleRejections.length > 0 && (
-        <div className="border border-hairline bg-bg-elev/10 mt-6">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-bg-elev/20 transition-colors"
-            onClick={() => setRejectionsExpanded((v) => !v)}
-          >
-            <span className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
-              <span className="inline-block w-1 h-1 rounded-full bg-phosphor shrink-0" />
-              <span>Policy enforcement</span>
-              {blockedActions.length > 0 && (
-                <>
-                  <span className="text-ink-faint">·</span>
-                  <span>
-                    {blockedActions.length} rejected
-                  </span>
-                </>
-              )}
-              {verifierHolds.length > 0 && (
-                <>
-                  <span className="text-ink-faint">·</span>
-                  <span>
-                    {verifierHolds.length} verifier hold{verifierHolds.length === 1 ? "" : "s"}
-                  </span>
-                </>
-              )}
-            </span>
-            {rejectionsExpanded ? (
-              <ChevronUp className="h-4 w-4 text-ink-dim" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-ink-dim" />
-            )}
-          </button>
-          {rejectionsExpanded && (
-            <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
-              {groupRejections([...blockedActions, ...verifierHolds]).map(
-                (group, i) => (
-                  <RejectionGroup key={i} entries={group} />
-                ),
-              )}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
