@@ -187,9 +187,9 @@ export default function VaultOverviewPage() {
         <div className="px-5 py-5">
           {isV2 ? (
             <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
-              Advanced V2 · trustless-oracle path (executeStrategyWithPyth). Not
-              operated by the standard keeper runtime — this vault&apos;s on-chain
-              executions and TEE reasoning are recorded in the Audit tab.
+              {hasOnChainExecutions
+                ? "Pyth verified on-chain. TEE-signed reasoning and execution proof in the Audit tab."
+                : "Trustless oracle path — Pyth verified on-chain at execution time. Runs on-demand, not on the standard keeper cycle."}
             </p>
           ) : !agentState?.portfolio && !agentState?.runtime ? (
             hasOnChainExecutions ? (
@@ -555,13 +555,13 @@ function AgentDot({
   hasOnChainExecutions?: boolean;
   isV2?: boolean;
 }) {
-  // V2 vaults are never picked up by the standard keeper runtime, so a
-  // "Syncing" indicator would be misleading. State it honestly instead.
+  // V2 vaults run on the trustless-oracle path (executeStrategyWithPyth), not
+  // on the standard keeper runtime. Surface that positively as a tier label.
   if (isV2) {
     return (
-      <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-dim flex items-center gap-1.5">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-ink-dim" />
-        On-chain history · not on standard runtime
+      <span className="font-mono text-[9px] uppercase tracking-kicker text-orchid flex items-center gap-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-orchid" />
+        Advanced V2 · trustless oracle
       </span>
     );
   }
