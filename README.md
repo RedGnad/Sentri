@@ -130,9 +130,11 @@ A premium execution tier that replaces the keeper-pushed price step with a **Pyt
 
 **V1 vs V2.** V1 (live): price keeper-pushed to `SentriPriceFeed` (Jaine `slot0()` + Pyth Hermes, 2-of-2 quorum off-chain). V2 (canary): each `executeStrategyWithPyth()` carries a signed Pyth update verified on-chain in the same tx — the keeper-pushed step is removed from the execution path — and the verified price drives `minOut`, exposure, drawdown and TVL, under `pythMaxAge = 60s` and `pythMaxConfBps = 200`.
 
-**Exact scope (no overclaiming).** Pyth price is pull-verified on-chain per execution. The TEE binding is signer-based (ECDSA recovery against the AgentINFT-bound signer); the contract does not parse the full TEE attestation report, and there is **no on-chain Jaine/Pyth cross-check yet**. The canary proves **deployment + authorization** (`isAuthorizedForVault = true`); a full economic `executeStrategyWithPyth()` is a separate, agent-signed proof.
+**Canonical execution (verified on mainnet).** `executeStrategyWithPyth` tx [`0x45ab1a82…7317fa`](https://chainscan.0g.ai/tx/0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa) — Rebalance `0.3186 USDC.E → 0.7468 W0G`, Pyth `0G/USD` verified on-chain in the same tx (price 0.42406745, 22 bps conf, 9 s fresh), `executionLogCount` 0 → 1.
 
-Verify it yourself (read-only, no key): `pnpm --filter @steward/sdk verify:trustless-canary`.
+**Exact scope (no overclaiming).** Pyth price is pull-verified on-chain per execution. The TEE binding is signer-based (ECDSA recovery against the AgentINFT-bound signer); the contract does not parse the full TEE attestation report, and there is **no on-chain Jaine/Pyth cross-check yet**.
+
+Verify it yourself (read-only, no key): `pnpm --filter @steward/sdk verify:trustless-canary` (deploy + authorization) and `verify:trustless-execution -- --tx 0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa` (the execution).
 
 ### 0G Galileo Testnet (chain `16602`)
 
