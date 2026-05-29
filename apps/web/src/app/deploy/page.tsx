@@ -220,7 +220,7 @@ function VaultTypeSelect({
         <button
           type="button"
           onClick={onTrustless}
-          className="group border border-phosphor/30 hover:border-phosphor/60 bg-bg-elev/30 p-6 text-left transition-colors flex flex-col"
+          className="group border border-orchid/30 hover:border-orchid/60 bg-bg-elev/30 p-6 text-left transition-colors flex flex-col"
         >
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <Badge variant="warning">Premium</Badge>
