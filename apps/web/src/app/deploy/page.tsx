@@ -223,20 +223,20 @@ function VaultTypeSelect({
           className="group border border-orchid/30 hover:border-orchid/60 bg-bg-elev/30 p-6 text-left transition-colors flex flex-col"
         >
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <Badge variant="warning">Premium</Badge>
+            <Badge variant="warning">Advanced · Live Beta</Badge>
             <Badge variant="success">
               <ShieldCheck className="h-3 w-3" /> Verified Oracle
             </Badge>
           </div>
           <h3 className="font-serif text-2xl text-ink mb-2">Trustless Oracle Vault</h3>
           <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
-            Pyth price verified on-chain at execution. High-assurance, larger capital,
-            lower-frequency. You pay for execution assurance.
+            Fresh Pyth market data verified on-chain inside the execution transaction, before
+            policy checks and swap. Higher-assurance, opt-in.
           </p>
           <ul className="space-y-1.5 mb-5">
             <li className="font-mono text-[10px] text-ink-dim">· verified oracle per execution</li>
-            <li className="font-mono text-[10px] text-ink-dim">· recommended ≥ $1,000 treasury</li>
-            <li className="font-mono text-[10px] text-ink-dim">· validated on 0G mainnet</li>
+            <li className="font-mono text-[10px] text-ink-dim">· recommended ≥ $1,000 treasury · higher gas</li>
+            <li className="font-mono text-[10px] text-ink-dim">· verified on 0G mainnet</li>
           </ul>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-phosphor group-hover:text-ink transition-colors">
             Explore tier →
