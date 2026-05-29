@@ -87,8 +87,11 @@ one condition deliberately off:
 
 Document the chosen revert tx the same way (tx hash + which guard fired).
 
-## Honest status until Step 3 succeeds
+## Status — PROVEN on 0G mainnet (2026-05-29)
 
-`executionLogCount` stays **0** and is reported as "no trustless execution yet".
-Do not claim a full economic trustless execution until a Step-4 verify passes on
-a real tx. The README/SUBMISSION canary scope language must not change before then.
+Canonical execution: **`0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa`**
+(https://chainscan.0g.ai/tx/0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa).
+`executeStrategyWithPyth` Rebalance 0.3186 USDC.E → 0.7468 W0G; Pyth `0G/USD`
+verified on-chain in the same tx (price 0.42406745, 22 bps conf, 9 s fresh);
+`executionLogCount` 0 → 1. `verify:trustless-execution --tx <that hash>` passes
+all checks. The trustless oracle execution path is now end-to-end verified.
