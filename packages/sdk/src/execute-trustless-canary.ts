@@ -19,6 +19,8 @@
 
 import { setupGlobalContext, executeOneIterationForVault } from "./agent.js";
 import { getMarketSnapshot } from "./market.js";
+import { initAuditIndex } from "./audit-index.js";
+import { initRejectionsLedger } from "./rejections-ledger.js";
 
 const CANARY_VAULT = "0x86cE22c597D0C4EC309ba166360686C39A3f40ed";
 
@@ -35,6 +37,13 @@ async function main() {
     console.error("Refusing to run: PRIVATE_KEY must be provided via the environment (.env on the secure box), not hardcoded.");
     process.exit(1);
   }
+
+  // Initialize the durable audit subsystems the server normally sets up at
+  // startup — executeOneIterationForVault persists the TEE reasoning before the
+  // tx, and a missing audit index would (correctly) block the execution.
+  const ai = initAuditIndex();
+  console.log(`audit index : ${ai.writable ? "ready" : "NOT ready"} (${ai.path ?? "no path"})`);
+  initRejectionsLedger();
 
   // Context setup validates the agent wallet, the 0G provider/broker, and the
   // TEE signer-health gate (recovered signer bound to the active AgentINFT).

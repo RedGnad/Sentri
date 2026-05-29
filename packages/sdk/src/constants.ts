@@ -138,6 +138,12 @@ export const TREASURY_VAULT_ABI = [
   "function depositFrom(address payer, uint256 amount) external",
   "function withdraw(address to, uint256 amount) external",
   "function executeStrategy(uint8 action, uint256 amountIn, bytes32 intentHash, string signedResponse, bytes teeSignature, bytes32 teeAttestation, uint256 deadline) external",
+  // Trustless-oracle (V2) execution path + its Pyth feed id. Harmless on standard
+  // vaults (never called in standard mode); required so the agent can call it on
+  // trustless-pyth vaults.
+  "function executeStrategyWithPyth(uint8 action, uint256 amountIn, bytes32 intentHash, string signedResponse, bytes teeSignature, bytes32 teeAttestation, uint256 deadline, bytes[] pythUpdateData) external payable",
+  "function pythPriceId() view returns (bytes32)",
+  "function pyth() view returns (address)",
   "function emergencyWithdraw() external",
   "function emergencyDeleverageAndWithdraw(uint256 minBaseOut) external",
   "function pause() external",

@@ -212,6 +212,28 @@ async function ensureFreshOracle(
   phase: RejectionPhase,
   action?: string,
 ): Promise<{ ok: true; market: MarketSnapshot | null; freshness: PriceFreshness } | { ok: false; reason: string }> {
+  // Trustless-pyth vaults verify a Pyth price on-chain inside
+  // executeStrategyWithPyth; the keeper-pushed SentriPriceFeed is NOT their
+  // oracle. Never read or push it here — skip the standard freshness gate. The
+  // market:null return keeps callers from re-reading totalValue().
+  if (process.env.ORACLE_MODE === "trustless-pyth") {
+    log(
+      `[trustless] ${vaultAddress.slice(0, 10)}... ${phase}: skipping SentriPriceFeed freshness/push ` +
+        "(Pyth is verified on-chain in the execution tx).",
+    );
+    return {
+      ok: true,
+      market: null,
+      freshness: {
+        answer: 1n,
+        updatedAt: 0,
+        blockTimestamp: 0,
+        ageSec: 0,
+        maxPriceStaleness,
+        refreshThresholdSec: priceRefreshThreshold(maxPriceStaleness),
+      },
+    };
+  }
   const before = await readPriceFreshness(ctx, maxPriceStaleness);
   if (before.answer > 0n && before.ageSec < before.refreshThresholdSec) {
     return { ok: true, market: null, freshness: before };
@@ -286,6 +308,25 @@ function quoteRiskToBase(
   return (riskAmount * price * pow10(baseDec)) / (pow10(feedDec) * pow10(riskDec));
 }
 
+/**
+ * Off-chain, base-denominated TVL for `trustless-pyth` vaults. Those vaults have
+ * no callable `totalValue()` view — TVL is computed on-chain from a Pyth price
+ * verified inside `executeStrategyWithPyth`. For the agent's *decision* read we
+ * derive TVL from balances and the multi-source market price already fetched
+ * (Pyth-Hermes + Jaine). The on-chain tx remains the hard guard.
+ */
+function deriveOffChainTvl(
+  baseBalance: bigint,
+  riskBalance: bigint,
+  baseDec: bigint | number,
+  riskDec: bigint | number,
+  priceUsd: number,
+): bigint {
+  const riskValueUsd = Number(ethers.formatUnits(riskBalance, riskDec)) * priceUsd;
+  const riskValueBase = ethers.parseUnits(riskValueUsd.toFixed(Number(baseDec)), baseDec);
+  return baseBalance + riskValueBase;
+}
+
 async function readTvlWithLatestPriceFallback(
   vault: ethers.Contract,
   priceFeed: ethers.Contract,
@@ -293,7 +334,13 @@ async function readTvlWithLatestPriceFallback(
   riskBalance: bigint,
   baseDec: bigint | number,
   riskDec: bigint | number,
+  oracleMode: string,
+  priceUsd: number,
 ): Promise<{ tvl: bigint; usedFallback: boolean }> {
+  if (oracleMode === "trustless-pyth") {
+    // No totalValue() view on a trustless vault — derive off-chain.
+    return { tvl: deriveOffChainTvl(baseBalance, riskBalance, baseDec, riskDec, priceUsd), usedFallback: false };
+  }
   try {
     return { tvl: (await vault.totalValue()) as bigint, usedFallback: false };
   } catch (err) {
@@ -543,6 +590,12 @@ export async function executeOneIterationForVault(
     maxPriceStaleness: Number(policy[5]),
   };
 
+  // Oracle mode (per-process). trustless-pyth vaults verify Pyth on-chain in the
+  // execution tx and have no totalValue() view / SentriPriceFeed dependency, so
+  // the agent's reads take an off-chain path. Standard mode is unchanged.
+  const oracleMode = process.env.ORACLE_MODE ?? "standard-evidence";
+  const isTrustless = oracleMode === "trustless-pyth";
+
   const stateFreshness = await ensureFreshOracle(
     ctx,
     vaultAddress,
@@ -555,7 +608,13 @@ export async function executeOneIterationForVault(
   if (stateFreshness.market) activeMarket = stateFreshness.market;
 
   let tvl: bigint;
-  try {
+  if (isTrustless) {
+    tvl = deriveOffChainTvl(baseBalance, riskBalance, baseDec, riskDec, activeMarket.priceUsd);
+    log(
+      `[trustless] ${vaultAddress.slice(0, 10)}... off-chain TVL ${ethers.formatUnits(tvl, baseDec)} ` +
+        "(no totalValue(), no SentriPriceFeed push).",
+    );
+  } else try {
     tvl = (await vault.totalValue()) as bigint;
   } catch (err) {
     if (!isPriceStaleError(err)) throw err;
@@ -1061,8 +1120,8 @@ export async function executeOneIterationForVault(
   // on-chain oracleMode() return value (per-vault). When "trustless-pyth", we fetch
   // a Pyth price update from Hermes and forward it with the tx — the vault verifies
   // the price on-chain in the same transaction. Standard ("standard-evidence") uses
-  // the keeper-pushed SentriPriceFeed path unchanged.
-  const oracleMode = process.env.ORACLE_MODE ?? "standard-evidence";
+  // the keeper-pushed SentriPriceFeed path unchanged. (oracleMode/isTrustless are
+  // resolved once near the top of this function.)
 
   let receipt: ethers.TransactionReceipt;
   try {
@@ -1311,6 +1370,8 @@ export async function executeOneIterationForVault(
       newRisk,
       baseDec,
       riskDec,
+      oracleMode,
+      activeMarket.priceUsd,
     );
     if (usedFallback) {
       log(
@@ -1964,7 +2025,14 @@ const PYTH_PRICE_ID =
 async function _fetchPythUpdateData(
   vault: ethers.Contract,
 ): Promise<{ updateData: string[]; fee: bigint; priceId: string }> {
-  const priceId = PYTH_PRICE_ID;
+  // Use the vault's OWN configured feed (e.g. 0G/USD), not a hardcoded default.
+  let priceId = PYTH_PRICE_ID;
+  try {
+    const onchainId: string = await vault.pythPriceId();
+    if (onchainId && /^0x[0-9a-fA-F]{64}$/.test(onchainId)) priceId = onchainId;
+  } catch {
+    log(`[trustless-pyth] could not read vault.pythPriceId(); using fallback ${PYTH_PRICE_ID.slice(0, 10)}…`);
+  }
 
   // 1. Fetch latest binary VAA from Hermes.
   const hermesRes = await fetch(
@@ -1981,16 +2049,20 @@ async function _fetchPythUpdateData(
 
   // 2. Estimate Pyth fee from the vault's pyth() contract reference.
   //    The vault exposes its Pyth contract address via pyth().
-  let fee = 1n; // sensible fallback (1 wei) if fee read fails
+  // Read the real Pyth fee. Fail loud rather than defaulting to 1 wei — a wrong
+  // fee guarantees an InsufficientFee revert and would waste gas on a doomed tx.
+  let fee: bigint;
   try {
     const PYTH_ABI = [
       "function getUpdateFee(bytes[] calldata updateData) external view returns (uint256 fee)",
     ];
     const pythAddr: string = await vault.pyth();
     const pythContract = new ethers.Contract(pythAddr, PYTH_ABI, vault.runner);
-    fee = await pythContract.getUpdateFee(updateData);
-  } catch {
-    log("[trustless-pyth] Warning: could not read Pyth fee; defaulting to 1 wei");
+    fee = (await pythContract.getUpdateFee(updateData)) as bigint;
+  } catch (err) {
+    throw new Error(
+      `[trustless-pyth] could not read Pyth getUpdateFee — refusing to send with an unknown fee: ${err instanceof Error ? err.message : err}`,
+    );
   }
 
   return { updateData, fee, priceId };
