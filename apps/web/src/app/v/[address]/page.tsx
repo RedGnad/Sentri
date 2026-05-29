@@ -119,8 +119,9 @@ export default function VaultOverviewPage() {
     );
   }
 
+  const tvlReady = vault.tvlStatus === "ready";
   const pnl =
-    vault.highWaterMark > 0n
+    tvlReady && vault.highWaterMark > 0n
       ? Number(
           ((vault.totalValue - vault.highWaterMark) * 10000n) /
             vault.highWaterMark,
@@ -146,7 +147,7 @@ export default function VaultOverviewPage() {
       <section className="grid grid-cols-2 lg:grid-cols-4 border border-hairline divide-x divide-hairline">
         <Stat
           label="Total Value"
-          value={`$${formatUSDC(vault.totalValue)}`}
+          value={tvlReady ? `$${formatUSDC(vault.totalValue)}` : "TVL estimating"}
           sub={`${formatUSDC(vault.balance)} ${BASE_SYMBOL} + ${(Number(vault.riskBalance) / 1e18).toFixed(4)} ${RISK_SYMBOL}`}
         />
         <Stat
@@ -156,9 +157,9 @@ export default function VaultOverviewPage() {
         />
         <Stat
           label="P&L from HWM"
-          value={`${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%`}
-          sub={pnl >= 0 ? "Above peak" : "Drawdown"}
-          valueClass={pnl >= 0 ? "text-phosphor" : "text-alert"}
+          value={tvlReady ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "—"}
+          sub={tvlReady ? (pnl >= 0 ? "Above peak" : "Drawdown") : "Awaiting price"}
+          valueClass={tvlReady ? (pnl >= 0 ? "text-phosphor" : "text-alert") : "text-ink-dim"}
         />
         <Stat
           label="Executions"

@@ -12,14 +12,19 @@ import {
   PRICE_FEED_ADDRESS,
   VAULT_FACTORY_ADDRESS,
   VAULT_FACTORY_ABI,
+  VAULT_FACTORY_V2_ABI,
   TREASURY_VAULT_ABI,
+  TREASURY_VAULT_V2_ABI,
+  TRUSTLESS_VAULT,
 } from "@/config/contracts";
+import { fetchPythMarketPrice, quoteRiskToBaseUnits } from "@/lib/v2-market-price";
 
 const IS_MAINNET = process.env.NEXT_PUBLIC_SENTRI_NETWORK === "mainnet";
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? (IS_MAINNET ? "https://evmrpc.0g.ai" : "https://evmrpc-testnet.0g.ai");
 const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? (IS_MAINNET ? 16661 : 16602));
 const AGENT_URL = process.env.AGENT_URL ?? process.env.NEXT_PUBLIC_AGENT_URL;
 const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER_URL ?? (IS_MAINNET ? "https://chainscan.0g.ai" : "https://chainscan-galileo.0g.ai");
+const TRUSTLESS_FACTORY_ADDRESS = TRUSTLESS_VAULT.factory as `0x${string}`;
 
 export interface LiveSnapshot {
   chain: {
@@ -31,7 +36,12 @@ export interface LiveSnapshot {
   protocol: {
     factoryAddress: string;
     vaultsCount: number | null;
+    standardVaultsCount: number | null;
+    v2VaultsCount: number | null;
     totalTVL: string | null; // formatted USDC, e.g. "120,453.21"
+    totalTVLStatus: "ready" | "estimating" | "unavailable";
+    standardExecutions: number | null;
+    v2Executions: number | null;
     totalExecutions: number | null;
   };
   agent: {
@@ -58,17 +68,331 @@ export interface LiveSnapshot {
   fetchedAt: number;
 }
 
+type PublicClient = ReturnType<typeof createPublicClient>;
+type ProtocolTvlStatus = LiveSnapshot["protocol"]["totalTVLStatus"];
+
+interface ProtocolAggregate {
+  vaultsCount: number | null;
+  totalTVL: bigint | null;
+  tvlStatus: ProtocolTvlStatus;
+  totalExecutions: number | null;
+}
+
+function emptyProtocol(): LiveSnapshot["protocol"] {
+  return {
+    factoryAddress: VAULT_FACTORY_ADDRESS,
+    vaultsCount: null,
+    standardVaultsCount: null,
+    v2VaultsCount: null,
+    totalTVL: null,
+    totalTVLStatus: "unavailable",
+    standardExecutions: null,
+    v2Executions: null,
+    totalExecutions: null,
+  };
+}
+
+function formatBaseUnits(value: bigint): string {
+  return (Number(value) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function combineNullableCounts(a: number | null, b: number | null): number | null {
+  return a !== null && b !== null ? a + b : null;
+}
+
+async function readStandardProtocolStats(client: PublicClient): Promise<ProtocolAggregate> {
+  if (!VAULT_FACTORY_ADDRESS || VAULT_FACTORY_ADDRESS === "0x") {
+    return { vaultsCount: null, totalTVL: null, tvlStatus: "unavailable", totalExecutions: null };
+  }
+
+  try {
+    const count = (await client.readContract({
+      address: VAULT_FACTORY_ADDRESS,
+      abi: VAULT_FACTORY_ABI,
+      functionName: "vaultsCount",
+    })) as bigint;
+
+    const vaultsCount = Number(count);
+    if (vaultsCount === 0) {
+      return { vaultsCount: 0, totalTVL: 0n, tvlStatus: "ready", totalExecutions: 0 };
+    }
+
+    const addrs = (await client.readContract({
+      address: VAULT_FACTORY_ADDRESS,
+      abi: VAULT_FACTORY_ABI,
+      functionName: "vaultsPage",
+      args: [0n, BigInt(vaultsCount)],
+    })) as readonly `0x${string}`[];
+
+    const statusReads = addrs.flatMap((addr) => [
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_ABI,
+        functionName: "killed",
+      }) as Promise<boolean>,
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_ABI,
+        functionName: "paused",
+      }) as Promise<boolean>,
+    ]);
+    const statusResults = await Promise.allSettled(statusReads);
+    const activeAddrs = addrs.filter((_, i) => {
+      const killed = statusResults[i * 2];
+      const paused = statusResults[i * 2 + 1];
+      return !(
+        (killed?.status === "fulfilled" && killed.value) ||
+        (paused?.status === "fulfilled" && paused.value)
+      );
+    });
+
+    const tvlReads = activeAddrs.map((addr) =>
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_ABI,
+        functionName: "totalValue",
+      }) as Promise<bigint>,
+    );
+    const logReads = activeAddrs.map((addr) =>
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_ABI,
+        functionName: "executionLogCount",
+      }) as Promise<bigint>,
+    );
+    const balanceReads = activeAddrs.flatMap((addr) => [
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_ABI,
+        functionName: "vaultBalance",
+      }) as Promise<bigint>,
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_ABI,
+        functionName: "riskBalance",
+      }) as Promise<bigint>,
+    ]);
+    const priceCallSettled = Promise.allSettled([
+      client.readContract({
+        address: PRICE_FEED_ADDRESS,
+        abi: PRICE_FEED_ABI,
+        functionName: "latestRoundData",
+      }) as Promise<readonly [bigint, bigint, bigint, bigint, bigint]>,
+      client.readContract({
+        address: PRICE_FEED_ADDRESS,
+        abi: PRICE_FEED_ABI,
+        functionName: "decimals",
+      }) as Promise<number>,
+    ]);
+
+    const [tvlResults, logResults, balanceResults, priceSettled] = await Promise.all([
+      Promise.allSettled(tvlReads),
+      Promise.allSettled(logReads),
+      Promise.allSettled(balanceReads),
+      priceCallSettled,
+    ]);
+
+    let totalTVL = 0n;
+    let totalExecutions = 0;
+    let failedLogReads = 0;
+    let successfulTvlReads = 0;
+    let fallbackTotalTVL = 0n;
+    let successfulFallbackTvlReads = 0;
+
+    for (const r of tvlResults) {
+      if (r.status === "fulfilled") {
+        successfulTvlReads += 1;
+        totalTVL += r.value;
+      }
+    }
+    for (const r of logResults) {
+      if (r.status === "fulfilled") totalExecutions += Number(r.value);
+      else failedLogReads += 1;
+    }
+
+    const priceRaw = priceSettled[0];
+    const decimalsRaw = priceSettled[1];
+    if (priceRaw.status === "fulfilled" && decimalsRaw.status === "fulfilled") {
+      const price = priceRaw.value[1];
+      const decimals = decimalsRaw.value;
+      if (price > 0n) {
+        const riskQuoteDivisor = 10n ** BigInt(18 + Number(decimals) - 6);
+        for (let i = 0; i < activeAddrs.length; i += 1) {
+          const baseResult = balanceResults[i * 2];
+          const riskResult = balanceResults[i * 2 + 1];
+          if (baseResult?.status === "fulfilled" && riskResult?.status === "fulfilled") {
+            fallbackTotalTVL += baseResult.value + (riskResult.value * price) / riskQuoteDivisor;
+            successfulFallbackTvlReads += 1;
+          }
+        }
+      }
+    }
+
+    const tvlForDisplay = successfulTvlReads > 0 ? totalTVL : fallbackTotalTVL;
+    const successfulDisplayTvlReads =
+      successfulTvlReads > 0 ? successfulTvlReads : successfulFallbackTvlReads;
+
+    return {
+      vaultsCount: activeAddrs.length,
+      totalTVL:
+        activeAddrs.length === 0 || successfulDisplayTvlReads > 0 ? tvlForDisplay : null,
+      tvlStatus:
+        activeAddrs.length === 0 || successfulDisplayTvlReads > 0 ? "ready" : "unavailable",
+      totalExecutions: failedLogReads === 0 ? totalExecutions : null,
+    };
+  } catch {
+    return { vaultsCount: null, totalTVL: null, tvlStatus: "unavailable", totalExecutions: null };
+  }
+}
+
+async function readV2ProtocolStats(client: PublicClient): Promise<ProtocolAggregate> {
+  if (!IS_MAINNET) {
+    return { vaultsCount: 0, totalTVL: 0n, tvlStatus: "ready", totalExecutions: 0 };
+  }
+
+  try {
+    const count = (await client.readContract({
+      address: TRUSTLESS_FACTORY_ADDRESS,
+      abi: VAULT_FACTORY_V2_ABI,
+      functionName: "vaultCount",
+    })) as bigint;
+
+    const vaultsCount = Number(count);
+    if (vaultsCount === 0) {
+      return { vaultsCount: 0, totalTVL: 0n, tvlStatus: "ready", totalExecutions: 0 };
+    }
+
+    const addrsSettled = await Promise.allSettled(
+      Array.from({ length: vaultsCount }, (_, i) =>
+        client.readContract({
+          address: TRUSTLESS_FACTORY_ADDRESS,
+          abi: VAULT_FACTORY_V2_ABI,
+          functionName: "allVaults",
+          args: [BigInt(i)],
+        }) as Promise<`0x${string}`>,
+      ),
+    );
+    const addrs = addrsSettled
+      .filter((r): r is PromiseFulfilledResult<`0x${string}`> => r.status === "fulfilled")
+      .map((r) => r.value);
+
+    const statusReads = addrs.flatMap((addr) => [
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_V2_ABI,
+        functionName: "killed",
+      }) as Promise<boolean>,
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_V2_ABI,
+        functionName: "paused",
+      }) as Promise<boolean>,
+    ]);
+    const statusResults = await Promise.allSettled(statusReads);
+    const activeAddrs = addrs.filter((_, i) => {
+      const killed = statusResults[i * 2];
+      const paused = statusResults[i * 2 + 1];
+      return !(
+        (killed?.status === "fulfilled" && killed.value) ||
+        (paused?.status === "fulfilled" && paused.value)
+      );
+    });
+
+    const balanceReads = activeAddrs.flatMap((addr) => [
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_V2_ABI,
+        functionName: "vaultBalance",
+      }) as Promise<bigint>,
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_V2_ABI,
+        functionName: "riskBalance",
+      }) as Promise<bigint>,
+    ]);
+    const logReads = activeAddrs.map((addr) =>
+      client.readContract({
+        address: addr,
+        abi: TREASURY_VAULT_V2_ABI,
+        functionName: "executionLogCount",
+      }) as Promise<bigint>,
+    );
+    const [balanceResults, logResults] = await Promise.all([
+      Promise.allSettled(balanceReads),
+      Promise.allSettled(logReads),
+    ]);
+
+    let totalTVL = 0n;
+    let totalExecutions = 0;
+    let failedBalanceReads = 0;
+    let failedLogReads = 0;
+    let hasRisk = false;
+
+    const balances: Array<{ base: bigint; risk: bigint }> = [];
+    for (let i = 0; i < activeAddrs.length; i += 1) {
+      const baseResult = balanceResults[i * 2];
+      const riskResult = balanceResults[i * 2 + 1];
+      if (baseResult?.status === "fulfilled" && riskResult?.status === "fulfilled") {
+        balances.push({ base: baseResult.value, risk: riskResult.value });
+        if (riskResult.value > 0n) hasRisk = true;
+      } else {
+        failedBalanceReads += 1;
+      }
+    }
+
+    for (const r of logResults) {
+      if (r.status === "fulfilled") totalExecutions += Number(r.value);
+      else failedLogReads += 1;
+    }
+
+    const marketPrice = hasRisk
+      ? await fetchPythMarketPrice(TRUSTLESS_VAULT.pythFeedId, {
+          signal: AbortSignal.timeout(4_000),
+        })
+      : null;
+
+    if (failedBalanceReads > 0) {
+      return {
+        vaultsCount: activeAddrs.length,
+        totalTVL: null,
+        tvlStatus: "unavailable",
+        totalExecutions: failedLogReads === 0 ? totalExecutions : null,
+      };
+    }
+
+    if (hasRisk && !marketPrice) {
+      return {
+        vaultsCount: activeAddrs.length,
+        totalTVL: null,
+        tvlStatus: "estimating",
+        totalExecutions: failedLogReads === 0 ? totalExecutions : null,
+      };
+    }
+
+    for (const balance of balances) {
+      totalTVL += balance.base;
+      if (balance.risk > 0n && marketPrice) {
+        totalTVL += quoteRiskToBaseUnits(balance.risk, marketPrice);
+      }
+    }
+
+    return {
+      vaultsCount: activeAddrs.length,
+      totalTVL,
+      tvlStatus: "ready",
+      totalExecutions: failedLogReads === 0 ? totalExecutions : null,
+    };
+  } catch {
+    return { vaultsCount: null, totalTVL: null, tvlStatus: "unavailable", totalExecutions: null };
+  }
+}
+
 async function probeChainAndProtocol(): Promise<{
   chain: LiveSnapshot["chain"];
   protocol: LiveSnapshot["protocol"];
 }> {
   const baseChain = { id: CHAIN_ID, blockNumber: null, blockAgeSec: null, rpcOk: false };
-  const baseProtocol = {
-    factoryAddress: VAULT_FACTORY_ADDRESS,
-    vaultsCount: null,
-    totalTVL: null,
-    totalExecutions: null,
-  };
+  const baseProtocol = emptyProtocol();
 
   try {
     const client = createPublicClient({
@@ -85,158 +409,35 @@ async function probeChainAndProtocol(): Promise<{
       rpcOk: true,
     };
 
-    if (!VAULT_FACTORY_ADDRESS || VAULT_FACTORY_ADDRESS === "0x") {
-      return { chain, protocol: baseProtocol };
-    }
+    const [standard, v2] = await Promise.all([
+      readStandardProtocolStats(client),
+      readV2ProtocolStats(client),
+    ]);
+    const totalTVLStatus: ProtocolTvlStatus =
+      standard.tvlStatus === "unavailable" || v2.tvlStatus === "unavailable"
+        ? "unavailable"
+        : standard.tvlStatus === "estimating" || v2.tvlStatus === "estimating"
+          ? "estimating"
+          : "ready";
+    const totalTVL =
+      totalTVLStatus === "ready" && standard.totalTVL !== null && v2.totalTVL !== null
+        ? standard.totalTVL + v2.totalTVL
+        : null;
 
-    try {
-      const count = (await client.readContract({
-        address: VAULT_FACTORY_ADDRESS,
-        abi: VAULT_FACTORY_ABI,
-        functionName: "vaultsCount",
-      })) as bigint;
-
-      const vaultsCount = Number(count);
-
-      // Aggregate TVL + executions across all vaults (capped at 50 for sanity).
-      let totalTVL = 0n;
-      let totalExecutions = 0;
-      let failedLogReads = 0;
-      let successfulTvlReads = 0;
-      let fallbackTotalTVL = 0n;
-      let successfulFallbackTvlReads = 0;
-      let activeVaultsCount = 0;
-      if (vaultsCount > 0) {
-        const limit = Math.min(vaultsCount, 50);
-        const addrs = (await client.readContract({
-          address: VAULT_FACTORY_ADDRESS,
-          abi: VAULT_FACTORY_ABI,
-          functionName: "vaultsPage",
-          args: [0n, BigInt(limit)],
-        })) as readonly `0x${string}`[];
-
-        const statusReads = addrs.flatMap((addr) => [
-          client.readContract({
-            address: addr,
-            abi: TREASURY_VAULT_ABI,
-            functionName: "killed",
-          }) as Promise<boolean>,
-          client.readContract({
-            address: addr,
-            abi: TREASURY_VAULT_ABI,
-            functionName: "paused",
-          }) as Promise<boolean>,
-        ]);
-        const statusResults = await Promise.allSettled(statusReads);
-        const activeAddrs = addrs.filter((_, i) => {
-          const killed = statusResults[i * 2];
-          const paused = statusResults[i * 2 + 1];
-          return !(
-            (killed?.status === "fulfilled" && killed.value) ||
-            (paused?.status === "fulfilled" && paused.value)
-          );
-        });
-        activeVaultsCount = activeAddrs.length;
-
-        const tvlReads = activeAddrs.map((addr) =>
-          client.readContract({
-            address: addr,
-            abi: TREASURY_VAULT_ABI,
-            functionName: "totalValue",
-          }) as Promise<bigint>,
-        );
-        const logReads = activeAddrs.map((addr) =>
-          client.readContract({
-            address: addr,
-            abi: TREASURY_VAULT_ABI,
-            functionName: "executionLogCount",
-          }) as Promise<bigint>,
-        );
-        const balanceReads = activeAddrs.flatMap((addr) => [
-          client.readContract({
-            address: addr,
-            abi: TREASURY_VAULT_ABI,
-            functionName: "vaultBalance",
-          }) as Promise<bigint>,
-          client.readContract({
-            address: addr,
-            abi: TREASURY_VAULT_ABI,
-            functionName: "riskBalance",
-          }) as Promise<bigint>,
-        ]);
-        // Promise.allSettled the price feed reads too, so a temporarily
-        // stale or unavailable oracle doesn't tank TVL + executions display.
-        const priceCallSettled = Promise.allSettled([
-          client.readContract({
-            address: PRICE_FEED_ADDRESS,
-            abi: PRICE_FEED_ABI,
-            functionName: "latestRoundData",
-          }) as Promise<readonly [bigint, bigint, bigint, bigint, bigint]>,
-          client.readContract({
-            address: PRICE_FEED_ADDRESS,
-            abi: PRICE_FEED_ABI,
-            functionName: "decimals",
-          }) as Promise<number>,
-        ]);
-        const [tvlResults, logResults, balanceResults, priceSettled] = await Promise.all([
-          Promise.allSettled(tvlReads),
-          Promise.allSettled(logReads),
-          Promise.allSettled(balanceReads),
-          priceCallSettled,
-        ]);
-        for (const r of tvlResults) {
-          if (r.status === "fulfilled") {
-            successfulTvlReads += 1;
-            totalTVL += r.value;
-          }
-        }
-        // executionLogCount is monotonic on-chain — a sum that drops between
-        // polls can only mean a read failed. If ANY read rejected, the sum is
-        // incomplete: report null (→ "read pending") rather than a wrong,
-        // too-low number. The next poll, or the client's last-good fallback,
-        // restores the real figure.
-        for (const r of logResults) {
-          if (r.status === "fulfilled") totalExecutions += Number(r.value);
-          else failedLogReads += 1;
-        }
-        const priceRaw = priceSettled[0];
-        const decimalsRaw = priceSettled[1];
-        if (priceRaw.status === "fulfilled" && decimalsRaw.status === "fulfilled") {
-          const price = priceRaw.value[1];
-          const decimals = decimalsRaw.value;
-          if (price > 0n) {
-            const riskQuoteDivisor = 10n ** BigInt(18 + Number(decimals) - 6);
-            for (let i = 0; i < activeAddrs.length; i += 1) {
-              const baseResult = balanceResults[i * 2];
-              const riskResult = balanceResults[i * 2 + 1];
-              if (baseResult?.status === "fulfilled" && riskResult?.status === "fulfilled") {
-                fallbackTotalTVL += baseResult.value + (riskResult.value * price) / riskQuoteDivisor;
-                successfulFallbackTvlReads += 1;
-              }
-            }
-          }
-        }
-      }
-
-      const tvlForDisplay = successfulTvlReads > 0 ? totalTVL : fallbackTotalTVL;
-      const successfulDisplayTvlReads =
-        successfulTvlReads > 0 ? successfulTvlReads : successfulFallbackTvlReads;
-
-      return {
-        chain,
-        protocol: {
-          factoryAddress: VAULT_FACTORY_ADDRESS,
-          vaultsCount: activeVaultsCount,
-          totalTVL:
-            activeVaultsCount === 0 || successfulDisplayTvlReads > 0
-              ? (Number(tvlForDisplay) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 4 })
-              : null,
-          totalExecutions: failedLogReads === 0 ? totalExecutions : null,
-        },
-      };
-    } catch {
-      return { chain, protocol: baseProtocol };
-    }
+    return {
+      chain,
+      protocol: {
+        factoryAddress: VAULT_FACTORY_ADDRESS,
+        vaultsCount: combineNullableCounts(standard.vaultsCount, v2.vaultsCount),
+        standardVaultsCount: standard.vaultsCount,
+        v2VaultsCount: v2.vaultsCount,
+        totalTVL: totalTVL !== null ? formatBaseUnits(totalTVL) : null,
+        totalTVLStatus,
+        standardExecutions: standard.totalExecutions,
+        v2Executions: v2.totalExecutions,
+        totalExecutions: combineNullableCounts(standard.totalExecutions, v2.totalExecutions),
+      },
+    };
   } catch {
     return { chain: baseChain, protocol: baseProtocol };
   }

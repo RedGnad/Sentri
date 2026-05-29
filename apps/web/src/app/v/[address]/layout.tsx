@@ -74,7 +74,9 @@ function VaultLayoutInner({
           <Skeleton className="h-5 w-64 mt-3" />
         ) : (
           <p className="font-serif italic text-lg text-ink-dim mt-3">
-            ${formatUSDC(vault.totalValue)} TVL · owned by {shortenAddress(vault.owner)} ·{" "}
+            {vault.tvlStatus === "estimating"
+              ? "TVL estimating"
+              : `$${formatUSDC(vault.totalValue)} TVL`} · owned by {shortenAddress(vault.owner)} ·{" "}
             {String(vault.logCount)} executions
           </p>
         )}

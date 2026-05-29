@@ -1,15 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import {
   TREASURY_VAULT_ABI,
+  TREASURY_VAULT_V2_ABI,
   ERC20_ABI,
   BASE_TOKEN_ADDRESS,
   PRICE_FEED_ADDRESS,
   PRICE_FEED_ABI,
+  TRUSTLESS_VAULT,
 } from "@/config/contracts";
 import { parseUnits } from "viem";
 import { galileo } from "@/config/wagmi";
+import { fetchPythMarketPrice, quoteRiskToBaseUnits } from "@/lib/v2-market-price";
 
 const CHAIN_ID = galileo.id;
 
@@ -24,11 +28,16 @@ export interface Policy {
   maxPriceStaleness: number;
 }
 
+export type VaultTier = "standard" | "v2";
+export type TvlStatus = "ready" | "estimating";
+
 export interface VaultData {
   address: `0x${string}`;
+  tier: VaultTier;
   balance: bigint;       // base (USDC) balance
   riskBalance: bigint;   // risk (WETH) balance
   totalValue: bigint;    // TVL in base units
+  tvlStatus: TvlStatus;
   highWaterMark: bigint;
   logCount: bigint;
   policy: Policy | null;
@@ -37,16 +46,75 @@ export interface VaultData {
   isPaused: boolean;
   owner: string;
   lastExecutionTime: bigint;
+  pythPriceId: string | null;
+  oracleMode: number | null;
+  pyth: string | null;
 }
 
 type PolicyTuple = readonly [number, number, number, number, number, number];
 
 // ── Read hooks (parameterized by vault address) ──────────────────────────
 
-export function useVaultData(vaultAddress: `0x${string}` | undefined) {
+function useV2RiskQuote(
+  enabled: boolean,
+  riskBalance: bigint,
+  priceId: string | null,
+) {
+  const [quote, setQuote] = useState<bigint | null>(null);
+
+  useEffect(() => {
+    if (!enabled || riskBalance <= 0n || !priceId) {
+      setQuote(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5_000);
+    const currentPriceId = priceId;
+    let cancelled = false;
+
+    async function loadPrice() {
+      const price = await fetchPythMarketPrice(currentPriceId, { signal: controller.signal });
+      if (cancelled) return;
+      setQuote(price ? quoteRiskToBaseUnits(riskBalance, price) : null);
+    }
+
+    loadPrice();
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [enabled, priceId, riskBalance]);
+
+  return quote;
+}
+
+export function useVaultData(
+  vaultAddress: `0x${string}` | undefined,
+  tierHint?: VaultTier,
+) {
   const enabled = !!vaultAddress && vaultAddress !== "0x";
-  return useReadContracts({
-    contracts: enabled
+  const v2Probe = useReadContract({
+    address: vaultAddress,
+    abi: TREASURY_VAULT_V2_ABI,
+    chainId: CHAIN_ID,
+    functionName: "pythPriceId",
+    query: {
+      enabled: enabled && !tierHint,
+      retry: false,
+    },
+  });
+
+  const detectedTier: VaultTier | undefined =
+    tierHint ?? (v2Probe.data ? "v2" : v2Probe.isError || v2Probe.isFetched ? "standard" : undefined);
+  const isV2 = detectedTier === "v2";
+  const isStandard = detectedTier === "standard";
+  const isDetecting = enabled && !tierHint && !detectedTier;
+
+  const standardRead = useReadContracts({
+    contracts: enabled && isStandard
       ? [
           { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "vaultBalance" },
           { address: vaultAddress, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "riskBalance" },
@@ -63,19 +131,75 @@ export function useVaultData(vaultAddress: `0x${string}` | undefined) {
           { address: PRICE_FEED_ADDRESS, abi: PRICE_FEED_ABI, chainId: CHAIN_ID, functionName: "decimals" },
         ]
       : [],
-    query: { enabled, refetchInterval: 10_000 },
+    query: { enabled: enabled && isStandard, refetchInterval: 10_000 },
   });
+
+  const v2Read = useReadContracts({
+    contracts: enabled && isV2
+      ? [
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "vaultBalance" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "riskBalance" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "executionLogCount" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "policy" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "agent" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "owner" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "highWaterMark" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "paused" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "killed" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "lastExecutionTime" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "pythPriceId" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "oracleMode" },
+          { address: vaultAddress, abi: TREASURY_VAULT_V2_ABI, chainId: CHAIN_ID, functionName: "pyth" },
+        ]
+      : [],
+    query: { enabled: enabled && isV2, refetchInterval: 10_000 },
+  });
+
+  const activeRead = isV2 ? v2Read : standardRead;
+
+  return {
+    data: activeRead.data,
+    isLoading: isDetecting || activeRead.isLoading,
+    isError: activeRead.isError,
+    tier: detectedTier,
+  };
 }
 
-export function useParsedVaultData(vaultAddress: `0x${string}` | undefined) {
-  const { data, isLoading, isError } = useVaultData(vaultAddress);
+export function useParsedVaultData(
+  vaultAddress: `0x${string}` | undefined,
+  tierHint?: VaultTier,
+) {
+  const { data, isLoading, isError, tier } = useVaultData(vaultAddress, tierHint);
+  const v2BaseBal = (tier === "v2" ? (data?.[0]?.result as bigint | undefined) : undefined) ?? 0n;
+  const v2RiskBal = (tier === "v2" ? (data?.[1]?.result as bigint | undefined) : undefined) ?? 0n;
+  const v2PriceId =
+    tier === "v2"
+      ? ((data?.[10]?.result as string | undefined) ?? TRUSTLESS_VAULT.pythFeedId)
+      : null;
+  const v2RiskQuote = useV2RiskQuote(tier === "v2", v2RiskBal, v2PriceId);
 
-  // The on-chain totalValue() reverts when the oracle is stale (older than
-  // the policy's maxPriceStaleness). With a long agent interval the feed is
-  // stale most of the time, so a naive read makes the dashboard show $0.
-  // Fall back to (vaultBalance + riskBalance × latestPrice) using the raw
-  // price feed value, which has no freshness check at the read site. This
-  // matches the home Live System panel's fallback computation.
+  const parsed: VaultData | null = data && vaultAddress && tier
+    ? tier === "v2"
+      ? parseV2VaultData({
+          address: vaultAddress,
+          data,
+          baseBal: v2BaseBal,
+          riskBal: v2RiskBal,
+          riskQuote: v2RiskQuote,
+          priceId: v2PriceId,
+        })
+      : parseStandardVaultData(vaultAddress, data)
+    : null;
+
+  return { data: parsed, isLoading, isError };
+}
+
+function parseStandardVaultData(
+  vaultAddress: `0x${string}`,
+  data: readonly { result?: unknown }[],
+): VaultData {
+  // Standard vaults expose totalValue(). If that read reverts on a stale
+  // oracle, fall back to balances plus the raw price feed read.
   const baseBal = (data?.[0]?.result as bigint | undefined) ?? 0n;
   const riskBal = (data?.[1]?.result as bigint | undefined) ?? 0n;
   const onchainTotalValue = (data?.[2]?.result as bigint | undefined) ?? 0n;
@@ -94,33 +218,81 @@ export function useParsedVaultData(vaultAddress: `0x${string}` | undefined) {
     }
   }
 
-  const parsed: VaultData | null = data && vaultAddress
-    ? {
-        address: vaultAddress,
-        balance: baseBal,
-        riskBalance: riskBal,
-        totalValue,
-        highWaterMark: (data[3]?.result as bigint) ?? 0n,
-        logCount: (data[4]?.result as bigint) ?? 0n,
-        policy: data[5]?.result
-          ? {
-              maxAllocationBps: (data[5].result as PolicyTuple)[0],
-              maxDrawdownBps: (data[5].result as PolicyTuple)[1],
-              rebalanceThresholdBps: (data[5].result as PolicyTuple)[2],
-              maxSlippageBps: (data[5].result as PolicyTuple)[3],
-              cooldownPeriod: (data[5].result as PolicyTuple)[4],
-              maxPriceStaleness: (data[5].result as PolicyTuple)[5],
-            }
-          : null,
-        agent: (data[6]?.result as string) ?? "",
-        isKilled: (data[7]?.result as boolean) ?? false,
-        isPaused: (data[8]?.result as boolean) ?? false,
-        owner: (data[9]?.result as string) ?? "",
-        lastExecutionTime: (data[10]?.result as bigint) ?? 0n,
-      }
-    : null;
+  return {
+    address: vaultAddress,
+    tier: "standard",
+    balance: baseBal,
+    riskBalance: riskBal,
+    totalValue,
+    tvlStatus: "ready",
+    highWaterMark: (data[3]?.result as bigint) ?? 0n,
+    logCount: (data[4]?.result as bigint) ?? 0n,
+    policy: data[5]?.result
+      ? {
+          maxAllocationBps: (data[5].result as PolicyTuple)[0],
+          maxDrawdownBps: (data[5].result as PolicyTuple)[1],
+          rebalanceThresholdBps: (data[5].result as PolicyTuple)[2],
+          maxSlippageBps: (data[5].result as PolicyTuple)[3],
+          cooldownPeriod: (data[5].result as PolicyTuple)[4],
+          maxPriceStaleness: (data[5].result as PolicyTuple)[5],
+        }
+      : null,
+    agent: (data[6]?.result as string) ?? "",
+    isKilled: (data[7]?.result as boolean) ?? false,
+    isPaused: (data[8]?.result as boolean) ?? false,
+    owner: (data[9]?.result as string) ?? "",
+    lastExecutionTime: (data[10]?.result as bigint) ?? 0n,
+    pythPriceId: null,
+    oracleMode: null,
+    pyth: null,
+  };
+}
 
-  return { data: parsed, isLoading, isError };
+function parseV2VaultData({
+  address,
+  data,
+  baseBal,
+  riskBal,
+  riskQuote,
+  priceId,
+}: {
+  address: `0x${string}`;
+  data: readonly { result?: unknown }[];
+  baseBal: bigint;
+  riskBal: bigint;
+  riskQuote: bigint | null;
+  priceId: string | null;
+}): VaultData {
+  const tvlStatus: TvlStatus = riskBal > 0n && riskQuote === null ? "estimating" : "ready";
+
+  return {
+    address,
+    tier: "v2",
+    balance: baseBal,
+    riskBalance: riskBal,
+    totalValue: baseBal + (riskQuote ?? 0n),
+    tvlStatus,
+    highWaterMark: (data[6]?.result as bigint) ?? 0n,
+    logCount: (data[2]?.result as bigint) ?? 0n,
+    policy: data[3]?.result
+      ? {
+          maxAllocationBps: (data[3].result as PolicyTuple)[0],
+          maxDrawdownBps: (data[3].result as PolicyTuple)[1],
+          rebalanceThresholdBps: (data[3].result as PolicyTuple)[2],
+          maxSlippageBps: (data[3].result as PolicyTuple)[3],
+          cooldownPeriod: (data[3].result as PolicyTuple)[4],
+          maxPriceStaleness: (data[3].result as PolicyTuple)[5],
+        }
+      : null,
+    agent: (data[4]?.result as string) ?? "",
+    isKilled: (data[8]?.result as boolean) ?? false,
+    isPaused: (data[7]?.result as boolean) ?? false,
+    owner: (data[5]?.result as string) ?? "",
+    lastExecutionTime: (data[9]?.result as bigint) ?? 0n,
+    pythPriceId: priceId,
+    oracleMode: (data[11]?.result as number | undefined) ?? null,
+    pyth: (data[12]?.result as string | undefined) ?? null,
+  };
 }
 
 export function useExecutionLog(vaultAddress: `0x${string}` | undefined, index: bigint) {

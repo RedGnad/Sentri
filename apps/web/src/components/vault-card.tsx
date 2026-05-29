@@ -1,16 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useParsedVaultData } from "@/hooks/use-vault";
-import { formatUSDC, shortenAddress, bpsToPercent } from "@/lib/utils";
+import { useParsedVaultData, type VaultTier } from "@/hooks/use-vault";
+import { formatUSDC, shortenAddress, bpsToPercent, cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Compact card showing one vault's live state. Used in /vaults directory and
  * /my dashboard. Reads chain directly via wagmi hook.
  */
-export function VaultCard({ address }: { address: `0x${string}` }) {
-  const { data: vault, isLoading } = useParsedVaultData(address);
+export function VaultCard({
+  address,
+  tier,
+}: {
+  address: `0x${string}`;
+  tier?: VaultTier;
+}) {
+  const { data: vault, isLoading } = useParsedVaultData(address, tier);
 
   if (isLoading || !vault) {
     return (
@@ -24,20 +31,35 @@ export function VaultCard({ address }: { address: `0x${string}` }) {
 
   const status = vault.isKilled ? "killed" : vault.isPaused ? "paused" : "active";
   const allocPct = vault.policy ? bpsToPercent(vault.policy.maxAllocationBps) : "—";
+  const isV2 = (tier ?? vault.tier) === "v2";
 
   return (
     <Link
       href={`/v/${address}`}
-      className="border border-hairline bg-bg-elev/20 p-5 block hover:border-amber/60 hover:bg-bg-elev/40 transition-colors group"
+      className={cn(
+        "border bg-bg-elev/20 p-5 block hover:bg-bg-elev/40 transition-colors group",
+        isV2
+          ? "border-orchid/50 hover:border-orchid/80"
+          : "border-hairline hover:border-amber/60",
+      )}
     >
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 gap-3">
         <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
           {shortenAddress(address)}
         </span>
-        <StatusDot status={status} />
+        <span className="flex items-center gap-2 shrink-0">
+          {isV2 && (
+            <Badge className="border-orchid/50 text-orchid px-1.5 py-0.5">
+              Advanced · V2
+            </Badge>
+          )}
+          <StatusDot status={status} />
+        </span>
       </div>
       <div className="font-serif text-3xl text-ink tabular leading-none">
-        ${formatUSDC(vault.totalValue)}
+        {vault.tvlStatus === "estimating"
+          ? "TVL estimating"
+          : `$${formatUSDC(vault.totalValue)}`}
       </div>
       <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-1">
         TVL

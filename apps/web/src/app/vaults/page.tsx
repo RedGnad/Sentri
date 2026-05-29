@@ -7,10 +7,8 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const PAGE_SIZE = 24n;
-
 export default function VaultsPage() {
-  const { data: vaults, isLoading } = useActiveVaultsPage(0n, PAGE_SIZE);
+  const { data: vaults, isLoading } = useActiveVaultsPage(0n);
 
   const total = vaults.length;
 
@@ -53,8 +51,12 @@ export default function VaultsPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {vaults.map((addr) => (
-              <VaultCard key={addr} address={addr} />
+            {vaults.map((vault) => (
+              <VaultCard
+                key={`${vault.tier}-${vault.address}`}
+                address={vault.address}
+                tier={vault.tier}
+              />
             ))}
           </div>
         </>

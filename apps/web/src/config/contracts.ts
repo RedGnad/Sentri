@@ -260,6 +260,46 @@ export const VAULT_FACTORY_ABI = [
   },
 ] as const satisfies Abi;
 
+export const VAULT_FACTORY_V2_ABI = [
+  { type: "function", name: "vaultCount", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  {
+    type: "function",
+    name: "allVaults",
+    inputs: [{ type: "uint256" }],
+    outputs: [{ type: "address" }],
+    stateMutability: "view",
+  },
+] as const satisfies Abi;
+
+export const TREASURY_VAULT_V2_ABI = [
+  { type: "function", name: "vaultBalance", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "riskBalance", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "executionLogCount", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  {
+    type: "function",
+    name: "policy",
+    inputs: [],
+    outputs: [
+      { name: "maxAllocationBps", type: "uint16" },
+      { name: "maxDrawdownBps", type: "uint16" },
+      { name: "rebalanceThresholdBps", type: "uint16" },
+      { name: "maxSlippageBps", type: "uint16" },
+      { name: "cooldownPeriod", type: "uint32" },
+      { name: "maxPriceStaleness", type: "uint32" },
+    ],
+    stateMutability: "view",
+  },
+  { type: "function", name: "agent", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  { type: "function", name: "owner", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+  { type: "function", name: "highWaterMark", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "paused", inputs: [], outputs: [{ type: "bool" }], stateMutability: "view" },
+  { type: "function", name: "killed", inputs: [], outputs: [{ type: "bool" }], stateMutability: "view" },
+  { type: "function", name: "lastExecutionTime", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
+  { type: "function", name: "pythPriceId", inputs: [], outputs: [{ type: "bytes32" }], stateMutability: "view" },
+  { type: "function", name: "oracleMode", inputs: [], outputs: [{ type: "uint8" }], stateMutability: "view" },
+  { type: "function", name: "pyth", inputs: [], outputs: [{ type: "address" }], stateMutability: "view" },
+] as const satisfies Abi;
+
 export const TREASURY_VAULT_ABI = [
   { type: "function", name: "deposit", inputs: [{ name: "amount", type: "uint256" }], outputs: [], stateMutability: "nonpayable" },
   {

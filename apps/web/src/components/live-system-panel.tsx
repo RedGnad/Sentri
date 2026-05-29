@@ -21,7 +21,19 @@ function mergeSnapshot(prev: LiveSnapshot, next: LiveSnapshot): LiveSnapshot {
     protocol: {
       ...next.protocol,
       vaultsCount: next.protocol.vaultsCount ?? prev.protocol.vaultsCount,
-      totalTVL: next.protocol.totalTVL ?? prev.protocol.totalTVL,
+      standardVaultsCount:
+        next.protocol.standardVaultsCount ?? prev.protocol.standardVaultsCount,
+      v2VaultsCount: next.protocol.v2VaultsCount ?? prev.protocol.v2VaultsCount,
+      totalTVL:
+        next.protocol.totalTVL ??
+        (next.protocol.totalTVLStatus === "unavailable" ? prev.protocol.totalTVL : null),
+      totalTVLStatus:
+        next.protocol.totalTVLStatus === "unavailable" && prev.protocol.totalTVL
+          ? prev.protocol.totalTVLStatus
+          : next.protocol.totalTVLStatus,
+      standardExecutions:
+        next.protocol.standardExecutions ?? prev.protocol.standardExecutions,
+      v2Executions: next.protocol.v2Executions ?? prev.protocol.v2Executions,
       totalExecutions: next.protocol.totalExecutions ?? prev.protocol.totalExecutions,
     },
   };
@@ -48,6 +60,10 @@ function agentState(snapshot: LiveSnapshot): "ok" | "warn" | "off" {
   const intervalMs = (snapshot.agent.intervalSec ?? 300) * 1000;
   if (ageMs > intervalMs * 5) return "warn";
   return "ok";
+}
+
+function metricValue(value: number | null, suffix: string): string {
+  return value !== null ? `${value.toLocaleString()} ${suffix}` : "read pending";
 }
 
 function ProtocolRow({
@@ -121,12 +137,31 @@ export function LiveSystemPanel({
       state: snapshot.protocol.vaultsCount !== null ? "ok" : ("warn" as const),
     },
     {
+      key: "Vault mix",
+      value:
+        snapshot.protocol.standardVaultsCount !== null &&
+        snapshot.protocol.v2VaultsCount !== null
+          ? `${snapshot.protocol.standardVaultsCount} standard · ${snapshot.protocol.v2VaultsCount} V2`
+          : "breakdown pending",
+      state:
+        snapshot.protocol.standardVaultsCount !== null &&
+        snapshot.protocol.v2VaultsCount !== null
+          ? "ok"
+          : ("warn" as const),
+    },
+    {
       key: "Total TVL",
       value:
-        snapshot.protocol.totalTVL !== null
+        snapshot.protocol.totalTVLStatus === "estimating"
+          ? "TVL estimating"
+          : snapshot.protocol.totalTVL !== null
           ? `$${snapshot.protocol.totalTVL}`
           : "on-chain read pending",
-      state: snapshot.protocol.totalTVL !== null ? "ok" : ("warn" as const),
+      state:
+        snapshot.protocol.totalTVL !== null &&
+        snapshot.protocol.totalTVLStatus === "ready"
+          ? "ok"
+          : ("warn" as const),
     },
     {
       key: "Executions",
@@ -136,6 +171,19 @@ export function LiveSystemPanel({
           : "on-chain read pending",
       state:
         snapshot.protocol.totalExecutions !== null ? "ok" : ("warn" as const),
+    },
+    {
+      key: "Exec mix",
+      value:
+        snapshot.protocol.standardExecutions !== null &&
+        snapshot.protocol.v2Executions !== null
+          ? `${metricValue(snapshot.protocol.standardExecutions, "standard")} · ${metricValue(snapshot.protocol.v2Executions, "V2")}`
+          : "breakdown pending",
+      state:
+        snapshot.protocol.standardExecutions !== null &&
+        snapshot.protocol.v2Executions !== null
+          ? "ok"
+          : ("warn" as const),
     },
     {
       key: "Agent",
