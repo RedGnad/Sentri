@@ -60,18 +60,18 @@ Recovered TEE signer on the current demo execution: 0x4386909Ef321651ab78298Ae45
 Current production path (live).
 The standard keeper path is the live operating path on mainnet. Each cycle requires Jaine V3 slot0() on-chain plus Pyth 0G/USD via Hermes (2-of-2 quorum, spread-bounded), then keeper-pushed to SentriPriceFeed. The vault enforces oracle freshness, slippage, exposure, drawdown, cooldown, replay protection (intent + response hashes), pause/kill, and AgentINFT signer gating before any swap.
 
-Trustless Oracle Vault — Canary V2 (deployed, validated, activation pending).
-A premium high-assurance tier that removes the keeper-pushed step: each executeStrategyWithPyth() carries a signed Pyth update verified on-chain in the same transaction, and the verified price drives minOut, exposure, drawdown and TVL (pythMaxAge = 60 s, pythMaxConfBps = 200). Deployed and validated at the contract level on 0G mainnet:
+Trustless Oracle Vault — Advanced Tier (live on 0G mainnet, verified execution).
+A high-assurance tier that removes the keeper-pushed step: each executeStrategyWithPyth() carries a signed Pyth update verified on-chain in the same transaction, and the verified price drives minOut, exposure, drawdown and TVL (pythMaxAge = 60 s, pythMaxConfBps = 200). Live on 0G mainnet with a canonical economic execution proven below; opt-in per vault, the Standard keeper path remains the default operating path:
 
 • VaultFactoryV2: 0xA3588d1964F7CeCDcFac15e38D286554955CF58C
 • TreasuryVaultTrustlessOracle impl: 0x0F8b9A0c064306F938912658c96c681D8655140B
-• Canary vault (Balanced): 0x86cE22c597D0C4EC309ba166360686C39A3f40ed
+• Reference V2 vault (Balanced preset): 0x86cE22c597D0C4EC309ba166360686C39A3f40ed
 • Pyth (0G mainnet): 0x2880aB155794e7179c9eE2e38200202908C17B43 — feed Crypto.0G/USD 0xfa9e8d45…ea3070
 • createVault tx: 0x81cff80ace50a2cfb8051c015505667c5df7812e754a0c4b56a6fdf410f4fcb8
 • setAuthorizedFactory tx (owner): 0x7c018f9fbd7050a7369267be0272c7a31bf9a9bf7cb16eea5c224446887a3d55
 • Read-only verification (no key): pnpm --filter @steward/sdk verify:trustless-canary
 
-A canonical executeStrategyWithPyth execution is verified on 0G mainnet (tx hash + verify command in the README "Trustless Oracle Vault — Canary V2" section and docs/runbook-p4-trustless-execution.md).
+A canonical executeStrategyWithPyth execution is verified on 0G mainnet (tx hash + verify command in the README "Trustless Oracle Vault — Advanced Tier" section, docs/runbook-p4-trustless-execution.md, and the one-page JUDGE_ORACLE_PROOF.md).
 
 Exact scope (no overclaiming): the TEE binding is signer-based (ECDSA recovery against the AgentINFT-bound signer); the contract does not parse the full TEE attestation report on-chain, and there is no on-chain Jaine/Pyth cross-check yet. Source on the feature/trustless-oracle-vault branch.
 

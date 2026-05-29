@@ -114,21 +114,23 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on the current demo execution: `0x4386909Ef321651ab78298Ae454A05FF5d354118`.
 
-### Trustless Oracle Vault — Canary V2 (validated, activation pending)
+### Trustless Oracle Vault — Advanced Tier (live on mainnet, verified execution)
 
-A premium execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction**. Deployed and validated at the contract level on 0G mainnet; **not** yet the live production path — the standard keeper path above remains the operating path. Source: [`feature/trustless-oracle-vault`](https://github.com/RedGnad/Sentri/tree/feature/trustless-oracle-vault).
+An advanced execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction as the swap**. **Live on 0G mainnet with a verified `executeStrategyWithPyth` tx** (see canonical execution below). **Opt-in per vault** — the Standard keeper path remains the default for vaults too small to amortize the Pyth update fee.
+
+For a single-page judge reference see [`JUDGE_ORACLE_PROOF.md`](./JUDGE_ORACLE_PROOF.md) (oracle path proof) and [`JUDGE_TEE_TRUST_BOUNDARY.md`](./JUDGE_TEE_TRUST_BOUNDARY.md) (TEE trust boundary).
 
 | Contract / tx | Address |
 |---|---|
 | `VaultFactoryV2` | [`0xA3588d…CF58C`](https://chainscan.0g.ai/address/0xA3588d1964F7CeCDcFac15e38D286554955CF58C) |
 | `TreasuryVaultTrustlessOracle` impl | [`0x0F8b9A…140B`](https://chainscan.0g.ai/address/0x0F8b9A0c064306F938912658c96c681D8655140B) |
-| Canary vault (Balanced preset) | [`0x86cE22…f40ed`](https://chainscan.0g.ai/address/0x86cE22c597D0C4EC309ba166360686C39A3f40ed) |
+| Reference V2 vault (Balanced preset) | [`0x86cE22…f40ed`](https://chainscan.0g.ai/address/0x86cE22c597D0C4EC309ba166360686C39A3f40ed) |
 | Pyth oracle (0G mainnet) | [`0x2880aB…7B43`](https://chainscan.0g.ai/address/0x2880aB155794e7179c9eE2e38200202908C17B43) |
 | Pyth feed `Crypto.0G/USD` | `0xfa9e8d45…ea3070` |
 | `createVault` tx | [`0x81cff80a…f4fcb8`](https://chainscan.0g.ai/tx/0x81cff80ace50a2cfb8051c015505667c5df7812e754a0c4b56a6fdf410f4fcb8) |
 | `setAuthorizedFactory` tx (owner) | [`0x7c018f9f…87a3d55`](https://chainscan.0g.ai/tx/0x7c018f9fbd7050a7369267be0272c7a31bf9a9bf7cb16eea5c224446887a3d55) |
 
-**V1 vs V2.** V1 (live): price keeper-pushed to `SentriPriceFeed` (Jaine `slot0()` + Pyth Hermes, 2-of-2 quorum off-chain). V2 (canary): each `executeStrategyWithPyth()` carries a signed Pyth update verified on-chain in the same tx — the keeper-pushed step is removed from the execution path — and the verified price drives `minOut`, exposure, drawdown and TVL, under `pythMaxAge = 60s` and `pythMaxConfBps = 200`.
+**Standard vs Advanced.** Standard (default, live): price keeper-pushed to `SentriPriceFeed` (Jaine `slot0()` + Pyth Hermes, 2-of-2 quorum off-chain). Advanced (live, opt-in): each `executeStrategyWithPyth()` carries a signed Pyth update verified on-chain in the same tx — the keeper-pushed step is removed from the execution path — and the verified price drives `minOut`, exposure, drawdown and TVL, under `pythMaxAge = 60s` and `pythMaxConfBps = 200`.
 
 **Canonical execution (verified on mainnet).** `executeStrategyWithPyth` tx [`0x45ab1a82…7317fa`](https://chainscan.0g.ai/tx/0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa) — Rebalance `0.3186 USDC.E → 0.7468 W0G`, Pyth `0G/USD` verified on-chain in the same tx (price 0.42406745, 22 bps conf, 9 s fresh), `executionLogCount` 0 → 1.
 
@@ -225,7 +227,7 @@ This is a forward-looking section.
 
 **Next hardening (weeks)**
 
-- Pyth on-chain pull integration: **canary deployed + validated on mainnet** (see "Trustless Oracle Vault — Canary V2" above) — the vault reads the deployed Pyth contract (`0x2880ab15…7b43`) directly via `updatePriceFeeds`, removing the keeper-pushed step. Remaining: full economic `executeStrategyWithPyth()` proof + agent activation.
+- Pyth on-chain pull integration: **live on mainnet as the Advanced tier** (see "Trustless Oracle Vault — Advanced Tier" above) — the vault reads the deployed Pyth contract (`0x2880ab15…7b43`) directly via `updatePriceFeeds`, and a canonical economic execution is verified on mainnet (tx `0x45ab…7317fa`). Remaining: extend the standard runtime to auto-cycle Advanced vaults (currently on-demand per vault) and surface per-vault tier selection in the deploy UI.
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
 - - Harden canonical audit recovery from 0G Storage Log/blob + KV index: canonical blobs and root-based recovery are live; next step is full generic offline verification and restart-proof indexing without demo recovery records.
 - Third-party security audit.
