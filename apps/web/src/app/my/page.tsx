@@ -54,7 +54,7 @@ export default function MyVaultsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {vaults.map((addr) => <VaultCard key={addr} address={addr} />)}
+          {vaults.map((addr) => <VaultCard key={addr} address={addr} tier="standard" />)}
         </div>
       )}
     </div>
