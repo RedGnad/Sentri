@@ -144,7 +144,7 @@ export default function VaultAuditPage() {
     }),
   );
 
-  const { data: logs } = useReadContracts({
+  const { data: logs, isLoading: logsLoading } = useReadContracts({
     contracts: logContracts,
     query: { enabled: logCount > 0 },
   });
@@ -230,6 +230,14 @@ export default function VaultAuditPage() {
             The agent will append decisions here as it operates.
           </p>
         </div>
+      ) : logsLoading || !logs ? (
+        // Reserve space for the executions list while useReadContracts resolves
+        // so the page does not flash a hole between the header and the cards.
+        // Two structural outlines are enough to communicate "list incoming"
+        // without imitating the final state.
+        Array.from({ length: Math.min(logCount, 2) }, (_, i) => (
+          <AuditCardSkeleton key={i} />
+        ))
       ) : (
         logs?.map((log, i) => {
           if (!log.result) return null;
@@ -891,6 +899,40 @@ function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
   );
 }
 
+
+function AuditCardSkeleton() {
+  return (
+    <article className="border border-hairline bg-bg-elev/10 animate-pulse" aria-hidden>
+      <div className="h-10 border-b border-hairline flex items-center justify-between px-5">
+        <div className="flex items-center gap-4">
+          <div className="h-2 w-12 bg-hairline rounded-sm" />
+          <div className="h-4 w-20 bg-hairline rounded-sm" />
+        </div>
+        <div className="h-2 w-28 bg-hairline rounded-sm" />
+      </div>
+      <div className="px-5 py-5 grid grid-cols-1 md:grid-cols-3 gap-5">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="space-y-2">
+            <div className="h-2 w-16 bg-hairline rounded-sm" />
+            <div className="h-6 w-24 bg-hairline/60 rounded-sm" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 border-t border-hairline">
+        <div className="px-5 py-4 md:border-r border-hairline space-y-2">
+          <div className="h-2 w-20 bg-hairline rounded-sm" />
+          <div className="h-3 w-full bg-hairline/40 rounded-sm" />
+        </div>
+        <div className="px-5 py-4 border-t md:border-t-0 border-hairline space-y-2">
+          <div className="h-2 w-20 bg-hairline rounded-sm" />
+          <div className="h-3 w-full bg-hairline/40 rounded-sm" />
+        </div>
+      </div>
+      <div className="border-t border-hairline h-12" />
+      <div className="border-t border-hairline h-9" />
+    </article>
+  );
+}
 
 function Field({
   label,
