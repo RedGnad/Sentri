@@ -174,7 +174,18 @@ export default function VaultAuditPage() {
           rejections endpoint loads so the bar does not pop in after the
           executions render. Neutral styling: defensive proof, not alarm. */}
       {rejectionsLoading ? (
-        <div className="border border-hairline bg-bg-elev/10 h-[46px] mb-4 opacity-50" aria-hidden />
+        <div
+          className="border border-hairline bg-bg-elev/20 mb-4 animate-pulse"
+          aria-hidden
+        >
+          <div className="w-full flex items-center justify-between px-4 h-[46px]">
+            <div className="flex items-center gap-3">
+              <span className="inline-block w-1 h-1 rounded-full bg-hairline shrink-0" />
+              <span className="h-2 w-36 bg-hairline rounded-sm" />
+            </div>
+            <span className="h-3 w-3 bg-hairline/60 rounded-sm" />
+          </div>
+        </div>
       ) : (
         visibleRejections.length > 0 && (
           <div className="border border-hairline bg-bg-elev/10 mb-4">
