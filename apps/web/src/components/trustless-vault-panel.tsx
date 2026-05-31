@@ -273,16 +273,28 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
                     onClick={() => setTier(t)}
                     disabled={isCreating || isCreateConfirming}
                     className={cn(
-                      "border p-3 text-left transition-colors disabled:opacity-50",
+                      "border p-3 text-left transition-colors disabled:opacity-50 flex flex-col gap-2",
                       selected
                         ? "border-amber bg-amber/10"
                         : "border-hairline hover:border-amber/40 bg-bg-elev/20",
                     )}
                   >
-                    <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
-                      Tier {String(t).padStart(2, "0")}
+                    <div>
+                      <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
+                        Tier {String(t).padStart(2, "0")}
+                      </div>
+                      <div className="font-mono text-[12px] text-ink leading-snug">{preset.name}</div>
                     </div>
-                    <div className="font-mono text-[12px] text-ink leading-snug">{preset.name}</div>
+                    <p className="font-mono text-[10px] text-ink-dim leading-relaxed">
+                      {preset.description}
+                    </p>
+                    <ul className="space-y-0.5 mt-auto">
+                      {preset.bullets.map((b) => (
+                        <li key={b} className="font-mono text-[9px] text-ink-dim leading-snug">
+                          · {b}
+                        </li>
+                      ))}
+                    </ul>
                   </button>
                 );
               })}
