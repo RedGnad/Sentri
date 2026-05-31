@@ -44,6 +44,9 @@ export const STORAGE = {
 
 const GALILEO_CONTRACTS = {
   vaultFactory: "0x8a94F377De5450269e2035C8fAE31dE1E181F10e",
+  // VaultFactoryV2 is mainnet-only today; empty string means "not configured"
+  // and the V2 keeper batch is skipped regardless of SENTRI_ENABLE_V2_KEEPER.
+  vaultFactoryV2: "",
   vaultImplementation: "0x2A33268CbB4a5639063331Db94FD94a8426765C0",
   agentINFT: "0x1181A8670d5CA9597D60fEf2A571a14C58F33020",
   swapRouter: "0xD58b37C4d838aad5E0734ba3F0d34DFA34186d7C",
@@ -56,6 +59,7 @@ const GALILEO_CONTRACTS = {
 
 const MAINNET_CONTRACTS = {
   vaultFactory: "0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7",
+  vaultFactoryV2: "0xA3588d1964F7CeCDcFac15e38D286554955CF58C",
   vaultImplementation: "0xf86013C68811047F6dEc98c4ED6601C80B720668",
   agentINFT: "0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951",
   swapRouter: "0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4",
@@ -85,6 +89,13 @@ function normalizeAddress(value: string | undefined): string | undefined {
 // and Render config).
 export const CONTRACTS = {
   vaultFactory: normalizeAddress(process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS) ?? selectedContracts.vaultFactory,
+  // V2 factory — when empty (Galileo today, or env override unset on a network
+  // where the V2 factory isn't deployed), the V2 keeper batch is skipped with a
+  // log and never blocks V1.
+  vaultFactoryV2:
+    normalizeAddress(process.env.SENTRI_VAULT_FACTORY_V2_ADDRESS)
+    ?? normalizeAddress(process.env.NEXT_PUBLIC_VAULT_FACTORY_V2_ADDRESS)
+    ?? selectedContracts.vaultFactoryV2,
   vaultImplementation: normalizeAddress(process.env.NEXT_PUBLIC_VAULT_IMPLEMENTATION_ADDRESS) ?? selectedContracts.vaultImplementation,
   agentINFT: normalizeAddress(process.env.NEXT_PUBLIC_AGENT_INFT_ADDRESS) ?? selectedContracts.agentINFT,
   swapRouter: normalizeAddress(process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS) ?? selectedContracts.swapRouter,
@@ -106,6 +117,35 @@ export const AGENT = {
   loopIntervalMs: 60_000,        // legacy single-vault interval (CLI)
   cycleIntervalMs: 5 * 60_000,   // multi-vault cycle interval (server)
   cooldownPeriodS: 300,
+} as const;
+
+// V2 keeper batch defaults. Every field is overridable via env so the operator
+// can flip the canary on/off without a redeploy. Defaults are deliberately
+// conservative — flag OFF, no allowlist (empty = skip), generous OG floor.
+export const V2_KEEPER = {
+  /** Master flag. When false (default), the V2 batch is fully bypassed. */
+  enabled: (process.env.SENTRI_ENABLE_V2_KEEPER ?? "false").toLowerCase() === "true",
+  /**
+   * Comma-separated 0x addresses. Vaults discovered by VaultFactoryV2 that are
+   * NOT in this list are dropped. Empty list = no V2 work this cycle (warning
+   * logged once per cycle). Lowercased on read.
+   */
+  allowlist: (process.env.SENTRI_V2_KEEPER_ALLOWLIST ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
+  /**
+   * Minimum operator OG balance (wei) before the V2 batch is allowed. The Pyth
+   * pull fee is paid in native OG (~2e17 wei per exec). Default 0.5 OG leaves
+   * headroom for the price push (V1) plus a few retries.
+   */
+  minOgWei: BigInt(process.env.SENTRI_V2_KEEPER_MIN_OG_WEI ?? "500000000000000000"),
+  /**
+   * Hard cap on the number of V2 vaults handled per cycle. Default 1: the
+   * canary is the only allowlisted vault today, but this also caps the blast
+   * radius if a future allowlist grows faster than the keeper is observed.
+   */
+  maxVaultsPerCycle: Number(process.env.SENTRI_V2_MAX_VAULTS_PER_CYCLE ?? "1"),
 } as const;
 
 // VaultFactory ABI — minimal subset the agent needs for vault discovery
@@ -130,6 +170,15 @@ export const VAULT_FACTORY_ABI = [
   "function base() external view returns (address)",
   "function risk() external view returns (address)",
   "event VaultCreated(address indexed owner, address indexed vault, uint8 tier, tuple(uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint16 maxSlippageBps, uint32 cooldownPeriod, uint32 maxPriceStaleness) policy, uint256 indexed index)",
+] as const;
+
+// VaultFactoryV2 ABI — minimal subset for V2 vault discovery. The V2 factory
+// uses `vaultCount()` (no trailing s) and `allVaults(uint256)` rather than the
+// V1 paginated `vaultsPage(...)` helper, so the V2 keeper reads one address per
+// call. Keep this small: the V2 keeper batch only needs to list addresses.
+export const VAULT_FACTORY_V2_ABI = [
+  "function vaultCount() external view returns (uint256)",
+  "function allVaults(uint256) external view returns (address)",
 ] as const;
 
 // TreasuryVault ABI — matches Phase 1 init-pattern contract

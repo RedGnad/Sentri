@@ -18,6 +18,7 @@ import { ethers } from "ethers";
 import {
   setupGlobalContext,
   discoverVaults,
+  discoverVaultsV2,
   pushPrice,
   executeOneIterationForVault,
   refreshSignerHealth,
@@ -66,7 +67,7 @@ import {
   type PointType,
   type PointsEntry,
 } from "./points.js";
-import { AGENT, CONTRACTS, ERC20_ABI, TREASURY_VAULT_ABI } from "./constants.js";
+import { AGENT, CONTRACTS, ERC20_ABI, TREASURY_VAULT_ABI, V2_KEEPER } from "./constants.js";
 import {
   initRejectionsLedger,
   getRejectionsForVault,
@@ -709,7 +710,7 @@ async function runCycle(): Promise<void> {
         continue;
       }
       try {
-        const outcome = await executeOneIterationForVault(ctx, vaultAddr, market);
+        const outcome = await executeOneIterationForVault(ctx, vaultAddr, market, "v1");
         v.inferenceFundingBackoffUntil = null;
         v.lastOutcome = outcome;
         log(`  ${vaultAddr.slice(0, 10)}... → ${outcome.status} — ${describeOutcome(outcome).text}`);
@@ -724,6 +725,69 @@ async function runCycle(): Promise<void> {
       } finally {
         v.lastIterationAt = Date.now();
       }
+    }
+
+    // ── V2 keeper batch (gated canary) ──────────────────────────────────
+    // Hard-isolated from the V1 batch above: any error in this block is
+    // logged and absorbed locally, so a Hermes/Pyth/RPC failure on V2 can
+    // never affect the V1 iteration outcome or trigger state.totalCycleErrors.
+    // ctx.factoryV2 is non-null only when SENTRI_ENABLE_V2_KEEPER=true AND a
+    // VaultFactoryV2 address is configured for the active network — both
+    // gates are evaluated once at startup. Allowlist + OG balance + max
+    // cap are re-evaluated every cycle so the operator can flip them via
+    // env without redeploying.
+    try {
+      if (ctx.factoryV2) {
+        if (V2_KEEPER.allowlist.length === 0) {
+          log(
+            "[v2-keeper] allowlist empty (SENTRI_V2_KEEPER_ALLOWLIST unset) — " +
+              "no V2 vault eligible this cycle. Flag is ON but no canary specified.",
+          );
+        } else {
+          const ogBalance = await ctx.provider.getBalance(ctx.walletAddress);
+          if (ogBalance < V2_KEEPER.minOgWei) {
+            log(
+              `[v2-keeper] OG balance ${ethers.formatEther(ogBalance)} below floor ` +
+                `${ethers.formatEther(V2_KEEPER.minOgWei)} — V2 batch skipped to preserve operator runway.`,
+            );
+          } else {
+            const discoveredV2 = await discoverVaultsV2(ctx);
+            const allowed = new Set(V2_KEEPER.allowlist);
+            const keptV2 = discoveredV2
+              .filter((a) => allowed.has(a.toLowerCase()))
+              .slice(0, V2_KEEPER.maxVaultsPerCycle);
+            log(
+              `[v2-keeper] discovered ${discoveredV2.length} V2 vault(s); kept ${keptV2.length} ` +
+                `after allowlist; cap=${V2_KEEPER.maxVaultsPerCycle}; ` +
+                `OG balance=${ethers.formatEther(ogBalance)}.`,
+            );
+            for (const vaultAddr of keptV2) {
+              const v = getOrInitVault(vaultAddr);
+              v.totalIterations++;
+              try {
+                log(`[v2-keeper] ${vaultAddr.slice(0, 10)}... → iterating with version=v2`);
+                const outcome = await executeOneIterationForVault(ctx, vaultAddr, market, "v2");
+                v.lastOutcome = outcome;
+                log(
+                  `[v2-keeper] ${vaultAddr.slice(0, 10)}... → ${outcome.status} — ` +
+                    describeOutcome(outcome).text,
+                );
+              } catch (err) {
+                v.totalErrors++;
+                const reason = err instanceof Error ? err.message : String(err);
+                v.lastOutcome = { status: "error", reason };
+                log(`[v2-keeper] ${vaultAddr.slice(0, 10)}... → ERROR: ${reason}`);
+              } finally {
+                v.lastIterationAt = Date.now();
+              }
+            }
+          }
+        }
+      }
+    } catch (v2err) {
+      // Hard isolation — a V2-batch failure must never leak into the V1 outcome
+      // accounting or the cycle error counter. Log only, then move on.
+      log(`[v2-keeper] batch error (isolated, V1 unaffected): ${v2err instanceof Error ? v2err.message : v2err}`);
     }
   } catch (err) {
     state.totalCycleErrors++;

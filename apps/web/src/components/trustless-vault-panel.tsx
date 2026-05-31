@@ -115,6 +115,18 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
+      {/* Beta fee model — who pays Pyth + gas today */}
+      <div className="border border-hairline bg-bg-elev/10 px-5 py-4 space-y-2">
+        <div className="font-mono text-[9px] uppercase tracking-kicker text-amber">
+          Beta — fee model
+        </div>
+        <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
+          Pyth oracle fees (~{T.oracleFeeOg} OG per execution) and keeper gas are sponsored by
+          Sentri during the beta. User-funded fee buffers are planned for V2.1 (contract redeploy,
+          not a config flip).
+        </p>
+      </div>
+
       {/* Honest status note */}
       <p className="font-mono text-[11px] text-ink-faint leading-relaxed border border-hairline bg-bg-elev/10 px-5 py-4">
         Genesis Canary — deployed and verified on 0G mainnet as a proof vault. Official V2 launch
