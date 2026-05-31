@@ -2,13 +2,13 @@
 /**
  * pnpm --filter @steward/sdk verify:trustless-execution --tx <hash>
  *
- * Read-only, key-less judge proof for ONE executeStrategyWithPyth() transaction
- * on the canary vault. Parses the TrustlessOracleExecution event, cross-checks
- * the on-chain execution log (for the TEE signer), and re-reads AgentINFT
- * authorization. Exits 1 on any failure.
+ * Read-only, key-less verifier for ONE executeStrategyWithPyth() transaction
+ * on the Reference V2 vault. Parses the TrustlessOracleExecution event,
+ * cross-checks the on-chain execution log (for the TEE signer), and re-reads
+ * AgentINFT authorization. Exits 1 on any failure.
  *
  * Checks:
- *  - event present and emitted by the canary vault
+ *  - event present and emitted by the expected V2 vault
  *  - event.agent == expected operator
  *  - executionLogCount incremented (>= 1) and a log matches this intentHash
  *  - Pyth freshness: (log.timestamp - pythPublishTime) <= pythMaxAge (60s)
@@ -39,6 +39,7 @@ const EXEC_EVENT_ABI = [
 const VAULT_ABI = [
   "function executionLogCount() view returns (uint256)",
   "function executionLogs(uint256) view returns (uint256 timestamp, uint8 action, uint256 amountIn, uint256 amountOut, uint256 tvlAfter, bytes32 intentHash, bytes32 responseHash, address teeSigner, bytes32 teeAttestation, uint256 deadline, uint256 pythPrice, uint256 pythPublishTime, uint256 pythConfBps)",
+  "function policy() view returns (uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint16 maxSlippageBps, uint32 cooldownPeriod, uint32 maxPriceStaleness)",
 ];
 const INFT_ABI = ["function isActiveAgentWithSigner(address,address) view returns (bool)"];
 
@@ -62,7 +63,11 @@ function parseTxArg(): string {
 async function main() {
   const txHash = parseTxArg();
   console.log("=== Verify trustless execution — 0G mainnet ===\n");
-  console.log(`tx : ${EXPLORER}/tx/${txHash}\n`);
+  console.log(`chain    : 0G mainnet · chainId 16661`);
+  console.log(`function : executeStrategyWithPyth (event TrustlessOracleExecution)`);
+  console.log(`vault    : ${A.vault}`);
+  console.log(`Pyth     : 0x2880aB155794e7179c9eE2e38200202908C17B43 · feed Crypto.0G/USD`);
+  console.log(`tx       : ${EXPLORER}/tx/${txHash}\n`);
 
   const provider = new ethers.JsonRpcProvider(RPC);
   const receipt = await provider.getTransactionReceipt(txHash);
@@ -94,8 +99,8 @@ async function main() {
   }
 
   const a = ev.args;
-  check("emitted by canary vault", eqAddr(emitter, A.vault), emitter);
-  check("event.vault == canary vault", eqAddr(a.vault, A.vault), a.vault);
+  check("emitted by expected V2 vault", eqAddr(emitter, A.vault), emitter);
+  check("event.vault == expected V2 vault", eqAddr(a.vault, A.vault), a.vault);
   check("event.agent == operator", eqAddr(a.agent, A.agent), a.agent);
 
   const stalenessSec = a.timestamp - a.pythPublishTime;
@@ -130,23 +135,44 @@ async function main() {
   const signerBound: boolean = await inft.isActiveAgentWithSigner(A.agent, teeSigner);
   check("recovered TEE signer bound to AgentINFT", signerBound, teeSigner);
 
+  // Read the vault's current policy for the slippage / caps comparison below.
+  // Pyth feed Crypto.0G/USD on 0G mainnet uses expo -8: amountIn (6 dec) and
+  // pythPrice (8 dec) → expected amountOut in W0G (18 dec).
+  const policy = await vault.policy();
+  const expectedOut = (a.amountIn * 10n ** 20n) / a.pythPrice;
+  const slipBps =
+    expectedOut > a.amountOut
+      ? ((expectedOut - a.amountOut) * 10000n) / expectedOut
+      : 0n;
+
   console.log("\n=== Execution detail ===");
-  console.log(`  action        : ${ACTIONS[Number(matched.action)] ?? matched.action}`);
-  console.log(`  intentHash    : ${a.intentHash}`);
-  console.log(`  responseHash  : ${a.responseHash}`);
-  console.log(`  teeSigner     : ${teeSigner}`);
-  console.log(`  pythPriceId   : ${a.pythPriceId}`);
-  console.log(`  pythPrice     : ${a.pythPrice}`);
-  console.log(`  pythPublishTime: ${a.pythPublishTime} (${new Date(Number(a.pythPublishTime) * 1000).toISOString()})`);
-  console.log(`  pythConfBps   : ${a.pythConfBps}`);
-  console.log(`  amountIn      : ${a.amountIn}`);
-  console.log(`  amountOut     : ${a.amountOut}`);
+  console.log(`  action          : ${ACTIONS[Number(matched.action)] ?? matched.action}`);
+  console.log(`  intentHash      : ${a.intentHash}`);
+  console.log(`  responseHash    : ${a.responseHash}`);
+  console.log(`  teeSigner       : ${teeSigner}`);
+  console.log(`  pythPriceId     : ${a.pythPriceId}`);
+  console.log(`  pythPrice       : ${a.pythPrice}`);
+  console.log(`  pythPublishTime : ${a.pythPublishTime} (${new Date(Number(a.pythPublishTime) * 1000).toISOString()})`);
+  console.log(`  blockTimestamp  : ${a.timestamp} (${new Date(Number(a.timestamp) * 1000).toISOString()})`);
+  console.log(`  pythConfBps     : ${a.pythConfBps}  (policy max: ${PYTH_MAX_CONF_BPS})`);
+  console.log(`  amountIn        : ${a.amountIn}`);
+  console.log(`  amountOut       : ${a.amountOut}`);
+  console.log(`  expected out    : ${expectedOut} (zero-slippage estimate from Pyth)`);
+  console.log(`  slippage        : ${slipBps} bps  (policy max: ${policy.maxSlippageBps} bps)`);
+  console.log(`  executionLogs   : ${count - 1n} → ${count}`);
+  console.log(`  policy          : maxAlloc ${policy.maxAllocationBps}bps · maxDD ${policy.maxDrawdownBps}bps · cooldown ${policy.cooldownPeriod}s`);
+
+  console.log("\n=== Explorer ===");
+  console.log(`  tx        : ${EXPLORER}/tx/${txHash}`);
+  console.log(`  vault     : ${EXPLORER}/address/${A.vault}`);
+  console.log(`  Pyth      : ${EXPLORER}/address/0x2880aB155794e7179c9eE2e38200202908C17B43`);
+  console.log(`  AgentINFT : ${EXPLORER}/address/${A.agentNFT}`);
 
   if (failures > 0) {
-    console.error(`\n✗ ${failures} check(s) failed.`);
+    console.error(`\nVERDICT: FAIL  (${failures} check(s) failed)`);
     process.exit(1);
   }
-  console.log("\n✅ Verified trustless executeStrategyWithPyth execution on the canary vault.");
+  console.log(`\nVERDICT: PASS  · Verified executeStrategyWithPyth on the Reference V2 vault.`);
 }
 
 main().catch((err) => {

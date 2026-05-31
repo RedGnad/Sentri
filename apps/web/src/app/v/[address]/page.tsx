@@ -140,6 +140,10 @@ export default function VaultOverviewPage() {
     withdrawAmount.length > 0 && withdrawWei > vault.balance;
   const isOwner = connected?.toLowerCase() === vault.owner.toLowerCase();
   const hasOnChainExecutions = vault.logCount > 0n;
+  // V2 (Advanced · trustless-oracle) vaults are not operated by the standard
+  // keeper runtime — discoverVaults reads only the standard factory. So the
+  // runtime panel must not imply an imminent "Syncing"; it never will.
+  const isV2 = vault.tier === "v2";
 
   return (
     <div className="space-y-8">
@@ -177,13 +181,22 @@ export default function VaultOverviewPage() {
           <AgentDot
             status={agentState?.runtime?.lastOutcome?.status}
             hasOnChainExecutions={hasOnChainExecutions}
+            isV2={isV2}
           />
         </header>
         <div className="px-5 py-5">
-          {!agentState?.portfolio && !agentState?.runtime ? (
+          {isV2 ? (
+            <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
+              {hasOnChainExecutions
+                ? "Pyth verified on-chain. TEE-signed reasoning and execution proof in the Audit tab."
+                : "Trustless oracle path — Pyth verified on-chain at execution time. Runs on-demand, not on the standard keeper cycle."}
+            </p>
+          ) : !agentState?.portfolio && !agentState?.runtime ? (
             hasOnChainExecutions ? (
               <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
-                Runtime syncing… on-chain execution history available.
+                On-chain execution history available — full detail in the Audit
+                tab. Live runtime state appears here once the agent reports a
+                cycle for this vault.
               </p>
             ) : (
               <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
@@ -536,10 +549,22 @@ function Field({
 function AgentDot({
   status,
   hasOnChainExecutions = false,
+  isV2 = false,
 }: {
   status?: string;
   hasOnChainExecutions?: boolean;
+  isV2?: boolean;
 }) {
+  // V2 vaults run on the trustless-oracle path (executeStrategyWithPyth), not
+  // on the standard keeper runtime. Surface that positively as a tier label.
+  if (isV2) {
+    return (
+      <span className="font-mono text-[9px] uppercase tracking-kicker text-orchid flex items-center gap-1.5">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-orchid" />
+        Advanced V2 · trustless oracle
+      </span>
+    );
+  }
   if (status === "executed") {
     return (
       <span className="font-mono text-[9px] uppercase tracking-kicker text-phosphor flex items-center gap-1.5">
@@ -567,7 +592,7 @@ function AgentDot({
   return (
     <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-dim flex items-center gap-1.5">
       <span className="inline-block w-1.5 h-1.5 rounded-full bg-ink-dim" />
-      {hasOnChainExecutions ? "Syncing" : "No iterations yet"}
+      {hasOnChainExecutions ? "On-chain history available" : "No iterations yet"}
     </span>
   );
 }

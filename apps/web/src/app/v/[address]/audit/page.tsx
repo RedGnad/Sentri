@@ -120,7 +120,7 @@ export default function VaultAuditPage() {
 
   const { data: vault, isLoading: vaultLoading } = useParsedVaultData(address);
   const logCount = vault ? Number(vault.logCount) : 0;
-  const { data: rejectionsData } = useVaultRejections(address);
+  const { data: rejectionsData, isLoading: rejectionsLoading } = useVaultRejections(address);
   const visibleRejections =
     rejectionsData?.entries.filter(
       (entry) => entry.errorCode !== "CooldownNotElapsed",
@@ -144,7 +144,7 @@ export default function VaultAuditPage() {
     }),
   );
 
-  const { data: logs } = useReadContracts({
+  const { data: logs, isLoading: logsLoading } = useReadContracts({
     contracts: logContracts,
     query: { enabled: logCount > 0 },
   });
@@ -170,44 +170,66 @@ export default function VaultAuditPage() {
         </span>
       </div>
 
-      {visibleRejections.length > 0 && (
-        <div className="border border-hairline bg-bg-elev/10 mb-4">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3 text-left"
-            onClick={() => setRejectionsExpanded((v) => !v)}
-          >
-            <span className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] uppercase tracking-kicker">
-              {blockedActions.length > 0 && (
-                <span className="flex items-center gap-2 text-alert">
-                  <ShieldX className="h-3.5 w-3.5" />
-                  {blockedActions.length} blocked action
-                  {blockedActions.length === 1 ? "" : "s"}
-                </span>
-              )}
-              {verifierHolds.length > 0 && (
-                <span className="flex items-center gap-2 text-amber">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  {verifierHolds.length} verifier hold
-                  {verifierHolds.length === 1 ? "" : "s"}
-                </span>
-              )}
-            </span>
-            {rejectionsExpanded ? (
-              <ChevronUp className="h-4 w-4 text-ink-dim" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-ink-dim" />
-            )}
-          </button>
-          {rejectionsExpanded && (
-            <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
-              {groupRejections([...blockedActions, ...verifierHolds]).map(
-                (group, i) => (
-                  <RejectionGroup key={i} entries={group} />
-                ),
-              )}
+      {/* Policy enforcement summary — reserves its space while the async
+          rejections endpoint loads so the bar does not pop in after the
+          executions render. Neutral styling: defensive proof, not alarm. */}
+      {rejectionsLoading ? (
+        <div
+          className="border border-hairline bg-bg-elev/20 mb-4 animate-pulse"
+          aria-hidden
+        >
+          <div className="w-full flex items-center justify-between px-4 h-[46px]">
+            <div className="flex items-center gap-3">
+              <span className="inline-block w-1 h-1 rounded-full bg-hairline shrink-0" />
+              <span className="h-2 w-36 bg-hairline rounded-sm" />
             </div>
-          )}
+            <span className="h-3 w-3 bg-hairline/60 rounded-sm" />
+          </div>
         </div>
+      ) : (
+        visibleRejections.length > 0 && (
+          <div className="border border-hairline bg-bg-elev/10 mb-4">
+            <button
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-bg-elev/20 transition-colors"
+              onClick={() => setRejectionsExpanded((v) => !v)}
+            >
+              <span className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+                <span className="inline-block w-1 h-1 rounded-full bg-phosphor shrink-0" />
+                <span>Policy enforcement</span>
+                {blockedActions.length > 0 && (
+                  <>
+                    <span className="text-ink-faint">·</span>
+                    <span>
+                      {blockedActions.length} rejected
+                    </span>
+                  </>
+                )}
+                {verifierHolds.length > 0 && (
+                  <>
+                    <span className="text-ink-faint">·</span>
+                    <span>
+                      {verifierHolds.length} verifier hold{verifierHolds.length === 1 ? "" : "s"}
+                    </span>
+                  </>
+                )}
+              </span>
+              {rejectionsExpanded ? (
+                <ChevronUp className="h-4 w-4 text-ink-dim" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-ink-dim" />
+              )}
+            </button>
+            {rejectionsExpanded && (
+              <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
+                {groupRejections([...blockedActions, ...verifierHolds]).map(
+                  (group, i) => (
+                    <RejectionGroup key={i} entries={group} />
+                  ),
+                )}
+              </div>
+            )}
+          </div>
+        )
       )}
 
       {logCount === 0 ? (
@@ -219,6 +241,14 @@ export default function VaultAuditPage() {
             The agent will append decisions here as it operates.
           </p>
         </div>
+      ) : logsLoading || !logs ? (
+        // Reserve space for the executions list while useReadContracts resolves
+        // so the page does not flash a hole between the header and the cards.
+        // Two structural outlines are enough to communicate "list incoming"
+        // without imitating the final state.
+        Array.from({ length: Math.min(logCount, 2) }, (_, i) => (
+          <AuditCardSkeleton key={i} />
+        ))
       ) : (
         logs?.map((log, i) => {
           if (!log.result) return null;
@@ -265,6 +295,7 @@ export default function VaultAuditPage() {
           );
         })
       )}
+
     </div>
   );
 }
@@ -879,6 +910,40 @@ function RejectionRow({ entry }: { entry: VaultRejectionEntry }) {
   );
 }
 
+
+function AuditCardSkeleton() {
+  return (
+    <article className="border border-hairline bg-bg-elev/10 animate-pulse" aria-hidden>
+      <div className="h-10 border-b border-hairline flex items-center justify-between px-5">
+        <div className="flex items-center gap-4">
+          <div className="h-2 w-12 bg-hairline rounded-sm" />
+          <div className="h-4 w-20 bg-hairline rounded-sm" />
+        </div>
+        <div className="h-2 w-28 bg-hairline rounded-sm" />
+      </div>
+      <div className="px-5 py-5 grid grid-cols-1 md:grid-cols-3 gap-5">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="space-y-2">
+            <div className="h-2 w-16 bg-hairline rounded-sm" />
+            <div className="h-6 w-24 bg-hairline/60 rounded-sm" />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 border-t border-hairline">
+        <div className="px-5 py-4 md:border-r border-hairline space-y-2">
+          <div className="h-2 w-20 bg-hairline rounded-sm" />
+          <div className="h-3 w-full bg-hairline/40 rounded-sm" />
+        </div>
+        <div className="px-5 py-4 border-t md:border-t-0 border-hairline space-y-2">
+          <div className="h-2 w-20 bg-hairline rounded-sm" />
+          <div className="h-3 w-full bg-hairline/40 rounded-sm" />
+        </div>
+      </div>
+      <div className="border-t border-hairline h-12" />
+      <div className="border-t border-hairline h-9" />
+    </article>
+  );
+}
 
 function Field({
   label,
