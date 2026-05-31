@@ -127,10 +127,52 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
         </p>
       </div>
 
+      {/* Beta access — concrete next-step instructions for users / judges.
+          The V2 keeper runs a strict allowlist; without explicit onboarding,
+          a freshly-created V2 vault stays dormant. State that plainly. */}
+      <div className="border border-amber/30 bg-amber/5 px-5 py-4 space-y-3">
+        <div className="font-mono text-[9px] uppercase tracking-kicker text-amber">
+          Beta access — how to join
+        </div>
+        <ol className="space-y-2 font-mono text-[11px] text-ink-dim leading-relaxed list-none">
+          <li>
+            <span className="text-amber">1.</span> Deploy your V2 vault by calling
+            {" "}
+            <a
+              href={`${T.explorer}/address/${T.factory}#writeContract`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber hover:underline"
+            >
+              VaultFactoryV2.createVault()
+            </a>
+            {" "}
+            on the explorer.
+          </li>
+          <li>
+            <span className="text-amber">2.</span> Send your vault address on Telegram to
+            {" "}
+            <a
+              href="https://t.me/RedG_billycatnip"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-amber hover:underline"
+            >
+              @RedG_billycatnip
+            </a>
+            .
+          </li>
+          <li>
+            <span className="text-amber">3.</span> Allowlist update within 24h. Your vault is then
+            auto-cycled by the keeper. Until then it stays dormant — no funds at risk.
+          </li>
+        </ol>
+      </div>
+
       {/* Honest status note */}
       <p className="font-mono text-[11px] text-ink-faint leading-relaxed border border-hairline bg-bg-elev/10 px-5 py-4">
-        Genesis Canary — deployed and verified on 0G mainnet as a proof vault. Official V2 launch
-        waits for a new execution with durable, recoverable audit reasoning. Standard vaults are unaffected.
+        Genesis Canary — deployed and verified on 0G mainnet as a proof vault. Standard vaults are
+        unaffected by V2 keeper state.
       </p>
 
       {/* CTA */}
