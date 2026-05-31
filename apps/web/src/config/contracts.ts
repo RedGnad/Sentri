@@ -269,6 +269,28 @@ export const VAULT_FACTORY_V2_ABI = [
     outputs: [{ type: "address" }],
     stateMutability: "view",
   },
+  // Preset deploy — mirrors V1 createVault(tier). Returned address is parsed
+  // from the TrustlessOracleVaultCreated event in the receipt by the in-panel
+  // create wizard.
+  {
+    type: "function",
+    name: "createVault",
+    inputs: [{ type: "uint8", name: "tier" }],
+    outputs: [{ type: "address", name: "vault" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "event",
+    name: "TrustlessOracleVaultCreated",
+    inputs: [
+      { type: "address", name: "owner", indexed: true },
+      { type: "address", name: "vault", indexed: true },
+      { type: "address", name: "agent", indexed: true },
+      { type: "bytes32", name: "priceId" },
+      { type: "address", name: "pyth" },
+    ],
+    anonymous: false,
+  },
 ] as const satisfies Abi;
 
 export const TREASURY_VAULT_V2_ABI = [

@@ -183,6 +183,33 @@ export function usePresetPolicyPreview(tier: number) {
 
 // ── Writes ───────────────────────────────────────────────────────────────
 
+/**
+ * Create a Trustless Oracle (V2) vault via VaultFactoryV2. Minimal surface
+ * for the in-panel create wizard — preset only, no deposit step. The user
+ * deposits after creation from the vault detail page; the existing
+ * useDeposit hook works for V2 since TreasuryVaultTrustlessOracle.deposit()
+ * has the same signature as V1.
+ */
+export function useCreateV2Vault() {
+  const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({ hash });
+
+  function createPreset(tier: number) {
+    writeContract({ ...factoryV2Contract, functionName: "createVault", args: [tier] });
+  }
+
+  return {
+    createPreset,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+    hash,
+    receipt,
+    reset,
+  };
+}
+
 export function useCreateVault() {
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
   const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({ hash });
