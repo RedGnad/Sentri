@@ -197,8 +197,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
         </div>
         <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
           Pyth oracle fees (~{T.oracleFeeOg} OG per execution) and keeper gas are sponsored by
-          Sentri during the beta. User-funded fee buffers are planned for V2.1 (contract redeploy,
-          not a config flip).
+          Sentri during the beta.
         </p>
       </div>
 
