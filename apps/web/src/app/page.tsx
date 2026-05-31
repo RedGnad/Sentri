@@ -61,17 +61,17 @@ export default async function LandingPage() {
   const demoVaultHref = `/v/${DEMO_VAULT_ADDRESS}`;
 
   return (
-    <div className="relative">
-      {/* Interactive amber grid — translates the Blender geometry-nodes
-          proximity-field design (grid + distance-to-empty displacement) into
-          a discreet web background. Landing-only, unmounts on navigation. */}
+    // Single stacking context that encloses both the canvas grid AND the
+    // content. The canvas at z-0 paints first (positioned, document order),
+    // the inner `relative` content wrapper sits at z-auto positioned, so
+    // it paints after the canvas (text/UI on top of the grid). Crucially,
+    // because canvas + buttons live in the SAME stacking context now, any
+    // `backdrop-filter` on a button can actually snapshot+blur the canvas
+    // behind it — which is what makes the "liquid glass" CTAs match the
+    // nav (the nav already sits at body level, same context as the canvas).
+    <div className="relative z-10">
       <InteractiveGridBackground />
-
-      {/* Content wrapper — explicit z-10 so every section paints above the
-          z-0 background grid. Without this, sections without their own
-          z-index would sit at z=auto and (depending on the browser's
-          stacking-order tiebreak) could be hidden by the canvas. */}
-      <div className="relative z-10">
+      <div className="relative">
 
       {/* Hero + Live panel */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-10 pb-12">
