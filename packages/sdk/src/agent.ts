@@ -7,8 +7,10 @@ import {
   PRICE_FEED_ABI,
   ERC20_ABI,
   VAULT_FACTORY_ABI,
+  VAULT_FACTORY_V2_ABI,
   AGENT_INFT_ABI,
   AGENT,
+  V2_KEEPER,
 } from "./constants.js";
 import {
   initInference,
@@ -17,7 +19,14 @@ import {
   requestInference,
   TREASURY_SYSTEM_PROMPT,
 } from "./inference.js";
-import { initStorage, appendAuditLog, savePortfolioState, appendRejectionLog, saveInferenceRecord } from "./storage.js";
+import {
+  initStorage,
+  appendAuditLog,
+  savePortfolioState,
+  appendRejectionLog,
+  saveInferenceRecord,
+  type InferenceRecord,
+} from "./storage.js";
 import { shouldCallSkillMint, callSkillMint, computeSkillMintRelation, type SkillMintSignal } from "./skillmint.js";
 import { writeAuditIndexRecord } from "./audit-index.js";
 import { getMarketSnapshot, updatePythOnChain, type MarketSnapshot } from "./market.js";
@@ -78,6 +87,12 @@ export interface GlobalContext {
   wallet: ethers.Wallet;
   provider: ethers.JsonRpcProvider;
   factory: ethers.Contract;
+  /**
+   * VaultFactoryV2 read-only handle. Non-null only when SENTRI_ENABLE_V2_KEEPER
+   * is true AND CONTRACTS.vaultFactoryV2 is set. When null the server loop skips
+   * the entire V2 batch with no read.
+   */
+  factoryV2: ethers.Contract | null;
   priceFeed: ethers.Contract;
   /** AgentINFT contract (read-only handle) — used to preflight the TEE-signer binding. */
   agentNFT: ethers.Contract;
@@ -384,6 +399,16 @@ export async function setupGlobalContext(): Promise<GlobalContext> {
   const factory = new ethers.Contract(factoryAddress, VAULT_FACTORY_ABI, wallet);
   const priceFeed = new ethers.Contract(priceFeedAddress, PRICE_FEED_ABI, wallet);
 
+  // VaultFactoryV2 — wired only when the master flag is on AND an address is
+  // configured. Read-only handle: the V2 batch never signs through this
+  // contract, it just enumerates vaults. When null, the V2 batch is fully
+  // bypassed by the server loop (zero RPC, zero risk for the V1 hot path).
+  const factoryV2Address = CONTRACTS.vaultFactoryV2;
+  const factoryV2 =
+    V2_KEEPER.enabled && factoryV2Address && factoryV2Address !== "0x"
+      ? new ethers.Contract(factoryV2Address, VAULT_FACTORY_V2_ABI, provider)
+      : null;
+
   // AgentINFT identity — the factory `agentNFT` immutable is the source of
   // truth. Used to preflight the on-chain InvalidTEESignature guard before
   // every executeStrategy. The token id is resolved via the factory's
@@ -438,11 +463,21 @@ export async function setupGlobalContext(): Promise<GlobalContext> {
   log(`Agent ready. Wallet: ${wallet.address}`);
   log(`Factory: ${factoryAddress}`);
   log(`AgentINFT: ${agentNFTAddress} | token #${agentTokenId ?? "unknown"}`);
+  if (factoryV2) {
+    log(
+      `[v2-keeper] enabled — FactoryV2: ${factoryV2Address} | ` +
+        `allowlist=${V2_KEEPER.allowlist.length} addr(s) | ` +
+        `minOG=${ethers.formatEther(V2_KEEPER.minOgWei)} | cap/cycle=${V2_KEEPER.maxVaultsPerCycle}`,
+    );
+  } else if (V2_KEEPER.enabled) {
+    log(`[v2-keeper] flag ON but VaultFactoryV2 not configured on this network — V2 batch disabled.`);
+  }
 
   const ctx: GlobalContext = {
     wallet,
     provider,
     factory,
+    factoryV2,
     priceFeed,
     agentNFT,
     agentNFTAddress,
@@ -493,6 +528,34 @@ export async function discoverVaults(ctx: GlobalContext): Promise<string[]> {
     vaults.push(...page);
   }
   return vaults;
+}
+
+/**
+ * V2 vault discovery. Always returns [] when factoryV2 is null (master flag
+ * off, or address not configured on this network). Errors are swallowed and
+ * logged — a transient RPC failure on V2 must never bubble up and abort the
+ * V1 batch. The V1 hot path remains strictly untouched.
+ *
+ * Note: VaultFactoryV2 uses `vaultCount()` (no trailing s) and
+ * `allVaults(uint256)` — no paginated helper — so this reads one address at a
+ * time. The canary allowlist (default cap = 1) keeps that loop bounded today.
+ */
+export async function discoverVaultsV2(ctx: GlobalContext): Promise<string[]> {
+  if (!ctx.factoryV2) return [];
+  try {
+    const count: bigint = await ctx.factoryV2.vaultCount();
+    const n = Number(count);
+    if (n === 0) return [];
+    const vaults: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const addr: string = await ctx.factoryV2.allVaults(i);
+      vaults.push(addr);
+    }
+    return vaults;
+  } catch (err) {
+    log(`[v2-keeper] discoverVaultsV2 failed (V2 batch skipped this cycle): ${err instanceof Error ? err.message : err}`);
+    return [];
+  }
 }
 
 // ── Price feed (pushed once per cycle) ───────────────────────────────────
@@ -552,6 +615,13 @@ export async function executeOneIterationForVault(
   ctx: GlobalContext,
   vaultAddress: string,
   market: MarketSnapshot,
+  /**
+   * Per-vault mode dispatch. When omitted, the legacy `ORACLE_MODE` env var
+   * decides (kept solely for the one-shot `execute:trustless-canary` script).
+   * The server loop always passes "v1" or "v2" explicitly so V1/V2 routing
+   * never depends on process-wide env state.
+   */
+  version?: "v1" | "v2",
 ): Promise<IterationOutcome> {
   const vault = new ethers.Contract(vaultAddress, TREASURY_VAULT_ABI, ctx.wallet);
   let activeMarket = market;
@@ -590,11 +660,30 @@ export async function executeOneIterationForVault(
     maxPriceStaleness: Number(policy[5]),
   };
 
-  // Oracle mode (per-process). trustless-pyth vaults verify Pyth on-chain in the
-  // execution tx and have no totalValue() view / SentriPriceFeed dependency, so
-  // the agent's reads take an off-chain path. Standard mode is unchanged.
-  const oracleMode = process.env.ORACLE_MODE ?? "standard-evidence";
-  const isTrustless = oracleMode === "trustless-pyth";
+  // Per-vault mode dispatch. The explicit `version` param wins (the server loop
+  // always passes "v1" or "v2"); ORACLE_MODE is consulted only when the caller
+  // didn't tag the vault — the one-shot `execute:trustless-canary` script being
+  // the sole remaining caller of that legacy path. Routing V1/V2 in the server
+  // loop must NOT depend on process-wide env state.
+  const isTrustless =
+    version === "v2"
+      ? true
+      : version === "v1"
+        ? false
+        : (process.env.ORACLE_MODE ?? "standard-evidence") === "trustless-pyth";
+  const oracleMode = isTrustless ? "trustless-pyth" : "standard-evidence";
+  let trustlessPythPriceId: string | undefined;
+  if (isTrustless) {
+    try {
+      trustlessPythPriceId = (await vault.pythPriceId()) as string;
+    } catch (err) {
+      log(
+        `SKIPPED_AUDIT_STORAGE: trustless vault ${vaultAddress.slice(0, 10)}... ` +
+          `pythPriceId unavailable before audit record: ${err instanceof Error ? err.message : err}`,
+      );
+      return { status: "skipped", reason: "trustless pythPriceId unavailable; no funds moved" };
+    }
+  }
 
   const stateFreshness = await ensureFreshOracle(
     ctx,
@@ -1004,70 +1093,84 @@ export async function executeOneIterationForVault(
   // 0G Storage rootHash of the durable, downloadable inference record — set
   // pre-tx so the post-tx index append can re-reference the same blob.
   let inferenceRootHash = "";
-  try {
-    const savedInference = await saveInferenceRecord(vaultAddress, {
-      schema: "sentri.inference.v1",
-      timestamp: Date.now(),
-      vaultAddress,
-      logIndex: Number(logCount),
+  let inferenceStorageTxHash = "";
+  const v2AuditFields = isTrustless
+    ? {
+        vault: vaultAddress,
+        agent: ctx.walletAddress,
+        AgentINFT: ctx.agentNFTAddress,
+        oracleMode: "trustless-pyth",
+        pythPriceId: trustlessPythPriceId,
+        plannedAction: decision.action,
+      }
+    : {};
+  const inferenceRecord: InferenceRecord = {
+    schema: "sentri.inference.v1",
+    timestamp: Date.now(),
+    vaultAddress,
+    logIndex: Number(logCount),
+    action: decision.action,
+    amount: formattedAmountIn,
+    amountIn: amountIn.toString(),
+    intent,
+    intentHash,
+    responseHash: inference.responseHash,
+    rawResponseHash: inference.rawResponseHash,
+    signedPayloadHash: inference.signedPayloadHash,
+    modelResponse: inference.modelResponse,
+    signedResponse: inference.signedResponse,
+    teeSignature: inference.teeSignature,
+    teeSigner: inference.teeSignerAddress,
+    recoveredSigner: inference.recoveredSignerAddress,
+    expectedSigner: inference.teeSignerAddress,
+    signerMatchedProvider: inference.recoveredSignerAddress.toLowerCase() === inference.teeSignerAddress.toLowerCase(),
+    teeAttestation: inference.teeAttestation,
+    deadline,
+    processResponseVerified: inference.processResponseVerified,
+    verified: inference.verified,
+    provider: inference.provider,
+    providerEndpoint: inference.endpoint,
+    model: inference.model,
+    verifiability: inference.verifiability,
+    chatID: inference.chatID,
+    decision: {
       action: decision.action,
-      amount: formattedAmountIn,
-      amountIn: amountIn.toString(),
-      intent,
-      intentHash,
-      responseHash: inference.responseHash,
-      rawResponseHash: inference.rawResponseHash,
-      signedPayloadHash: inference.signedPayloadHash,
-      modelResponse: inference.modelResponse,
-      signedResponse: inference.signedResponse,
-      teeSignature: inference.teeSignature,
-      teeSigner: inference.teeSignerAddress,
-      recoveredSigner: inference.recoveredSignerAddress,
-      expectedSigner: inference.teeSignerAddress,
-      signerMatchedProvider: inference.recoveredSignerAddress.toLowerCase() === inference.teeSignerAddress.toLowerCase(),
-      teeAttestation: inference.teeAttestation,
-      deadline,
-      processResponseVerified: inference.processResponseVerified,
-      verified: inference.verified,
-      provider: inference.provider,
-      providerEndpoint: inference.endpoint,
-      model: inference.model,
-      verifiability: inference.verifiability,
-      chatID: inference.chatID,
-      decision: {
-        action: decision.action,
-        amount_bps: decision.amount_bps,
-        rule_id: decision.rule_id,
-        reasoning: decision.reasoning,
-        short_reason: decision.short_reason,
-        confidence: decision.confidence,
-      },
-      reasoning,
-      amountBps: decision.amount_bps,
-      ruleId: decision.rule_id,
-      confidence: confidenceScore,
-      marketPrice: activeMarket.priceUsd,
-      marketSource: activeMarket.source,
-      marketSpreadPct: activeMarket.spreadPct,
-      marketSourceCount: activeMarket.sourceCount,
-      marketRequiredSourceCount: activeMarket.requiredSourceCount,
-      marketRawSources: activeMarket.rawSources,
-      priceAttestationPayload,
-      externalSignals: skillMintSignal
-        ? [
-            {
-              ...skillMintSignal,
-              relation: computeSkillMintRelation(
-                skillMintSignal,
-                decision.action,
-                decision.amount_bps,
-                recommendation.regime,
-              ),
-            },
-          ]
-        : undefined,
-    });
+      amount_bps: decision.amount_bps,
+      rule_id: decision.rule_id,
+      reasoning: decision.reasoning,
+      short_reason: decision.short_reason,
+      confidence: decision.confidence,
+    },
+    reasoning,
+    amountBps: decision.amount_bps,
+    ruleId: decision.rule_id,
+    confidence: confidenceScore,
+    marketPrice: activeMarket.priceUsd,
+    marketSource: activeMarket.source,
+    marketSpreadPct: activeMarket.spreadPct,
+    marketSourceCount: activeMarket.sourceCount,
+    marketRequiredSourceCount: activeMarket.requiredSourceCount,
+    marketRawSources: activeMarket.rawSources,
+    priceAttestationPayload,
+    externalSignals: skillMintSignal
+      ? [
+          {
+            ...skillMintSignal,
+            relation: computeSkillMintRelation(
+              skillMintSignal,
+              decision.action,
+              decision.amount_bps,
+              recommendation.regime,
+            ),
+          },
+        ]
+      : undefined,
+    ...v2AuditFields,
+  };
+  try {
+    const savedInference = await saveInferenceRecord(vaultAddress, inferenceRecord);
     inferenceRootHash = savedInference.rootHash;
+    inferenceStorageTxHash = savedInference.txHash;
     // Durable audit index (Render persistent disk). Written BEFORE the tx so a
     // crash between here and confirmation still leaves the execution
     // recoverable by intentHash. An index-write failure throws into the catch
@@ -1267,12 +1370,48 @@ export async function executeOneIterationForVault(
   const idx = (await vault.executionLogCount()) - 1n;
   const latestLog = await vault.executionLogs(idx);
   const amountOut = latestLog[3] as bigint;
+  const executionLogCountAfter = Number(idx + 1n);
+  const trustlessPythPrice = isTrustless ? latestLog[10] as bigint | undefined : undefined;
+  const trustlessPythPublishTime = isTrustless ? latestLog[11] as bigint | undefined : undefined;
+  const trustlessPythConfBps = isTrustless ? latestLog[12] as bigint | undefined : undefined;
   const formattedAmountOut =
     decision.action === "EmergencyDeleverage"
       ? ethers.formatUnits(amountOut, baseDec)
       : ethers.formatUnits(amountOut, riskDec);
 
   log(`TX confirmed: ${receipt.hash}. Saving audit + state to 0G Storage...`);
+
+  let finalInferenceRootHash = inferenceRootHash;
+  let finalInferenceStorageTxHash = inferenceStorageTxHash;
+  if (isTrustless) {
+    try {
+      const finalInference = await saveInferenceRecord(vaultAddress, {
+        ...inferenceRecord,
+        timestamp: chainTimestampMs,
+        txHash: receipt.hash,
+        logIndex: Number(idx),
+        amountOut: amountOut.toString(),
+        pythPrice: trustlessPythPrice?.toString(),
+        pythPublishTime: trustlessPythPublishTime === undefined ? undefined : Number(trustlessPythPublishTime),
+        pythConfBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+        confidenceBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+        executionLogCount: executionLogCountAfter,
+        preTxRootHash: inferenceRootHash,
+        preTxStorageTxHash: inferenceStorageTxHash,
+      });
+      finalInferenceRootHash = finalInference.rootHash;
+      finalInferenceStorageTxHash = finalInference.txHash;
+      log(
+        `[trustless-pyth] final TeeReceipt saved root=${finalInferenceRootHash.slice(0, 10)}... ` +
+          `tx=${finalInferenceStorageTxHash.slice(0, 10)}...`,
+      );
+    } catch (err) {
+      log(
+        `CRITICAL: V2 final TeeReceipt write failed for ${vaultAddress.slice(0, 10)}... ` +
+          `after confirmed tx ${receipt.hash}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
 
   try {
     await appendAuditLog(vaultAddress, {
@@ -1304,6 +1443,24 @@ export async function executeOneIterationForVault(
       reasoning,
       confidence: confidenceScore,
       txHash: receipt.hash,
+      ...(isTrustless
+        ? {
+            amountIn: amountIn.toString(),
+            amountOut: amountOut.toString(),
+            agent: ctx.walletAddress,
+            AgentINFT: ctx.agentNFTAddress,
+            oracleMode: "trustless-pyth",
+            pythPriceId: trustlessPythPriceId,
+            pythPrice: trustlessPythPrice?.toString(),
+            pythPublishTime: trustlessPythPublishTime === undefined ? undefined : Number(trustlessPythPublishTime),
+            pythConfBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+            confidenceBps: trustlessPythConfBps === undefined ? undefined : Number(trustlessPythConfBps),
+            plannedAction: decision.action,
+            executionLogCount: executionLogCountAfter,
+            preTxRootHash: inferenceRootHash,
+            preTxStorageTxHash: inferenceStorageTxHash,
+          }
+        : {}),
       marketPrice: activeMarket.priceUsd,
       marketSource: activeMarket.source,
       marketSpreadPct: activeMarket.spreadPct,
@@ -1343,7 +1500,8 @@ export async function executeOneIterationForVault(
       logIndex: Number(idx),
       intentHash,
       responseHash: inference.responseHash,
-      rootHash: inferenceRootHash,
+      rootHash: isTrustless ? finalInferenceRootHash : inferenceRootHash,
+      storageTxHash: isTrustless ? finalInferenceStorageTxHash : undefined,
       action: decision.action,
       createdAt: Date.now(),
       updatedAt: Date.now(),

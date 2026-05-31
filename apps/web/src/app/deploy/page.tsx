@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import { decodeEventLog, parseUnits } from "viem";
-import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -190,7 +189,7 @@ function VaultTypeSelect({
       <h2 className="font-serif text-3xl text-ink">Choose an execution tier</h2>
       <p className="font-serif italic text-base text-ink-dim">
         Two paths, one agent doctrine. Standard for cheap, frequent retail treasuries; Trustless
-        Oracle for premium, high-assurance execution on larger capital.
+        Oracle is currently a V2 Genesis Canary while audit parity is finalized.
       </p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <button
@@ -223,10 +222,8 @@ function VaultTypeSelect({
           className="group border border-orchid/30 hover:border-orchid/60 bg-bg-elev/30 p-6 text-left transition-colors flex flex-col"
         >
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <Badge variant="warning">Advanced · Live Beta</Badge>
-            <Badge variant="success">
-              <ShieldCheck className="h-3 w-3" /> Verified Oracle
-            </Badge>
+            <Badge variant="warning">Genesis Canary · V2</Badge>
+            <Badge variant="success">Proof vault</Badge>
           </div>
           <h3 className="font-serif text-2xl text-ink mb-2">Trustless Oracle Vault</h3>
           <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
