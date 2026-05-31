@@ -106,12 +106,16 @@ export default async function LandingPage() {
               <Button size="lg">Deploy Vault →</Button>
             </Link>
             <Link href={demoVaultHref}>
-              <Button size="lg" variant="outline">
+              {/* bg-bg/80 + backdrop-blur-md matches the nav's "liquid
+                  glass" effect, so the interactive grid background no
+                  longer pierces through the outline-button text and
+                  hurts readability when the cursor halo passes under. */}
+              <Button size="lg" variant="outline" className="bg-bg/80 backdrop-blur-md">
                 Open Demo Vault
               </Button>
             </Link>
             <Link href="/vaults">
-              <Button size="lg" variant="outline">
+              <Button size="lg" variant="outline" className="bg-bg/80 backdrop-blur-md">
                 All Vaults
               </Button>
             </Link>
