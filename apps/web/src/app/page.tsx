@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { LiveSystemPanel } from "@/components/live-system-panel";
+import { InteractiveGridBackground } from "@/components/interactive-grid-background";
 import { getLiveSnapshot, type LiveSnapshot } from "@/lib/live-state";
 import { DEMO_VAULT_ADDRESS } from "@/config/contracts";
 
@@ -60,7 +61,18 @@ export default async function LandingPage() {
   const demoVaultHref = `/v/${DEMO_VAULT_ADDRESS}`;
 
   return (
-    <div className="relative">
+    // Single stacking context that encloses both the canvas grid AND the
+    // content. The canvas at z-0 paints first (positioned, document order),
+    // the inner `relative` content wrapper sits at z-auto positioned, so
+    // it paints after the canvas (text/UI on top of the grid). Crucially,
+    // because canvas + buttons live in the SAME stacking context now, any
+    // `backdrop-filter` on a button can actually snapshot+blur the canvas
+    // behind it — which is what makes the "liquid glass" CTAs match the
+    // nav (the nav already sits at body level, same context as the canvas).
+    <div className="relative z-10">
+      <InteractiveGridBackground />
+      <div className="relative">
+
       {/* Hero + Live panel */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-10 pb-12">
         <div className="lg:col-span-8 animate-fade-up">
@@ -94,12 +106,16 @@ export default async function LandingPage() {
               <Button size="lg">Deploy Vault →</Button>
             </Link>
             <Link href={demoVaultHref}>
-              <Button size="lg" variant="outline">
+              {/* bg-bg/80 + backdrop-blur-md matches the nav's "liquid
+                  glass" effect, so the interactive grid background no
+                  longer pierces through the outline-button text and
+                  hurts readability when the cursor halo passes under. */}
+              <Button size="lg" variant="outline" className="bg-bg/80 backdrop-blur-md">
                 Open Demo Vault
               </Button>
             </Link>
             <Link href="/vaults">
-              <Button size="lg" variant="outline">
+              <Button size="lg" variant="outline" className="bg-bg/80 backdrop-blur-md">
                 All Vaults
               </Button>
             </Link>
@@ -199,6 +215,8 @@ export default async function LandingPage() {
         </span>
         <FooterStatus snapshot={snapshot} />
       </footer>
+
+      </div>
     </div>
   );
 }
