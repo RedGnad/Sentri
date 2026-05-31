@@ -67,6 +67,12 @@ export default async function LandingPage() {
           a discreet web background. Landing-only, unmounts on navigation. */}
       <InteractiveGridBackground />
 
+      {/* Content wrapper — explicit z-10 so every section paints above the
+          z-0 background grid. Without this, sections without their own
+          z-index would sit at z=auto and (depending on the browser's
+          stacking-order tiebreak) could be hidden by the canvas. */}
+      <div className="relative z-10">
+
       {/* Hero + Live panel */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-10 pb-12">
         <div className="lg:col-span-8 animate-fade-up">
@@ -205,6 +211,8 @@ export default async function LandingPage() {
         </span>
         <FooterStatus snapshot={snapshot} />
       </footer>
+
+      </div>
     </div>
   );
 }

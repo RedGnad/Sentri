@@ -20,11 +20,11 @@ import { useEffect, useRef } from "react";
  */
 
 const CELL = 28; // px between dots
-const DOT_SIZE = 1.6; // base dot size in px (square)
-const PROX_RADIUS = 170; // px of influence around the cursor
+const DOT_SIZE = 2; // base dot size in px (square)
+const PROX_RADIUS = 180; // px of influence around the cursor
 const MAX_SCALE = 6; // dot scale at cursor center
-const BASE_ALPHA = 0.1; // base opacity (very subtle film)
-const PEAK_ALPHA = 0.55; // peak opacity at cursor
+const BASE_ALPHA = 0.16; // base opacity (visible film without dominating)
+const PEAK_ALPHA = 0.65; // peak opacity at cursor
 const COLOR = "#FFB000"; // Sentri amber
 
 export function InteractiveGridBackground() {
@@ -129,11 +129,15 @@ export function InteractiveGridBackground() {
     };
   }, []);
 
+  // z-0 (not -z-10): the body has its own opaque background that the
+  // negative-z-index canvas was painting underneath. With z-0 the canvas
+  // floats above the body bg; the landing page wraps its content in
+  // `relative z-10` so all sections still paint above the grid.
   return (
     <canvas
       ref={canvasRef}
       aria-hidden
-      className="fixed inset-0 -z-10 pointer-events-none"
+      className="fixed inset-0 z-0 pointer-events-none"
     />
   );
 }
