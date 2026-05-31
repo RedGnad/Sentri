@@ -126,10 +126,6 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Genesis Canary · V2</Badge>
           <Badge variant="success">Proof vault</Badge>
-          <span className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-orchid">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-orchid animate-pulse-dot" />
-            {T.status}
-          </span>
         </div>
         <h2 className="font-serif text-4xl text-ink leading-tight">Trustless Oracle Vault</h2>
         <p className="font-serif italic text-xl text-amber leading-snug">
@@ -201,8 +197,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
         </div>
         <p className="font-mono text-[11px] text-ink-dim leading-relaxed">
           Pyth oracle fees (~{T.oracleFeeOg} OG per execution) and keeper gas are sponsored by
-          Sentri during the beta. User-funded fee buffers are planned for V2.1 (contract redeploy,
-          not a config flip).
+          Sentri during the beta.
         </p>
       </div>
 
@@ -278,16 +273,28 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
                     onClick={() => setTier(t)}
                     disabled={isCreating || isCreateConfirming}
                     className={cn(
-                      "border p-3 text-left transition-colors disabled:opacity-50",
+                      "border p-3 text-left transition-colors disabled:opacity-50 flex flex-col gap-2",
                       selected
                         ? "border-amber bg-amber/10"
                         : "border-hairline hover:border-amber/40 bg-bg-elev/20",
                     )}
                   >
-                    <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
-                      Tier {String(t).padStart(2, "0")}
+                    <div>
+                      <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
+                        Tier {String(t).padStart(2, "0")}
+                      </div>
+                      <div className="font-mono text-[12px] text-ink leading-snug">{preset.name}</div>
                     </div>
-                    <div className="font-mono text-[12px] text-ink leading-snug">{preset.name}</div>
+                    <p className="font-mono text-[10px] text-ink-dim leading-relaxed">
+                      {preset.description}
+                    </p>
+                    <ul className="space-y-0.5 mt-auto">
+                      {preset.bullets.map((b) => (
+                        <li key={b} className="font-mono text-[9px] text-ink-dim leading-snug">
+                          · {b}
+                        </li>
+                      ))}
+                    </ul>
                   </button>
                 );
               })}
