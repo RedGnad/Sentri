@@ -376,10 +376,24 @@ async function bootstrapAuditIndexFromRoots(context: GlobalContext): Promise<voi
         continue;
       }
       const existing = findAuditIndexByIntentHash(match.intentHash);
+      // Skip when the existing entry is fully identical to what we'd write,
+      // including the storageTxHash. If the existing entry was created by an
+      // earlier bootstrap before the `:storageTx` env form was supported (and
+      // the partial blob carried no canonicalStorageTxHash either), it lacks
+      // the storage tx — re-writing now lets the JSONL append + merge layer
+      // backfill that single field without disturbing any other line.
+      const resolvedStorageTxHash =
+        stringField(entry.canonicalStorageTxHash)
+        ?? stringField(entry.storageTxHash)
+        ?? envStorageTx
+        ?? undefined;
+      const wouldBackfillStorageTx =
+        !existing?.storageTxHash && resolvedStorageTxHash !== undefined;
       if (
         existing?.rootHash.toLowerCase() === rootHash.toLowerCase() &&
         existing.logIndex === match.logIndex &&
-        (!match.txHash || existing.txHash?.toLowerCase() === match.txHash.toLowerCase())
+        (!match.txHash || existing.txHash?.toLowerCase() === match.txHash.toLowerCase()) &&
+        !wouldBackfillStorageTx
       ) {
         skipped++;
         log(`[server] audit index bootstrap skipped ${rootHash}: already indexed.`);
@@ -394,17 +408,15 @@ async function bootstrapAuditIndexFromRoots(context: GlobalContext): Promise<voi
         intentHash: match.intentHash,
         responseHash: match.responseHash,
         rootHash,
-        storageTxHash:
-          stringField(entry.canonicalStorageTxHash)
-          ?? stringField(entry.storageTxHash)
-          ?? envStorageTx
-          ?? undefined,
+        storageTxHash: resolvedStorageTxHash,
         action: match.action,
-        createdAt: now,
+        createdAt: existing?.createdAt ?? now,
         updatedAt: now,
       });
       written++;
-      log(`[server] audit index bootstrap recovered ${vaultKey} log/${match.logIndex} from ${rootHash}.`);
+      log(
+        `[server] audit index bootstrap ${wouldBackfillStorageTx ? "backfilled storageTxHash on" : "recovered"} ${vaultKey} log/${match.logIndex} from ${rootHash}.`,
+      );
     } catch (err) {
       skipped++;
       log(`[server] audit index bootstrap skipped ${rootHash}: ${err instanceof Error ? err.message : err}`);
