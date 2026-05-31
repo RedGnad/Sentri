@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { LiveSystemPanel } from "@/components/live-system-panel";
+import { InteractiveGridBackground } from "@/components/interactive-grid-background";
 import { getLiveSnapshot, type LiveSnapshot } from "@/lib/live-state";
 import { DEMO_VAULT_ADDRESS } from "@/config/contracts";
 
@@ -61,6 +62,11 @@ export default async function LandingPage() {
 
   return (
     <div className="relative">
+      {/* Interactive amber grid — translates the Blender geometry-nodes
+          proximity-field design (grid + distance-to-empty displacement) into
+          a discreet web background. Landing-only, unmounts on navigation. */}
+      <InteractiveGridBackground />
+
       {/* Hero + Live panel */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-10 pb-12">
         <div className="lg:col-span-8 animate-fade-up">

@@ -125,7 +125,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
       <div className="border-l-2 border-orchid/60 pl-5 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Genesis Canary · V2</Badge>
-          <Badge className="border-orchid/50 text-orchid">Proof vault</Badge>
+          <Badge variant="success">Proof vault</Badge>
           <span className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-orchid">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-orchid animate-pulse-dot" />
             {T.status}
