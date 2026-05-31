@@ -3,9 +3,11 @@
 import { useEffect, useRef } from "react";
 
 /**
- * InteractiveGridBackground — a fine amber grid that scales + glows near the
- * cursor. Translates the Blender proximity-field design (grid of cells, each
- * one displaced by distance to an empty) into a discreet web background.
+ * InteractiveGridBackground — a fine amber grid that drifts on its own with
+ * a gentle two-wave noise (echoing the breathing motion of the Blender
+ * geometry-nodes scene) and scales + glows around the cursor. The canvas
+ * also blurs progressively as the user scrolls past the hero, so the
+ * content lower on the page reads cleanly.
  *
  * Implementation notes:
  *  - Canvas 2D rather than WebGL/Three.js. The grid is a couple of thousand
@@ -15,17 +17,38 @@ import { useEffect, useRef } from "react";
  *  - prefers-reduced-motion → render once, no animation loop.
  *  - pointer-events: none → never intercepts clicks.
  *  - aria-hidden → invisible to assistive tech (it's purely decorative).
- *  - Fixed inset, negative z-index → sits behind every content stack
- *    without changing layout flow.
+ *  - fixed inset + z-0 → sits behind the page content (the landing page
+ *    wraps its content in relative z-10) but above the body bg paint layer.
  */
 
 const CELL = 28; // px between dots
 const DOT_SIZE = 2; // base dot size in px (square)
-const PROX_RADIUS = 180; // px of influence around the cursor
-const MAX_SCALE = 6; // dot scale at cursor center
+const PROX_RADIUS = 190; // px of influence around the cursor
+const MAX_SCALE = 10; // dot scale at cursor center
 const BASE_ALPHA = 0.16; // base opacity (visible film without dominating)
-const PEAK_ALPHA = 0.65; // peak opacity at cursor
+const PEAK_ALPHA = 0.72; // peak opacity at cursor
 const COLOR = "#FFB000"; // Sentri amber
+
+// Ambient noise drift — two slow travelling waves with different temporal
+// and spatial frequencies produce an organic, non-repeating-looking flow.
+// Period ≈ 11.4s and 7.7s, so the grid never lines up with itself for a
+// given dot.
+const NOISE_AMP_PX = 4.5;
+const TIME_FREQ_A = 0.00055;
+const TIME_FREQ_B = 0.00082;
+const SPATIAL_FREQ_X = 0.008;
+const SPATIAL_FREQ_Y = 0.011;
+
+// Subtle scale pulsation derived from the same wave, ±5%, so the grid
+// breathes even when the cursor is far from it.
+const BREATH_AMP = 0.05;
+
+// Scroll-driven blur: untouched up to SCROLL_BLUR_START_PX, then ramps to
+// MAX_BLUR_PX at SCROLL_BLUR_FULL_PX. Puts the focus on the content the
+// user is actively reading once they leave the hero.
+const SCROLL_BLUR_START_PX = 160;
+const SCROLL_BLUR_FULL_PX = 720;
+const MAX_BLUR_PX = 7;
 
 export function InteractiveGridBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -47,6 +70,7 @@ export function InteractiveGridBackground() {
     let dpr = Math.max(1, window.devicePixelRatio || 1);
     const cursor = { x: -9999, y: -9999, active: false };
     let rafId = 0;
+    const startTime = performance.now();
 
     function resize() {
       width = window.innerWidth;
@@ -68,11 +92,21 @@ export function InteractiveGridBackground() {
       cursor.active = false;
     }
 
-    function render() {
+    function applyScrollBlur() {
+      const y = window.scrollY;
+      let t = 0;
+      if (y > SCROLL_BLUR_START_PX) {
+        const span = SCROLL_BLUR_FULL_PX - SCROLL_BLUR_START_PX;
+        t = Math.min(1, (y - SCROLL_BLUR_START_PX) / span);
+      }
+      canvas.style.filter = t > 0 ? `blur(${(t * MAX_BLUR_PX).toFixed(2)}px)` : "none";
+    }
+
+    function render(now: number) {
+      const t = now - startTime;
       ctx.clearRect(0, 0, width, height);
       const cols = Math.ceil(width / CELL) + 1;
       const rows = Math.ceil(height / CELL) + 1;
-      // Centre the grid so it stays visually balanced regardless of width.
       const offsetX = (width - (cols - 1) * CELL) / 2;
       const offsetY = (height - (rows - 1) * CELL) / 2;
       const radiusSq = PROX_RADIUS * PROX_RADIUS;
@@ -81,10 +115,20 @@ export function InteractiveGridBackground() {
 
       for (let cx = 0; cx < cols; cx++) {
         for (let cy = 0; cy < rows; cy++) {
-          const x = offsetX + cx * CELL;
-          const y = offsetY + cy * CELL;
+          const baseX = offsetX + cx * CELL;
+          const baseY = offsetY + cy * CELL;
 
-          let scale = 1;
+          // Two travelling waves (different temporal + spatial freq) give an
+          // organic-looking flow. Composing them produces displacement in
+          // both axes without obvious diagonal striping.
+          const w1 = Math.sin(t * TIME_FREQ_A + baseX * SPATIAL_FREQ_X + baseY * SPATIAL_FREQ_Y);
+          const w2 = Math.cos(t * TIME_FREQ_B - baseX * SPATIAL_FREQ_Y + baseY * SPATIAL_FREQ_X);
+          const dispX = (w1 + w2) * 0.5 * NOISE_AMP_PX;
+          const dispY = (w2 - w1) * 0.5 * NOISE_AMP_PX;
+          const x = baseX + dispX;
+          const y = baseY + dispY;
+
+          let scale = 1 + (w1 + 1) * BREATH_AMP; // ambient breathing
           let alpha = BASE_ALPHA;
 
           if (cursor.active) {
@@ -92,10 +136,9 @@ export function InteractiveGridBackground() {
             const dy = y - cursor.y;
             const distSq = dx * dx + dy * dy;
             if (distSq < radiusSq) {
-              // Quadratic ease-out from 1 (at cursor) down to 0 (at radius).
-              const t = 1 - Math.sqrt(distSq) / PROX_RADIUS;
-              const eased = t * t;
-              scale = 1 + eased * (MAX_SCALE - 1);
+              const f = 1 - Math.sqrt(distSq) / PROX_RADIUS;
+              const eased = f * f;
+              scale = scale + eased * (MAX_SCALE - 1);
               alpha = BASE_ALPHA + eased * (PEAK_ALPHA - BASE_ALPHA);
             }
           }
@@ -113,26 +156,25 @@ export function InteractiveGridBackground() {
     }
 
     resize();
-    render();
+    applyScrollBlur();
+    render(performance.now());
 
     if (!reducedMotion) {
       window.addEventListener("mousemove", onMove, { passive: true });
       window.addEventListener("mouseleave", onLeave);
     }
     window.addEventListener("resize", resize);
+    window.addEventListener("scroll", applyScrollBlur, { passive: true });
 
     return () => {
       cancelAnimationFrame(rafId);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseleave", onLeave);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", applyScrollBlur);
     };
   }, []);
 
-  // z-0 (not -z-10): the body has its own opaque background that the
-  // negative-z-index canvas was painting underneath. With z-0 the canvas
-  // floats above the body bg; the landing page wraps its content in
-  // `relative z-10` so all sections still paint above the grid.
   return (
     <canvas
       ref={canvasRef}
