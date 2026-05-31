@@ -121,25 +121,37 @@ export function useActiveVaultsPage(start: bigint, limit?: bigint) {
   // chain — useful state, not noise. Killed vaults still get filtered
   // out because their funds have been withdrawn and there is nothing
   // left to inspect. The per-vault StatusDot will render "Paused" so
-  // the row's state is obvious to the reader.
+  // the row's state is obvious to the reader. We carry the paused
+  // boolean through filtering so we can sort live vaults first and
+  // paused vaults afterwards in the rendered list.
   const statusesReady = vaults.length === 0 || !!statuses.data;
-  const activeStandardVaults = statusesReady
-    ? vaults.filter((_, i) => {
-        const killed = statuses.data?.[i * 2]?.result as boolean | undefined;
-        return killed !== true;
-      })
+  const standardAlive = statusesReady
+    ? vaults
+        .map((address, i) => ({
+          address,
+          killed: statuses.data?.[i * 2]?.result as boolean | undefined,
+          paused: (statuses.data?.[i * 2 + 1]?.result as boolean | undefined) === true,
+        }))
+        .filter((v) => v.killed !== true)
     : [];
   const v2StatusesReady = v2Vaults.length === 0 || !!v2Statuses.data;
-  const activeV2Vaults = v2StatusesReady
-    ? v2Vaults.filter((_, i) => {
-        const killed = v2Statuses.data?.[i * 2]?.result as boolean | undefined;
-        return killed !== true;
-      })
+  const v2Alive = v2StatusesReady
+    ? v2Vaults
+        .map((address, i) => ({
+          address,
+          killed: v2Statuses.data?.[i * 2]?.result as boolean | undefined,
+          paused: (v2Statuses.data?.[i * 2 + 1]?.result as boolean | undefined) === true,
+        }))
+        .filter((v) => v.killed !== true)
     : [];
-  const activeVaults: VaultDirectoryItem[] = [
-    ...activeStandardVaults.map((address) => ({ address, tier: "standard" as const })),
-    ...activeV2Vaults.map((address) => ({ address, tier: "v2" as const })),
+  const all = [
+    ...standardAlive.map((v) => ({ address: v.address, paused: v.paused, tier: "standard" as const })),
+    ...v2Alive.map((v) => ({ address: v.address, paused: v.paused, tier: "v2" as const })),
   ];
+  // Stable sort: live (paused=false) before paused (paused=true). Within
+  // each group, the factory's discovery order is preserved.
+  all.sort((a, b) => Number(a.paused) - Number(b.paused));
+  const activeVaults: VaultDirectoryItem[] = all.map(({ address, tier }) => ({ address, tier }));
   return {
     data: activeVaults,
     isLoading:
