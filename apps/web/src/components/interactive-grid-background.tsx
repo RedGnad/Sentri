@@ -3,52 +3,73 @@
 import { useEffect, useRef } from "react";
 
 /**
- * InteractiveGridBackground — a fine amber grid that drifts on its own with
- * a gentle two-wave noise (echoing the breathing motion of the Blender
- * geometry-nodes scene) and scales + glows around the cursor. The canvas
- * also blurs progressively as the user scrolls past the hero, so the
- * content lower on the page reads cleanly.
+ * InteractiveGridBackground — port of the Blender geometry-nodes scene at
+ * Desktop/DESIGN/Sentri-UI.blend, simplified to Canvas 2D.
+ *
+ * Reading the node graph:
+ *   Grid → Mesh to Points → Random Value (Boolean, prob ≈ 0.12)
+ *     → Set Position (Offset = mix(wave, proximity))
+ *     → Instance on Points → Scale Instances (Scale = mix(wave, proximity))
+ *
+ *   Wave: Wave Texture, Bands type, Scale 5 → diagonal bands sliding via
+ *     animated Phase Offset.
+ *   Proximity: Geometry Proximity from each point to the Empty
+ *     (here, the cursor in screen space).
+ *   Mix: combines the wave (ambient flow) with the proximity bump.
  *
  * Implementation notes:
- *  - Canvas 2D rather than WebGL/Three.js. The grid is a couple of thousand
- *    1-2px rectangles per frame — well within Canvas budget even on mobile,
- *    and avoids shipping a 3D engine for a background ornament.
- *  - DPR-aware for crisp rendering on retina.
- *  - prefers-reduced-motion → render once, no animation loop.
- *  - pointer-events: none → never intercepts clicks.
- *  - aria-hidden → invisible to assistive tech (it's purely decorative).
- *  - fixed inset + z-0 → sits behind the page content (the landing page
- *    wraps its content in relative z-10) but above the body bg paint layer.
+ *  - Canvas 2D rather than WebGL/Three.js. Even with ~20% sparsity that
+ *    leaves a few hundred dots per frame — well within Canvas budget on
+ *    mobile, and avoids shipping a 3D engine for a background ornament.
+ *  - Sparsity is deterministic per (cx, cy) via a small integer hash, so
+ *    the same cells keep their dot identity as the user scrolls.
+ *  - Canvas stays position: fixed (so it always covers the viewport),
+ *    but the grid is rendered in virtual document coordinates with an
+ *    offset of -scrollY * SCROLL_FACTOR. With factor = 1.0 the grid
+ *    scrolls exactly at page speed; drop below 1.0 for a subtle parallax.
+ *  - Scroll-driven blur ramps from no blur (top) up to MAX_BLUR_PX so the
+ *    content lower on the page reads cleanly.
+ *  - prefers-reduced-motion → wave phase is frozen, but cursor + scroll
+ *    still respond. No gratuitous autonomous motion in reduced mode.
+ *  - pointer-events: none + aria-hidden — purely decorative.
  */
 
-const CELL = 28; // px between dots
-const DOT_SIZE = 2; // base dot size in px (square)
-const PROX_RADIUS = 190; // px of influence around the cursor
-const MAX_SCALE = 10; // dot scale at cursor center
-const BASE_ALPHA = 0.16; // base opacity (visible film without dominating)
-const PEAK_ALPHA = 0.72; // peak opacity at cursor
+// Grid spacing / size
+const CELL = 22; // px between candidate grid points
+const DOT_SIZE = 2.2; // base dot side (px)
+
+// Sparsity — Blender's Random Value Boolean probability
+const SPARSITY = 0.18; // 18% of grid points keep an instance
+
+// Proximity (Empty / cursor)
+const PROX_RADIUS = 200; // px of influence around the cursor
+const PROX_PEAK_SCALE = 9; // scale at the cursor centre
+const PROX_PEAK_ALPHA = 0.85; // alpha at the cursor centre
+
+// Wave Texture (Bands type, animated Phase Offset)
+const WAVE_BAND_FREQ = 0.0028; // bands per pixel (≈ 6 bands across 1920px)
+const WAVE_BAND_ANGLE = Math.PI / 6; // direction the bands travel
+const WAVE_SPEED = 0.0002; // phase increment per ms (≈ 5s per cycle)
+const WAVE_DISPLACEMENT_PX = 5; // max position offset driven by the wave
+const WAVE_SCALE_CONTRIB = 3; // peak scale added by a fully-bright band
+const WAVE_ALPHA_CONTRIB = 0.32; // peak alpha added by a fully-bright band
+
+// Base look
+const BASE_ALPHA = 0.1; // alpha at rest (no wave peak, no cursor)
 const COLOR = "#FFB000"; // Sentri amber
 
-// Ambient noise drift — two slow travelling waves with different temporal
-// and spatial frequencies produce an organic, non-repeating-looking flow.
-// Period ≈ 11.4s and 7.7s, so the grid never lines up with itself for a
-// given dot.
-const NOISE_AMP_PX = 4.5;
-const TIME_FREQ_A = 0.00055;
-const TIME_FREQ_B = 0.00082;
-const SPATIAL_FREQ_X = 0.008;
-const SPATIAL_FREQ_Y = 0.011;
-
-// Subtle scale pulsation derived from the same wave, ±5%, so the grid
-// breathes even when the cursor is far from it.
-const BREATH_AMP = 0.05;
-
-// Scroll-driven blur: untouched up to SCROLL_BLUR_START_PX, then ramps to
-// MAX_BLUR_PX at SCROLL_BLUR_FULL_PX. Puts the focus on the content the
-// user is actively reading once they leave the hero.
+// Scroll behaviour
+const SCROLL_FACTOR = 1.0; // 1.0 = grid scrolls at page speed; < 1 = parallax
 const SCROLL_BLUR_START_PX = 160;
 const SCROLL_BLUR_FULL_PX = 720;
 const MAX_BLUR_PX = 7;
+
+// Deterministic per-cell hash so dots keep their identity through scroll +
+// resize. Two large odd-prime multipliers, XOR'd and masked to a uint32.
+function cellHash(cx: number, cy: number): number {
+  const h = (Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663)) >>> 0;
+  return (h % 100000) / 100000;
+}
 
 export function InteractiveGridBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -58,8 +79,6 @@ export function InteractiveGridBackground() {
     if (!canvasEl) return;
     const ctxRaw = canvasEl.getContext("2d");
     if (!ctxRaw) return;
-    // Alias the non-null versions so the inner closures don't trip the
-    // TS strict-null check (it can't narrow through closure boundaries).
     const canvas: HTMLCanvasElement = canvasEl;
     const ctx: CanvasRenderingContext2D = ctxRaw;
 
@@ -92,86 +111,125 @@ export function InteractiveGridBackground() {
       cursor.active = false;
     }
 
-    function applyScrollBlur() {
-      const y = window.scrollY;
-      let t = 0;
-      if (y > SCROLL_BLUR_START_PX) {
-        const span = SCROLL_BLUR_FULL_PX - SCROLL_BLUR_START_PX;
-        t = Math.min(1, (y - SCROLL_BLUR_START_PX) / span);
-      }
-      canvas.style.filter = t > 0 ? `blur(${(t * MAX_BLUR_PX).toFixed(2)}px)` : "none";
-    }
-
     function render(now: number) {
-      const t = now - startTime;
-      ctx.clearRect(0, 0, width, height);
-      const cols = Math.ceil(width / CELL) + 1;
-      const rows = Math.ceil(height / CELL) + 1;
-      const offsetX = (width - (cols - 1) * CELL) / 2;
-      const offsetY = (height - (rows - 1) * CELL) / 2;
-      const radiusSq = PROX_RADIUS * PROX_RADIUS;
+      // Wave time: frozen under prefers-reduced-motion (no autonomous loop).
+      const t = reducedMotion ? 0 : now - startTime;
 
+      ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = COLOR;
 
+      // Scroll-driven blur via CSS filter on the canvas itself.
+      const scrollY = window.scrollY;
+      let blurT = 0;
+      if (scrollY > SCROLL_BLUR_START_PX) {
+        const span = SCROLL_BLUR_FULL_PX - SCROLL_BLUR_START_PX;
+        blurT = Math.min(1, (scrollY - SCROLL_BLUR_START_PX) / span);
+      }
+      canvas.style.filter = blurT > 0 ? `blur(${(blurT * MAX_BLUR_PX).toFixed(2)}px)` : "none";
+
+      // Grid coordinates in document (virtual) space.
+      const cols = Math.ceil(width / CELL) + 2;
+      const offsetX = (width - (cols - 1) * CELL) / 2;
+      const virtualScrollOffset = scrollY * SCROLL_FACTOR;
+
+      // Only iterate rows currently in view (with a one-cell margin).
+      const rowStartIdx = Math.floor((virtualScrollOffset - CELL) / CELL);
+      const rowEndIdx = Math.ceil((virtualScrollOffset + height + CELL) / CELL);
+
+      // Wave Texture pre-computation: project (x, y) onto the band direction
+      // then read sin(proj * 2πf + phase). Phase advances with time.
+      const cosA = Math.cos(WAVE_BAND_ANGLE);
+      const sinA = Math.sin(WAVE_BAND_ANGLE);
+      const wavePhase = t * WAVE_SPEED;
+
+      const radiusSq = PROX_RADIUS * PROX_RADIUS;
+
       for (let cx = 0; cx < cols; cx++) {
-        for (let cy = 0; cy < rows; cy++) {
+        for (let cy = rowStartIdx; cy <= rowEndIdx; cy++) {
+          // Sparsity gate (deterministic per cell): mirrors the Blender
+          // Random Value Boolean ~0.12 selection step.
+          if (cellHash(cx, cy) > SPARSITY) continue;
+
           const baseX = offsetX + cx * CELL;
-          const baseY = offsetY + cy * CELL;
+          const virtualY = cy * CELL;
+          const screenY = virtualY - virtualScrollOffset;
 
-          // Two travelling waves (different temporal + spatial freq) give an
-          // organic-looking flow. Composing them produces displacement in
-          // both axes without obvious diagonal striping.
-          const w1 = Math.sin(t * TIME_FREQ_A + baseX * SPATIAL_FREQ_X + baseY * SPATIAL_FREQ_Y);
-          const w2 = Math.cos(t * TIME_FREQ_B - baseX * SPATIAL_FREQ_Y + baseY * SPATIAL_FREQ_X);
-          const dispX = (w1 + w2) * 0.5 * NOISE_AMP_PX;
-          const dispY = (w2 - w1) * 0.5 * NOISE_AMP_PX;
-          const x = baseX + dispX;
-          const y = baseY + dispY;
+          // Wave Texture Bands: bands run perpendicular to the angle vector.
+          const proj = baseX * cosA + virtualY * sinA;
+          const waveRaw = Math.sin(proj * WAVE_BAND_FREQ * 2 * Math.PI + wavePhase * 2 * Math.PI);
+          const wave01 = (waveRaw + 1) / 2; // 0..1
 
-          let scale = 1 + (w1 + 1) * BREATH_AMP; // ambient breathing
-          let alpha = BASE_ALPHA;
-
+          // Geometry Proximity → Map Range → Float Curve (quadratic ease-out).
+          let prox01 = 0;
           if (cursor.active) {
-            const dx = x - cursor.x;
-            const dy = y - cursor.y;
+            const dx = baseX - cursor.x;
+            const dy = screenY - cursor.y;
             const distSq = dx * dx + dy * dy;
             if (distSq < radiusSq) {
               const f = 1 - Math.sqrt(distSq) / PROX_RADIUS;
-              const eased = f * f;
-              scale = scale + eased * (MAX_SCALE - 1);
-              alpha = BASE_ALPHA + eased * (PEAK_ALPHA - BASE_ALPHA);
+              prox01 = f * f;
             }
           }
 
+          // Mix: wave provides ambient amplitude, proximity adds on top.
+          // The Blender Mixer uses Float type — closest analogue is max(),
+          // so the cursor dominates locally while the wave reigns elsewhere.
+          const mixed = Math.max(wave01, prox01);
+
+          // Set Position: displacement along the band direction, magnitude
+          // driven by the wave (only — the proximity already drives scale).
+          const dispMag = wave01 * WAVE_DISPLACEMENT_PX;
+          const x = baseX + dispMag * cosA;
+          const y = screenY + dispMag * sinA;
+
+          // Scale Instances: 1 + (wave * waveContrib + prox * proxPeak)
+          // The wave bumps every visible dot in a band by a small amount;
+          // proximity adds a much larger spike at the cursor.
+          const scale =
+            1 + wave01 * WAVE_SCALE_CONTRIB + prox01 * (PROX_PEAK_SCALE - 1);
+
+          // Alpha: same composition pattern.
+          const alpha =
+            BASE_ALPHA +
+            wave01 * WAVE_ALPHA_CONTRIB +
+            prox01 * (PROX_PEAK_ALPHA - BASE_ALPHA);
+
+          // Cull off-viewport draws (cheap rejection after we computed wave
+          // because the wave/scroll math is fixed-cost).
+          if (
+            y < -CELL ||
+            y > height + CELL ||
+            x < -CELL ||
+            x > width + CELL
+          ) {
+            continue;
+          }
+
           const size = DOT_SIZE * scale;
-          ctx.globalAlpha = alpha;
+          ctx.globalAlpha = Math.min(1, alpha);
           ctx.fillRect(x - size / 2, y - size / 2, size, size);
+          // mixed is referenced for future tweaks (e.g., glow on combined
+          // peaks); keep the variable so the mix layer stays explicit.
+          void mixed;
         }
       }
       ctx.globalAlpha = 1;
 
-      if (!reducedMotion) {
-        rafId = requestAnimationFrame(render);
-      }
+      rafId = requestAnimationFrame(render);
     }
 
     resize();
-    applyScrollBlur();
     render(performance.now());
 
-    if (!reducedMotion) {
-      window.addEventListener("mousemove", onMove, { passive: true });
-      window.addEventListener("mouseleave", onLeave);
-    }
+    window.addEventListener("mousemove", onMove, { passive: true });
+    window.addEventListener("mouseleave", onLeave);
     window.addEventListener("resize", resize);
-    window.addEventListener("scroll", applyScrollBlur, { passive: true });
 
     return () => {
       cancelAnimationFrame(rafId);
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseleave", onLeave);
       window.removeEventListener("resize", resize);
-      window.removeEventListener("scroll", applyScrollBlur);
     };
   }, []);
 
