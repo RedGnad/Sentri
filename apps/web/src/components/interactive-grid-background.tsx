@@ -50,20 +50,7 @@ const PROX_RADIUS = 200;
 // Peak hover response at the cursor centre (prox = 1).
 const PROX_PEAK_SCALE = 9;
 const PROX_PEAK_ALPHA = 0.85;
-// Radial push tuning.
-//   PUSH_MAX_PX    — push magnitude at the peak of the envelope.
-//   PUSH_SAFE_PX   — radius around the cursor where the push is ramped
-//                    from 0 back up to full. A cell sitting under the
-//                    cursor (dist→0) still gets a 0-magnitude push so
-//                    its direction vector cannot flip 180° and snap
-//                    it across — it just scales in place. Cells just
-//                    outside that safe zone receive the full push.
-// Past the safe zone, the magnitude falls off linearly to 0 at the
-// edge of PROX_RADIUS, so cells throughout the halo (including those
-// near the outer edge) still move visibly — broad, gradient halo
-// rather than a thin mid-radius ring.
-const PUSH_MAX_PX = 46;
-const PUSH_SAFE_PX = 26;
+const PUSH_MAX_PX = 22; // radial outward push at the cursor centre (= 1 cell pitch)
 
 // Base look — at rest, every dot draws at this alpha and no displacement.
 const BASE_ALPHA = 0.1;
@@ -170,25 +157,13 @@ export function InteractiveGridBackground() {
               const f = 1 - dist / PROX_RADIUS;
               const prox = f * f;
 
-              // Set Position — radial push outward along the cursor→cell
-              // direction. Magnitude is (safe ramp) × (linear falloff):
-              //   safe ramp     — clamped(dist / PUSH_SAFE_PX, 0..1),
-              //                   zero at the cursor centre and unity
-              //                   past PUSH_SAFE_PX. Kills the 180°
-              //                   direction-flip teleportation when the
-              //                   cursor crosses a cell at dist→0.
-              //   linear falloff — 1 - dist/PROX_RADIUS, full at the
-              //                    centre, zero at the influence edge.
-              // The product peaks just outside the safe radius and
-              // decays gradually all the way to the edge — broad halo
-              // with visible movement on far cells, rather than a thin
-              // mid-radius ring.
+              // Set Position — radial push outward, along the cursor→cell
+              // direction. This is what creates the visible "halo" of
+              // displaced cells with a hollowed-out centre under the cursor.
               if (dist > 0.001) {
                 const dirX = dx / dist;
                 const dirY = dy / dist;
-                const safeRamp = Math.min(1, dist / PUSH_SAFE_PX);
-                const linearFalloff = 1 - dist / PROX_RADIUS;
-                const pushMag = PUSH_MAX_PX * safeRamp * linearFalloff;
+                const pushMag = PUSH_MAX_PX * prox;
                 dispX = dirX * pushMag;
                 dispY = dirY * pushMag;
               }
