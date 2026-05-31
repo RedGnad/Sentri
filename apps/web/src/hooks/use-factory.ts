@@ -116,20 +116,24 @@ export function useActiveVaultsPage(start: bigint, limit?: bigint) {
     ]),
     query: { enabled: v2Vaults.length > 0, refetchInterval: 30_000, retry: false },
   });
+  // Paused vaults stay in the directory listing so users (and judges)
+  // can see vaults that aren't currently auto-cycled but are still on
+  // chain — useful state, not noise. Killed vaults still get filtered
+  // out because their funds have been withdrawn and there is nothing
+  // left to inspect. The per-vault StatusDot will render "Paused" so
+  // the row's state is obvious to the reader.
   const statusesReady = vaults.length === 0 || !!statuses.data;
   const activeStandardVaults = statusesReady
     ? vaults.filter((_, i) => {
         const killed = statuses.data?.[i * 2]?.result as boolean | undefined;
-        const paused = statuses.data?.[i * 2 + 1]?.result as boolean | undefined;
-        return killed !== true && paused !== true;
+        return killed !== true;
       })
     : [];
   const v2StatusesReady = v2Vaults.length === 0 || !!v2Statuses.data;
   const activeV2Vaults = v2StatusesReady
     ? v2Vaults.filter((_, i) => {
         const killed = v2Statuses.data?.[i * 2]?.result as boolean | undefined;
-        const paused = v2Statuses.data?.[i * 2 + 1]?.result as boolean | undefined;
-        return killed !== true && paused !== true;
+        return killed !== true;
       })
     : [];
   const activeVaults: VaultDirectoryItem[] = [

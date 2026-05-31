@@ -103,6 +103,16 @@ export function InteractiveGridBackground() {
     }
 
     function onMove(e: MouseEvent) {
+      // Suppress the proximity field whenever the cursor is over a button
+      // or link. Outline / transparent buttons let the grid show through,
+      // so a scaled-up halo around the cursor was bleeding into their
+      // labels and hurting readability. With the field off there, the
+      // local dots fall back to their rest state and the text reads cleanly.
+      const tgt = e.target as Element | null;
+      if (tgt && tgt.closest("button, a, [role='button']")) {
+        cursor.active = false;
+        return;
+      }
       cursor.x = e.clientX;
       cursor.y = e.clientY;
       cursor.active = true;

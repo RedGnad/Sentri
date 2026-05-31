@@ -21,7 +21,7 @@ export default function VaultsPage() {
         subtitle={
           isLoading
             ? "Loading vaults…"
-            : `${total} active vault${total === 1 ? "" : "s"} · public audit readable without a wallet`
+            : `${total} vault${total === 1 ? "" : "s"} · public audit readable without a wallet`
         }
         right={
           <Link href="/deploy">
