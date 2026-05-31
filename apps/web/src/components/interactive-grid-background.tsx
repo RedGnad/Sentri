@@ -50,7 +50,12 @@ const PROX_RADIUS = 200;
 // Peak hover response at the cursor centre (prox = 1).
 const PROX_PEAK_SCALE = 9;
 const PROX_PEAK_ALPHA = 0.85;
-const PUSH_MAX_PX = 22; // radial outward push at the cursor centre (= 1 cell pitch)
+// Peak radial push, applied at the MID-radius (not at the cursor centre)
+// via a parabolic donut envelope. A cell sitting directly under the cursor
+// stays put — only its scale + alpha peak there — which avoids the
+// 180-degree direction flip you'd otherwise get when the cursor crosses
+// a cell (and the resulting visible teleportation).
+const PUSH_MAX_PX = 38;
 
 // Base look — at rest, every dot draws at this alpha and no displacement.
 const BASE_ALPHA = 0.1;
@@ -157,13 +162,24 @@ export function InteractiveGridBackground() {
               const f = 1 - dist / PROX_RADIUS;
               const prox = f * f;
 
-              // Set Position — radial push outward, along the cursor→cell
-              // direction. This is what creates the visible "halo" of
-              // displaced cells with a hollowed-out centre under the cursor.
+              // Set Position — radial push outward along the cursor→cell
+              // direction. Magnitude uses a parabolic donut envelope
+              // (4·f·(1-f), zero at both ends, peak 1 at f=0.5) instead of
+              // peaking at the cursor centre. Two benefits:
+              //  1. A cell directly under the cursor (dist→0) receives a
+              //     zero-magnitude push — even though the cursor→cell
+              //     direction vector is degenerate at dist=0, multiplying
+              //     by zero makes it visually stable and removes the
+              //     180° direction flip + teleportation that happened
+              //     when the cursor crossed a cell.
+              //  2. Cells form a clear "halo" at mid-radius — visually
+              //     closer to the ring of displaced cells in the
+              //     Blender recording than a centred peak would give.
               if (dist > 0.001) {
                 const dirX = dx / dist;
                 const dirY = dy / dist;
-                const pushMag = PUSH_MAX_PX * prox;
+                const pushEnvelope = 4 * f * (1 - f);
+                const pushMag = PUSH_MAX_PX * pushEnvelope;
                 dispX = dirX * pushMag;
                 dispY = dirY * pushMag;
               }
