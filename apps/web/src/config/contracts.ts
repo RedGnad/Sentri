@@ -457,7 +457,9 @@ export const TRUSTLESS_VAULT = {
   recommendedMinTreasuryUsd: 1000,
 } as const;
 
-// Where the "Request Early Access" CTA points. Configurable; defaults to the
-// public repo so the button is never a dead/fake control.
+// Where the "Request Beta Access" CTA points. Configurable via env; defaults
+// to the operator's Telegram handle so the button is a live contact route and
+// matches the onboarding flow described in the V2 panel (deploy your vault,
+// send the address to the operator, get allowlisted within 24h).
 export const EARLY_ACCESS_URL =
-  process.env.NEXT_PUBLIC_EARLY_ACCESS_URL ?? "https://github.com/RedGnad/Sentri";
+  process.env.NEXT_PUBLIC_EARLY_ACCESS_URL ?? "https://t.me/RedG_billycatnip";
