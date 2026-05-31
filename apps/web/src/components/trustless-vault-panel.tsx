@@ -118,13 +118,16 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="space-y-8">
-      {/* Status + identity */}
-      <div className="border-l-2 border-phosphor/60 pl-5 space-y-4">
+      {/* Status + identity — orchid accent aligned with the V2 brand
+          (the V2 vault cards in the directory already use orchid borders).
+          The phosphor green stays elsewhere where it carries semantic
+          meaning (verifiable proof rows, post-create success card). */}
+      <div className="border-l-2 border-orchid/60 pl-5 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="warning">Genesis Canary · V2</Badge>
-          <Badge variant="success">Proof vault</Badge>
-          <span className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-phosphor">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-phosphor animate-pulse-dot" />
+          <Badge className="border-orchid/50 text-orchid">Proof vault</Badge>
+          <span className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-kicker text-orchid">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-orchid animate-pulse-dot" />
             {T.status}
           </span>
         </div>
