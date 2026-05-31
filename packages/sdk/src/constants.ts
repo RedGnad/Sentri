@@ -181,6 +181,18 @@ export const VAULT_FACTORY_V2_ABI = [
   "function allVaults(uint256) external view returns (address)",
 ] as const;
 
+// TreasuryVaultTrustlessOracle (V2) — executionLogs() returns the same 10 standard
+// fields as V1 PLUS three Pyth-proof fields (pythPrice, pythPublishTime,
+// pythConfBps). The shared TREASURY_VAULT_ABI declares only the 10 V1 fields, so
+// reading a V2 log via that ABI yields a Result of length 10 and any access at
+// index 10/11/12 throws "out of result range" — exactly the post-tx crash that
+// stranded V2 audit blobs in their pre-tx state. This dedicated 13-field ABI is
+// used solely for the post-tx executionLogs read on V2 vaults; all other vault
+// calls keep using TREASURY_VAULT_ABI.
+export const TRUSTLESS_VAULT_EXECUTION_LOG_ABI = [
+  "function executionLogs(uint256 index) external view returns (uint256 timestamp, uint8 action, uint256 amountIn, uint256 amountOut, uint256 tvlAfter, bytes32 intentHash, bytes32 responseHash, address teeSigner, bytes32 teeAttestation, uint256 deadline, uint256 pythPrice, uint256 pythPublishTime, uint256 pythConfBps)",
+] as const;
+
 // TreasuryVault ABI — matches Phase 1 init-pattern contract
 export const TREASURY_VAULT_ABI = [
   "function deposit(uint256 amount) external",

@@ -206,21 +206,40 @@ async function enrichChainEntryWithInference(
   });
 }
 
-function bootstrapRootsFromEnv(): string[] {
+interface BootstrapRoot {
+  root: string;
+  /** Optional 0G Storage submission tx — set when the env entry uses
+   *  `root:storageTx` form. Used as a fallback when the blob itself does not
+   *  carry `canonicalStorageTxHash` (e.g. partial blobs from pre-fix V2 execs). */
+  storageTx?: string;
+}
+
+function splitRootStorageTx(entry: string): BootstrapRoot | null {
+  const trimmed = entry.trim();
+  if (!trimmed.startsWith("0x")) return null;
+  const [root, storageTx] = trimmed.split(":");
+  if (!root.startsWith("0x")) return null;
+  return storageTx && storageTx.startsWith("0x") ? { root, storageTx } : { root };
+}
+
+function bootstrapRootsFromEnv(): BootstrapRoot[] {
   const raw = process.env.SENTRI_AUDIT_INDEX_BOOTSTRAP_ROOTS;
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) {
-      return parsed.filter((v): v is string => typeof v === "string" && v.startsWith("0x"));
+      return parsed
+        .filter((v): v is string => typeof v === "string")
+        .map(splitRootStorageTx)
+        .filter((v): v is BootstrapRoot => v !== null);
     }
   } catch {
     // Fall through to comma/space splitting.
   }
   return raw
     .split(/[\s,]+/)
-    .map((v) => v.trim())
-    .filter((v) => v.startsWith("0x"));
+    .map(splitRootStorageTx)
+    .filter((v): v is BootstrapRoot => v !== null);
 }
 
 function isPointType(value: unknown): value is PointType {
@@ -312,7 +331,7 @@ async function bootstrapAuditIndexFromRoots(context: GlobalContext): Promise<voi
   const chainLogsByVault = new Map<string, ChainAuditEntry[]>();
   let written = 0;
   let skipped = 0;
-  for (const rootHash of roots) {
+  for (const { root: rootHash, storageTx: envStorageTx } of roots) {
     try {
       const blob = await downloadAuditRecordBlob(rootHash);
       if (!blob || typeof blob !== "object") {
@@ -375,7 +394,11 @@ async function bootstrapAuditIndexFromRoots(context: GlobalContext): Promise<voi
         intentHash: match.intentHash,
         responseHash: match.responseHash,
         rootHash,
-        storageTxHash: stringField(entry.canonicalStorageTxHash) ?? stringField(entry.storageTxHash) ?? undefined,
+        storageTxHash:
+          stringField(entry.canonicalStorageTxHash)
+          ?? stringField(entry.storageTxHash)
+          ?? envStorageTx
+          ?? undefined,
         action: match.action,
         createdAt: now,
         updatedAt: now,

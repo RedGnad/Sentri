@@ -4,6 +4,7 @@ import {
   CHAIN,
   CONTRACTS,
   TREASURY_VAULT_ABI,
+  TRUSTLESS_VAULT_EXECUTION_LOG_ABI,
   PRICE_FEED_ABI,
   ERC20_ABI,
   VAULT_FACTORY_ABI,
@@ -1366,9 +1367,19 @@ export async function executeOneIterationForVault(
   const execBlock = await receipt.getBlock();
   const chainTimestampMs = Number(execBlock.timestamp) * 1000;
 
-  // Determine actual amounts from the latest log.
+  // Determine actual amounts from the latest log. V2 (trustless-pyth) vaults
+  // return a 13-field ExecutionLog — the 10 V1 fields + pythPrice/publishTime/
+  // confBps. Reading those through the shared TREASURY_VAULT_ABI (10 fields)
+  // makes ethers decode a Result of length 10 and throws "out of result range"
+  // when accessing index 10/11/12, which silently abandons every post-tx audit
+  // write below (final TeeReceipt save, audit log append, index update). Use a
+  // dedicated 13-field ABI for the V2 read so the post-tx bookkeeping runs to
+  // completion and the resulting blob is single-source enriched.
   const idx = (await vault.executionLogCount()) - 1n;
-  const latestLog = await vault.executionLogs(idx);
+  const logReader = isTrustless
+    ? new ethers.Contract(vaultAddress, TRUSTLESS_VAULT_EXECUTION_LOG_ABI, ctx.wallet)
+    : vault;
+  const latestLog = await logReader.executionLogs(idx);
   const amountOut = latestLog[3] as bigint;
   const executionLogCountAfter = Number(idx + 1n);
   const trustlessPythPrice = isTrustless ? latestLog[10] as bigint | undefined : undefined;
