@@ -94,7 +94,7 @@ export default async function LandingPage() {
           </p>
           <p className="max-w-xl mt-8 leading-relaxed">
             <span className="text-[18px] text-ink-dim">
-              Give AI the wallet.
+              Give AI a wallet.
             </span>
             <br />
             <strong className="text-[18px] text-ink">
