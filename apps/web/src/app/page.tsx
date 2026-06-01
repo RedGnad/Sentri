@@ -98,7 +98,7 @@ export default async function LandingPage() {
             </span>
             <br />
             <strong className="text-[18px] text-ink">
-              Keep the policy non-negotiable.
+              Keep the guardrails non-negotiable.
             </strong>
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-8">
