@@ -21,6 +21,7 @@ import {
 import { useVaultStateFromAgent } from "@/hooks/use-vault-runtime";
 import { useExecutionToast } from "@/hooks/use-execution-toast";
 import { BASE_SYMBOL, IS_MAINNET, RISK_SYMBOL } from "@/config/contracts";
+import { toastTxError } from "@/lib/tx-error";
 
 export default function VaultOverviewPage() {
   const params = useParams<{ address: string }>();
@@ -79,13 +80,13 @@ export default function VaultOverviewPage() {
     if (mintSuccess) toast.success(`10,000 ${BASE_SYMBOL} minted`);
   }, [mintSuccess]);
   useEffect(() => {
-    if (mintError) toast.error(`Mint failed: ${mintError.message}`);
+    if (mintError) toastTxError("Mint", mintError);
   }, [mintError]);
   useEffect(() => {
     if (approveSuccess) toast.success(`${BASE_SYMBOL} approved for deposit`);
   }, [approveSuccess]);
   useEffect(() => {
-    if (approveError) toast.error(`Approve failed: ${approveError.message}`);
+    if (approveError) toastTxError("Approve", approveError);
   }, [approveError]);
   useEffect(() => {
     if (depositSuccess) {
@@ -94,7 +95,7 @@ export default function VaultOverviewPage() {
     }
   }, [depositSuccess]);
   useEffect(() => {
-    if (depositError) toast.error(`Deposit failed: ${depositError.message}`);
+    if (depositError) toastTxError("Deposit", depositError);
   }, [depositError]);
   useEffect(() => {
     if (withdrawSuccess) {
@@ -103,7 +104,7 @@ export default function VaultOverviewPage() {
     }
   }, [withdrawSuccess]);
   useEffect(() => {
-    if (withdrawError) toast.error(`Withdraw failed: ${withdrawError.message}`);
+    if (withdrawError) toastTxError("Withdraw", withdrawError);
   }, [withdrawError]);
 
   if (isLoading || !vault) {
@@ -144,9 +145,29 @@ export default function VaultOverviewPage() {
   // keeper runtime — discoverVaults reads only the standard factory. So the
   // runtime panel must not imply an imminent "Syncing"; it never will.
   const isV2 = vault.tier === "v2";
+  // Freshly-created vault: zero capital, zero history. Surface a single mono
+  // line cueing the next action ("deposit") so the owner is not left staring
+  // at four stat-cards full of zeros wondering what's next.
+  const isEmptyFreshVault =
+    vault.balance === 0n && vault.riskBalance === 0n && !hasOnChainExecutions;
 
   return (
     <div className="space-y-8">
+      {isEmptyFreshVault && (
+        <div className="border border-amber/30 bg-amber/5 px-4 py-3 flex items-center gap-3">
+          <span className="inline-block w-1 h-1 rounded-full bg-amber shrink-0" />
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-amber">
+            Vault empty
+          </span>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+            ·
+          </span>
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim">
+            Deposit {BASE_SYMBOL} to activate the cycle
+          </span>
+        </div>
+      )}
+
       {/* Stats */}
       <section className="grid grid-cols-2 lg:grid-cols-4 border border-hairline divide-x divide-hairline">
         <Stat

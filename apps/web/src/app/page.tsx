@@ -94,11 +94,11 @@ export default async function LandingPage() {
           </p>
           <p className="max-w-xl mt-8 leading-relaxed">
             <span className="text-[18px] text-ink-dim">
-              AI agents are getting wallets. Keep them on a leash :
+              Give AI the wallet.
             </span>
             <br />
-            <strong className="text-[16px] text-ink">
-              Sentri lets AI move capital without letting it go rogue.
+            <strong className="text-[18px] text-ink">
+              Keep the guardrails non-negotiable.
             </strong>
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-8">

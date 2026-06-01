@@ -9,6 +9,7 @@ import { formatUSDC, shortenAddress } from "@/lib/utils";
 import { useParsedVaultData, useEmergencyWithdraw, useEmergencyDeleverageAndWithdraw, usePause, useUnpause } from "@/hooks/use-vault";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BASE_SYMBOL, RISK_SYMBOL } from "@/config/contracts";
+import { toastTxError } from "@/lib/tx-error";
 
 export default function VaultEmergencyPage() {
   const params = useParams<{ address: string }>();
@@ -29,16 +30,16 @@ export default function VaultEmergencyPage() {
   const [confirmKill, setConfirmKill] = useState(false);
 
   useEffect(() => { if (pauseSuccess) toast.success("Vault paused"); }, [pauseSuccess]);
-  useEffect(() => { if (pauseError) toast.error(`Pause failed: ${pauseError.message}`); }, [pauseError]);
+  useEffect(() => { if (pauseError) toastTxError("Pause", pauseError); }, [pauseError]);
   useEffect(() => { if (unpauseSuccess) toast.success("Vault unpaused"); }, [unpauseSuccess]);
-  useEffect(() => { if (unpauseError) toast.error(`Unpause failed: ${unpauseError.message}`); }, [unpauseError]);
+  useEffect(() => { if (unpauseError) toastTxError("Unpause", unpauseError); }, [unpauseError]);
   useEffect(() => {
     if (killSuccess) {
       toast.error("Vault permanently killed. All funds withdrawn to owner.");
       setConfirmKill(false);
     }
   }, [killSuccess]);
-  useEffect(() => { if (killError) toast.error(`Kill-switch failed: ${killError.message}`); }, [killError]);
+  useEffect(() => { if (killError) toastTxError("Kill-switch", killError); }, [killError]);
   useEffect(() => {
     if (deleverageKillSuccess) {
       toast.error(`Vault permanently killed. ${RISK_SYMBOL} deleveraged before withdrawal.`);
@@ -46,7 +47,7 @@ export default function VaultEmergencyPage() {
     }
   }, [deleverageKillSuccess]);
   useEffect(() => {
-    if (deleverageKillError) toast.error(`Deleverage kill failed: ${deleverageKillError.message}`);
+    if (deleverageKillError) toastTxError("Deleverage kill", deleverageKillError);
   }, [deleverageKillError]);
 
   if (isLoading || !vault) {

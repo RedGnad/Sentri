@@ -10,6 +10,7 @@ import { useParsedVaultData, useSetPolicy } from "@/hooks/use-vault";
 import { bpsToPercent } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RISK_SYMBOL } from "@/config/contracts";
+import { toastTxError } from "@/lib/tx-error";
 
 export default function VaultPolicyPage() {
   const params = useParams<{ address: string }>();
@@ -40,7 +41,7 @@ export default function VaultPolicyPage() {
   }, [vault?.policy]);
 
   useEffect(() => { if (isSuccess) toast.success("Policy updated on-chain"); }, [isSuccess]);
-  useEffect(() => { if (error) toast.error(`Policy update failed: ${error.message}`); }, [error]);
+  useEffect(() => { if (error) toastTxError("Policy update", error); }, [error]);
 
   if (isLoading) {
     return <Skeleton className="h-96 w-full" />;
