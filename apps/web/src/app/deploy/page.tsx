@@ -19,6 +19,7 @@ import {
   PRESET_LABELS,
   PresetTier,
   RISK_SYMBOL,
+  USDCE_SWAP_URL,
   VAULT_FACTORY_ADDRESS,
   VAULT_FACTORY_ABI,
 } from "@/config/contracts";
@@ -36,7 +37,7 @@ export default function DeployPage() {
   const [tier, setTier] = useState<number>(PresetTier.Balanced);
   const [depositAmount, setDepositAmount] = useState<string>("1000");
 
-  const { data: usdcBalance } = useUsdcBalance(address);
+  const { data: usdcBalance, isSuccess: balanceLoaded } = useUsdcBalance(address);
   const { data: allowance } = useUsdcAllowance(address, VAULT_FACTORY_ADDRESS);
   const { approve, isPending: isApproving, isConfirming: isApproveConfirming, isSuccess: approveSuccess } = useApproveUsdc();
   const { mint, isPending: isMinting, isConfirming: isMintConfirming, isSuccess: mintSuccess } = useMintUsdc();
@@ -139,6 +140,7 @@ export default function DeployPage() {
           depositAmount={depositAmount}
           setDepositAmount={setDepositAmount}
           userUsdc={userUsdc}
+          balanceLoaded={balanceLoaded}
           connected={!!address}
           onMint={() => address && mint(address, "10000")}
           isMinting={isMinting || isMintConfirming}
@@ -208,9 +210,12 @@ function VaultTypeSelect({
           </p>
           <ul className="space-y-1.5 mb-5">
             <li className="font-mono text-[10px] text-ink-dim">· cheap · frequent execution</li>
-            <li className="font-mono text-[10px] text-ink-dim">· sealed TEE reasoning + on-chain policy</li>
+            <li className="font-mono text-[10px] text-ink-dim">· private AI reasoning + on-chain policy</li>
             <li className="font-mono text-[10px] text-ink-dim">· any treasury size</li>
           </ul>
+          <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
+            Capital: {BASE_SYMBOL} · Gas: 0G
+          </div>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-amber group-hover:text-ink transition-colors">
             Create →
           </span>
@@ -225,7 +230,12 @@ function VaultTypeSelect({
             <Badge variant="warning">Genesis Canary · V2</Badge>
             <Badge variant="success">Proof vault</Badge>
           </div>
-          <h3 className="font-serif text-2xl text-ink mb-2">Trustless Oracle Vault</h3>
+          <h3 className="font-serif text-2xl text-ink mb-2">
+            Advanced Oracle Vault
+            <span className="block font-mono text-[9px] uppercase tracking-kicker text-ink-faint mt-1">
+              Trustless Oracle engine
+            </span>
+          </h3>
           <p className="text-[12px] text-ink-dim leading-relaxed mb-4 flex-1">
             Fresh Pyth market data verified on-chain inside the execution transaction, before
             policy checks and swap. Higher-assurance, opt-in.
@@ -235,6 +245,9 @@ function VaultTypeSelect({
             <li className="font-mono text-[10px] text-ink-dim">· recommended ≥ $1,000 treasury · higher gas</li>
             <li className="font-mono text-[10px] text-ink-dim">· verified on 0G mainnet</li>
           </ul>
+          <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
+            Capital: {BASE_SYMBOL} · Gas: 0G · Oracle: OG (sponsored)
+          </div>
           <span className="font-mono text-[10px] uppercase tracking-kicker text-phosphor group-hover:text-ink transition-colors">
             Explore tier →
           </span>
@@ -323,6 +336,7 @@ function DepositStep({
   depositAmount,
   setDepositAmount,
   userUsdc,
+  balanceLoaded,
   connected,
   onMint,
   isMinting,
@@ -332,6 +346,7 @@ function DepositStep({
   depositAmount: string;
   setDepositAmount: (v: string) => void;
   userUsdc: bigint;
+  balanceLoaded: boolean;
   connected: boolean;
   onMint: () => void;
   isMinting: boolean;
@@ -384,6 +399,27 @@ function DepositStep({
             <Button variant="outline" size="sm" onClick={onMint} disabled={isMinting} className="w-full">
               {isMinting ? "Minting..." : `Mint 10,000 ${BASE_SYMBOL} (testnet, free)`}
             </Button>
+          </div>
+        )}
+
+        {IS_MAINNET && connected && balanceLoaded && userUsdc === 0n && (
+          <div className="border border-amber/30 bg-amber/5 px-4 py-3 space-y-2">
+            <p className="font-mono text-[10px] uppercase tracking-kicker text-amber">
+              No {BASE_SYMBOL} detected.
+            </p>
+            <p className="font-mono text-[10px] text-ink-dim leading-relaxed">
+              Fund vaults with {BASE_SYMBOL}. Keep 0G for gas.
+            </p>
+            {USDCE_SWAP_URL && (
+              <a
+                href={USDCE_SWAP_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors inline-flex items-center gap-1"
+              >
+                Get {BASE_SYMBOL} ↗
+              </a>
+            )}
           </div>
         )}
       </div>

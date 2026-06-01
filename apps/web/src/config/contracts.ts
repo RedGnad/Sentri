@@ -485,3 +485,11 @@ export const TRUSTLESS_VAULT = {
 // send the address to the operator, get allowlisted within 24h).
 export const EARLY_ACCESS_URL =
   process.env.NEXT_PUBLIC_EARLY_ACCESS_URL ?? "https://t.me/RedG_billycatnip";
+
+// External venue users can use to swap into USDC.E on 0G mainnet. Surfaced in
+// the deploy flow when the connected wallet has zero USDC.E so users get a
+// concrete next step instead of a dead end. Configurable via env because the
+// canonical Jaine pool URL for USDC.E/W0G isn't pinned yet — leave the env
+// blank and the link does not render. TODO: pin the canonical Jaine URL once
+// confirmed and set it as the default here.
+export const USDCE_SWAP_URL = process.env.NEXT_PUBLIC_USDCE_SWAP_URL ?? "";

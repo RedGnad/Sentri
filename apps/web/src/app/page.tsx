@@ -10,7 +10,7 @@ export const revalidate = 0;
 
 const TRUST_TICKER = [
   "TEE-verified inference",
-  "Agentic ID signer",
+  "Authorized agent signer",
   "Single-use intent + deadline",
   "On-chain policy gate",
   "0G Storage Log/KV audit",
@@ -44,7 +44,7 @@ function mechanism(chainId: number) {
       id: "03",
       label: "On-chain gate",
       detail:
-        "Agentic ID, TEE signer, deadline, replay, exposure, drawdown, slippage",
+        "Authorized agent signer, deadline, replay, exposure, drawdown, slippage",
     },
     {
       id: "04",
@@ -111,12 +111,12 @@ export default async function LandingPage() {
                   longer pierces through the outline-button text and
                   hurts readability when the cursor halo passes under. */}
               <Button size="lg" variant="outline" className="bg-bg/80 backdrop-blur-md">
-                Open Demo Vault
+                Open Live Demo
               </Button>
             </Link>
             <Link href="/vaults">
               <Button size="lg" variant="outline" className="bg-bg/80 backdrop-blur-md">
-                All Vaults
+                Browse Vaults
               </Button>
             </Link>
           </div>
