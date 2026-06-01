@@ -185,6 +185,14 @@ export function ConnectButton() {
   const balanceFormatted = balanceData
     ? `${Number(formatUnits(balanceData.value, balanceData.decimals)).toFixed(3)} ${balanceData.symbol}`
     : "—";
+  // Native balance = 0 means every TX (approve, deposit, withdraw, vault
+  // create, kill-switch) will revert from the wallet before signing. Surface
+  // it once, here, instead of letting the user discover it via a "insufficient
+  // funds" wallet popup on the first action. Tied to the same Connect popover
+  // so the warning lives where the address/balance is — not as a global
+  // banner. Hidden when on wrong network because the balance is then irrelevant.
+  const gasEmpty =
+    !wrongNetwork && balanceData !== undefined && balanceData.value === 0n;
 
   return (
     <div className="relative">
@@ -284,7 +292,16 @@ export function ConnectButton() {
               }
               valueClass={wrongNetwork ? "text-alert" : "text-ink"}
             />
-            <Row label="Balance" value={balanceFormatted} />
+            <Row
+              label="Balance"
+              value={balanceFormatted}
+              valueClass={gasEmpty ? "text-amber" : "text-ink"}
+            />
+            {gasEmpty && (
+              <p className="font-mono text-[9px] uppercase tracking-kicker text-amber pt-1">
+                Top up {balanceData?.symbol ?? "0G"} for gas before any TX.
+              </p>
+            )}
           </div>
 
           <div className="divide-y divide-hairline">
