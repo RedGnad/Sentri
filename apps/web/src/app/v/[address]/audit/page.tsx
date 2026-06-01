@@ -170,6 +170,10 @@ export default function VaultAuditPage() {
         </span>
       </div>
 
+      <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
+        AI proposes → vault policy checks → execute or block.
+      </p>
+
       {/* Policy enforcement summary — reserves its space while the async
           rejections endpoint loads so the bar does not pop in after the
           executions render. Neutral styling: defensive proof, not alarm. */}
@@ -220,12 +224,17 @@ export default function VaultAuditPage() {
               )}
             </button>
             {rejectionsExpanded && (
-              <div className="border-t border-hairline px-4 pb-3 divide-y divide-hairline">
-                {groupRejections([...blockedActions, ...verifierHolds]).map(
-                  (group, i) => (
-                    <RejectionGroup key={i} entries={group} />
-                  ),
-                )}
+              <div className="border-t border-hairline">
+                <p className="font-mono text-[10px] text-ink-faint leading-relaxed px-4 pt-3 pb-2">
+                  Blocked means no transaction was sent and no funds moved.
+                </p>
+                <div className="px-4 pb-3 divide-y divide-hairline">
+                  {groupRejections([...blockedActions, ...verifierHolds]).map(
+                    (group, i) => (
+                      <RejectionGroup key={i} entries={group} />
+                    ),
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -466,7 +475,7 @@ function AuditEntry({
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-5 h-12 border-t border-hairline font-mono text-[11px] uppercase tracking-kicker text-amber hover:text-ink transition-colors"
       >
-        <span>∎ {expanded ? "Hide" : "Reveal"} TEE reasoning</span>
+        <span>∎ {expanded ? "Hide" : "Reveal"} private AI reasoning</span>
         {expanded ? (
           <ChevronUp className="h-3 w-3" />
         ) : (
@@ -609,7 +618,7 @@ function AuditEntry({
                   </Field>
                 )}
                 {(detail.canonicalStorageTxHash ?? detail.storageTxHash) ? (
-                  <Field label="Canonical blob TX">
+                  <Field label="Audit record TX" sublabel="canonical blob tx">
                     <a
                       href={`${EXPLORER}/tx/${detail.canonicalStorageTxHash ?? detail.storageTxHash}`}
                       target="_blank"
@@ -621,12 +630,12 @@ function AuditEntry({
                     </a>
                   </Field>
                 ) : (
-                  <Field label="Canonical blob TX">
+                  <Field label="Audit record TX" sublabel="canonical blob tx">
                     <span className="font-mono text-[11px] text-ink-faint">not recorded</span>
                   </Field>
                 )}
                 {(detail.canonicalRootHash ?? detail.storageRootHash) ? (
-                  <Field label="Canonical root">
+                  <Field label="Audit root" sublabel="canonical storage root">
                     <div className="space-y-1">
                       <CopyableHash value={(detail.canonicalRootHash ?? detail.storageRootHash)!} />
                       <a
@@ -640,7 +649,7 @@ function AuditEntry({
                     </div>
                   </Field>
                 ) : (
-                  <Field label="Canonical root">
+                  <Field label="Audit root" sublabel="canonical storage root">
                     <span className="font-mono text-[11px] text-ink-faint">not recorded</span>
                   </Field>
                 )}
@@ -692,7 +701,7 @@ function AuditEntry({
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
                 <span className="font-mono text-[9px] uppercase tracking-kicker px-2 py-0.5 rounded-sm bg-amber/10 text-amber border border-amber/20">
-                  TEE reasoning: not recovered
+                  Private AI reasoning: not recovered
                 </span>
               </div>
               <p className="font-mono text-[11px] text-ink-faint leading-relaxed">
@@ -947,15 +956,22 @@ function AuditCardSkeleton() {
 
 function Field({
   label,
+  sublabel,
   children,
 }: {
   label: string;
+  sublabel?: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
       <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1.5">
         {label}
+        {sublabel && (
+          <span className="ml-2 normal-case tracking-normal text-ink-faint/70">
+            ({sublabel})
+          </span>
+        )}
       </div>
       <div>{children}</div>
     </div>

@@ -127,7 +127,12 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
           <Badge variant="warning">Genesis Canary · V2</Badge>
           <Badge variant="success">Proof vault</Badge>
         </div>
-        <h2 className="font-serif text-4xl text-ink leading-tight">Trustless Oracle Vault</h2>
+        <h2 className="font-serif text-4xl text-ink leading-tight">
+          Advanced Oracle Vault
+          <span className="block font-mono text-[10px] uppercase tracking-kicker text-ink-faint mt-2">
+            Trustless Oracle engine
+          </span>
+        </h2>
         <p className="font-serif italic text-xl text-amber leading-snug">
           You pay for execution assurance.
         </p>
@@ -145,7 +150,7 @@ export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
         <Pillar title="Trust model">
           <Point>Pyth pull oracle verified on-chain in the same transaction.</Point>
           <Point>Confidence-interval and staleness bounds enforced by the contract.</Point>
-          <Point>Sealed TEE reasoning (private strategy, verifiable proof).</Point>
+          <Point>Private AI reasoning, TEE-sealed and verifiable.</Point>
           <Point>On-chain policy bounds + owner kill-switch.</Point>
         </Pillar>
         <Pillar title="Economics">
