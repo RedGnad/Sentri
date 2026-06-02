@@ -27,7 +27,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 Demo video: https://www.youtube.com/watch?v=8eVnhSPZd_4
 
-Demo live: sentri-fi.xyz
+Demo live: https://sentri-fi.xyz
 
 
 Mainnet deployment:
@@ -75,7 +75,7 @@ Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
 | 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for verifiable review. |
 | 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; root hash and optional storage tx metadata are mirrored into the per-vault KV/cache index for tamper-evidence. |
 | 0G Storage KV | Fast per-vault audit index and portfolio state, namespaced by vault address; used as recovery layer after agent restart. |
-| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
+| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. The AgentINFT is a vault-execution gating token — it does not implement `iTransferFrom` by design. The agent's cryptographic identity binds to a registered signer, not to a marketplace transfer flow; `authorizeUsage`, `rotateSigner`, and `isActiveAgentWithSigner` are the operative ERC-7857 surfaces. |
 | 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
 
 Persistent Memory is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.
@@ -114,9 +114,9 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on the current demo execution: `0x4386909Ef321651ab78298Ae454A05FF5d354118`.
 
-### Trustless Oracle Vault — Advanced Tier (live on mainnet, verified execution)
+### Trustless Oracle Vault: Advanced Tier (live on mainnet, verified execution)
 
-An advanced execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction as the swap**. **Live on 0G mainnet with a verified `executeStrategyWithPyth` tx** (see canonical execution below). **Opt-in per vault** — the Standard keeper path remains the default for vaults too small to amortize the Pyth update fee.
+An advanced execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction as the swap**. **Live on 0G mainnet with a verified `executeStrategyWithPyth` tx** (see canonical execution below). **Opt-in per vault**, the Standard keeper path remains the default for vaults too small to amortize the Pyth update fee.
 
 For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proof.md) (oracle path verification) and [`docs/tee-trust-boundary.md`](./docs/tee-trust-boundary.md) (TEE trust boundary).
 
@@ -130,7 +130,7 @@ For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proo
 | `createVault` tx | [`0x81cff80a…f4fcb8`](https://chainscan.0g.ai/tx/0x81cff80ace50a2cfb8051c015505667c5df7812e754a0c4b56a6fdf410f4fcb8) |
 | `setAuthorizedFactory` tx (owner) | [`0x7c018f9f…87a3d55`](https://chainscan.0g.ai/tx/0x7c018f9fbd7050a7369267be0272c7a31bf9a9bf7cb16eea5c224446887a3d55) |
 
-**Standard vs Advanced.** Standard (default, live): price keeper-pushed to `SentriPriceFeed` (Jaine `slot0()` + Pyth Hermes, 2-of-2 quorum off-chain). Advanced (live, opt-in): each `executeStrategyWithPyth()` carries a signed Pyth update verified on-chain in the same tx — the keeper-pushed step is removed from the execution path — and the verified price drives `minOut`, exposure, drawdown and TVL, under `pythMaxAge = 60s` and `pythMaxConfBps = 200`.
+**Standard vs Advanced.** Standard (default, live): price keeper-pushed to `SentriPriceFeed` (Jaine `slot0()` + Pyth Hermes, 2-of-2 quorum off-chain). Advanced (live, opt-in): each `executeStrategyWithPyth()` carries a signed Pyth update verified on-chain in the same tx, the keeper-pushed step is removed from the execution path, and the verified price drives `minOut`, exposure, drawdown and TVL, under `pythMaxAge = 60s` and `pythMaxConfBps = 200`.
 
 **Canonical execution (verified on mainnet).** `executeStrategyWithPyth` tx [`0x45ab1a82…7317fa`](https://chainscan.0g.ai/tx/0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa) — Rebalance `0.3186 USDC.E → 0.7468 W0G`, Pyth `0G/USD` verified on-chain in the same tx (price 0.42406745, 22 bps conf, 9 s fresh), `executionLogCount` 0 → 1.
 
@@ -236,7 +236,7 @@ This is a forward-looking section.
 
 - **Extend the standard keeper runtime to auto-cycle Advanced vaults** — each Advanced execution is currently triggered on-demand per vault. Surface per-vault tier selection in the deploy UI. (Pyth pull integration itself is already live on mainnet for the Advanced tier — see "Trustless Oracle Vault — Advanced Tier" above; canonical tx `0x45ab…7317fa`.)
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
-- - Harden canonical audit recovery from 0G Storage Log/blob + KV index: canonical blobs and root-based recovery are live; next step is full generic offline verification and restart-proof indexing without demo recovery records.
+- Canonical audit recovery from 0G Storage Log/blob + KV index is live: pre-execution blobs are uploaded before each swap, root hashes are bound to the on-chain intent hash, and `audit-recovery.ts` implements a three-tier fallback (blob → KV index → on-chain entry) that survives node and KV outages. Next hardening: full generic offline verification CLI and restart-proof indexing without requiring demo recovery records.
 - Third-party security audit.
 
 **Future productive treasury extensions (months)**
@@ -250,7 +250,7 @@ This is a forward-looking section.
 
 Sentri starts as a live AI treasury vault, but the broader vision is a composable policy envelope for AI-driven capital across DeFi.
 
-Any app can generate intelligence — a DAO dashboard, a lending protocol, a yield optimizer, or an agent wallet. The missing layer is deciding what that intelligence is allowed to do with capital. External apps keep their own workflow, but sensitive actions can be bounded by Sentri policy: oracle freshness, exposure caps, drawdown limits, cooldowns, slippage, signer checks, TEE attestation, and audit trails.
+Any app can generate intelligence, a DAO dashboard, a lending protocol, a yield optimizer, or an agent wallet. The missing layer is deciding what that intelligence is allowed to do with capital. External apps keep their own workflow, but sensitive actions can be bounded by Sentri policy: oracle freshness, exposure caps, drawdown limits, cooldowns, slippage, signer checks, TEE attestation, and audit trails.
 
 SkillMint is the first proof of this: an external verified signal enters the Sentri policy flow, is checked against vault policy, and is recorded in the immutable audit trail. The long-term goal is to make that policy envelope reusable by any app that touches AI-driven capital.
 
@@ -261,7 +261,7 @@ Specific roadmap items in this direction:
 - Public on-chain operator track records: every operator INFT accrues a permanent performance record (PnL, drawdown realised vs bound, frequency of defensive overrides).
 - Developer integration surface: stable interface for partner applications, including authenticated requests, replay protection, execution receipts, and verifiable audit trails.
 
-The thesis: the treasury problem is not about clever trading — it is about **bounded productive capital with cryptographic recourse**. Every roadmap item makes that envelope more useful or more verifiable, never the agent more powerful relative to the vault.
+The thesis: the treasury problem is not about clever trading, it is about **bounded productive capital with cryptographic recourse**. Every roadmap item makes that envelope more useful or more verifiable, never the agent more powerful relative to the vault.
 
 ---
 
