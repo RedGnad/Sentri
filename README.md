@@ -75,7 +75,7 @@ Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
 | 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for verifiable review. |
 | 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; root hash and optional storage tx metadata are mirrored into the per-vault KV/cache index for tamper-evidence. |
 | 0G Storage KV | Fast per-vault audit index and portfolio state, namespaced by vault address; used as recovery layer after agent restart. |
-| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. |
+| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. The AgentINFT is a vault-execution gating token — it does not implement `iTransferFrom` by design. The agent's cryptographic identity binds to a registered signer, not to a marketplace transfer flow; `authorizeUsage`, `rotateSigner`, and `isActiveAgentWithSigner` are the operative ERC-7857 surfaces. |
 | 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
 
 Persistent Memory is intentionally not used: every strategy decision is stateless and replayable from on-chain plus storage data.
@@ -236,7 +236,7 @@ This is a forward-looking section.
 
 - **Extend the standard keeper runtime to auto-cycle Advanced vaults** — each Advanced execution is currently triggered on-demand per vault. Surface per-vault tier selection in the deploy UI. (Pyth pull integration itself is already live on mainnet for the Advanced tier — see "Trustless Oracle Vault — Advanced Tier" above; canonical tx `0x45ab…7317fa`.)
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
-- - Harden canonical audit recovery from 0G Storage Log/blob + KV index: canonical blobs and root-based recovery are live; next step is full generic offline verification and restart-proof indexing without demo recovery records.
+- Canonical audit recovery from 0G Storage Log/blob + KV index is live: pre-execution blobs are uploaded before each swap, root hashes are bound to the on-chain intent hash, and `audit-recovery.ts` implements a three-tier fallback (blob → KV index → on-chain entry) that survives node and KV outages. Next hardening: full generic offline verification CLI and restart-proof indexing without requiring demo recovery records.
 - Third-party security audit.
 
 **Future productive treasury extensions (months)**
