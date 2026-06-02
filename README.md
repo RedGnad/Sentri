@@ -50,7 +50,7 @@ Mainnet deployment:
 | What is Sentri? | A policy-first autonomous treasury vault on 0G. |
 | Is it live on mainnet? | Yes, deployed on 0G mainnet `16661`. |
 | Does it move real assets? | Yes, `USDC.E/W0G` through Jaine. |
-| What 0G components are used? | 5 highlighted 0G surfaces: Chain, Compute TeeML, TEE/Private Sandbox, Storage KV + Log Layer, Agent INFT-style identity profile — Jaine is the real 0G mainnet execution venue. |
+| What 0G components are used? | 5 0G components: Chain (deployed contracts), Compute/Sealed Inference (TEE provider path), Storage Log (immutable audit blobs), Storage KV (per-vault state index), AgentINFT (on-chain agent identity + signer binding). Execution venue: Jaine V3 on 0G mainnet. |
 | Is the AI trusted blindly? | No, the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
 | Can judges verify it? | Yes, public dashboard, chainscan links, execution txs, storage root hashes, and storage tx links when available. |
 
@@ -157,7 +157,7 @@ Output ends with `VERDICT: PASS`. This wraps `verify:trustless-execution` (Pyth 
 | `SentriPriceFeed` | [`0x0e75243d34E904Ab925064c8297b36484Ce2aB5E`](https://chainscan-galileo.0g.ai/address/0x0e75243d34E904Ab925064c8297b36484Ce2aB5E) |
 | `MockUSDC` | [`0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3`](https://chainscan-galileo.0g.ai/address/0xAcd0cc301eB160aA8C19B02a9Fac9a1967A69bE3) |
 | `MockWETH` | [`0x246e6080D736A217C151C3b88890C08e2C249d5E`](https://chainscan-galileo.0g.ai/address/0x246e6080D736A217C151C3b88890C08e2C249d5E) |
-| Demo vault(Agressive preset) | [`0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E`](https://chainscan-galileo.0g.ai/address/0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E) |
+| Demo vault (Aggressive preset) | [`0x5Aa3a7083915F6213238fc8c7461be969d5504e2`](https://chainscan-galileo.0g.ai/address/0x5Aa3a7083915F6213238fc8c7461be969d5504e2) |
 
 ---
 
