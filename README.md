@@ -116,7 +116,7 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 ### Trustless Oracle Vault — Advanced Tier (live on mainnet, verified execution)
 
-An advanced execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction as the swap**. **Live on 0G mainnet with a verified `executeStrategyWithPyth` tx** (see canonical execution below). **Opt-in per vault** — the Standard keeper path remains the default for vaults too small to amortize the Pyth update fee.
+An advanced execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction as the swap**. **Live on 0G mainnet with a verified `executeStrategyWithPyth` tx** (see canonical execution below). **Opt-in per vault**, the Standard keeper path remains the default for vaults too small to amortize the Pyth update fee.
 
 For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proof.md) (oracle path verification) and [`docs/tee-trust-boundary.md`](./docs/tee-trust-boundary.md) (TEE trust boundary).
 
@@ -130,7 +130,7 @@ For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proo
 | `createVault` tx | [`0x81cff80a…f4fcb8`](https://chainscan.0g.ai/tx/0x81cff80ace50a2cfb8051c015505667c5df7812e754a0c4b56a6fdf410f4fcb8) |
 | `setAuthorizedFactory` tx (owner) | [`0x7c018f9f…87a3d55`](https://chainscan.0g.ai/tx/0x7c018f9fbd7050a7369267be0272c7a31bf9a9bf7cb16eea5c224446887a3d55) |
 
-**Standard vs Advanced.** Standard (default, live): price keeper-pushed to `SentriPriceFeed` (Jaine `slot0()` + Pyth Hermes, 2-of-2 quorum off-chain). Advanced (live, opt-in): each `executeStrategyWithPyth()` carries a signed Pyth update verified on-chain in the same tx — the keeper-pushed step is removed from the execution path — and the verified price drives `minOut`, exposure, drawdown and TVL, under `pythMaxAge = 60s` and `pythMaxConfBps = 200`.
+**Standard vs Advanced.** Standard (default, live): price keeper-pushed to `SentriPriceFeed` (Jaine `slot0()` + Pyth Hermes, 2-of-2 quorum off-chain). Advanced (live, opt-in): each `executeStrategyWithPyth()` carries a signed Pyth update verified on-chain in the same tx, the keeper-pushed step is removed from the execution path, and the verified price drives `minOut`, exposure, drawdown and TVL, under `pythMaxAge = 60s` and `pythMaxConfBps = 200`.
 
 **Canonical execution (verified on mainnet).** `executeStrategyWithPyth` tx [`0x45ab1a82…7317fa`](https://chainscan.0g.ai/tx/0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa) — Rebalance `0.3186 USDC.E → 0.7468 W0G`, Pyth `0G/USD` verified on-chain in the same tx (price 0.42406745, 22 bps conf, 9 s fresh), `executionLogCount` 0 → 1.
 
@@ -250,7 +250,7 @@ This is a forward-looking section.
 
 Sentri starts as a live AI treasury vault, but the broader vision is a composable policy envelope for AI-driven capital across DeFi.
 
-Any app can generate intelligence — a DAO dashboard, a lending protocol, a yield optimizer, or an agent wallet. The missing layer is deciding what that intelligence is allowed to do with capital. External apps keep their own workflow, but sensitive actions can be bounded by Sentri policy: oracle freshness, exposure caps, drawdown limits, cooldowns, slippage, signer checks, TEE attestation, and audit trails.
+Any app can generate intelligence, a DAO dashboard, a lending protocol, a yield optimizer, or an agent wallet. The missing layer is deciding what that intelligence is allowed to do with capital. External apps keep their own workflow, but sensitive actions can be bounded by Sentri policy: oracle freshness, exposure caps, drawdown limits, cooldowns, slippage, signer checks, TEE attestation, and audit trails.
 
 SkillMint is the first proof of this: an external verified signal enters the Sentri policy flow, is checked against vault policy, and is recorded in the immutable audit trail. The long-term goal is to make that policy envelope reusable by any app that touches AI-driven capital.
 
@@ -261,7 +261,7 @@ Specific roadmap items in this direction:
 - Public on-chain operator track records: every operator INFT accrues a permanent performance record (PnL, drawdown realised vs bound, frequency of defensive overrides).
 - Developer integration surface: stable interface for partner applications, including authenticated requests, replay protection, execution receipts, and verifiable audit trails.
 
-The thesis: the treasury problem is not about clever trading — it is about **bounded productive capital with cryptographic recourse**. Every roadmap item makes that envelope more useful or more verifiable, never the agent more powerful relative to the vault.
+The thesis: the treasury problem is not about clever trading, it is about **bounded productive capital with cryptographic recourse**. Every roadmap item makes that envelope more useful or more verifiable, never the agent more powerful relative to the vault.
 
 ---
 
