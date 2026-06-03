@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
-import { decodeEventLog, parseUnits } from "viem";
+import { decodeEventLog, parseUnits, formatUnits } from "viem";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -378,7 +378,7 @@ function DepositStep({
             {connected && (
               <button
                 type="button"
-                onClick={() => setDepositAmount(formatUSDC(userUsdc))}
+                onClick={() => setDepositAmount(formatUnits(userUsdc, 6))}
                 className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors px-2 py-1"
               >
                 MAX

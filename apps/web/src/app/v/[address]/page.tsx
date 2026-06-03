@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, type ReactNode } from "react";
+import { formatUnits } from "viem";
 import { useParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { toast } from "sonner";
@@ -373,7 +374,7 @@ export default function VaultOverviewPage() {
               {connected && (
                 <button
                   type="button"
-                  onClick={() => setDepositAmount(formatUSDC(userUsdc))}
+                  onClick={() => setDepositAmount(formatUnits(userUsdc, 6))}
                   className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors px-2 py-1"
                 >
                   MAX
@@ -452,7 +453,7 @@ export default function VaultOverviewPage() {
               />
               <button
                 type="button"
-                onClick={() => setWithdrawAmount(formatUSDC(vault.balance))}
+                onClick={() => setWithdrawAmount(formatUnits(vault.balance, 6))}
                 disabled={!isOwner}
                 className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors px-2 py-1 disabled:opacity-30 disabled:cursor-not-allowed"
               >
