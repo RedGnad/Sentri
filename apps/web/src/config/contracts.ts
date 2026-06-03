@@ -34,6 +34,9 @@ const MAINNET_CONTRACTS = {
 // Previous standard factory — kept for legacy vault aggregation in live-state.ts
 export const LEGACY_VAULT_FACTORY_ADDRESS = "0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7";
 
+// Previous V2 trustless oracle factory — kept for legacy vault discovery
+export const LEGACY_V2_VAULT_FACTORY_ADDRESS = "0xA3588d1964F7CeCDcFac15e38D286554955CF58C";
+
 const SELECTED_CONTRACTS = IS_MAINNET ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
 const DEPRECATED_MAINNET_ADDRESSES = new Set(
   [

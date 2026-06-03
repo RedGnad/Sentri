@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { useVaultsByOwner, useLegacyVaultsByOwner, useV2VaultsByOwner } from "@/hooks/use-factory";
+import { useVaultsByOwner, useLegacyVaultsByOwner, useV2VaultsByOwner, useLegacyV2VaultsByOwner } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,13 @@ export default function MyVaultsPage() {
   const { data: vaultsRaw, isLoading } = useVaultsByOwner(address);
   const { data: legacyRaw } = useLegacyVaultsByOwner(address);
   const { data: v2Raw } = useV2VaultsByOwner(address);
+  const { data: legacyV2Raw } = useLegacyV2VaultsByOwner(address);
   const vaults = (vaultsRaw as readonly `0x${string}`[] | undefined) ?? [];
   const legacyVaults = (legacyRaw as readonly `0x${string}`[] | undefined) ?? [];
   const v2Vaults = (v2Raw as readonly `0x${string}`[] | undefined) ?? [];
-  const total = vaults.length + v2Vaults.length + legacyVaults.length;
+  const legacyV2Vaults = (legacyV2Raw as readonly `0x${string}`[] | undefined) ?? [];
+  const allLegacy = [...legacyVaults.map(a => ({ address: a, tier: "standard" as const })), ...legacyV2Vaults.map(a => ({ address: a, tier: "v2" as const }))];
+  const total = vaults.length + v2Vaults.length + allLegacy.length;
 
   return (
     <div className="space-y-10">
@@ -65,7 +68,7 @@ export default function MyVaultsPage() {
               {v2Vaults.map((addr) => <VaultCard key={addr} address={addr} tier="v2" />)}
             </div>
           )}
-          {legacyVaults.length > 0 && (
+          {allLegacy.length > 0 && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
@@ -76,9 +79,9 @@ export default function MyVaultsPage() {
               <p className="font-mono text-[10px] text-ink-faint">
                 These vaults run on an older implementation. Access the vault page to emergency withdraw.
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-50">
-                {legacyVaults.map((addr) => (
-                  <VaultCard key={addr} address={addr} tier="standard" isLegacy />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {allLegacy.map(({ address, tier }) => (
+                  <VaultCard key={address} address={address} tier={tier} isLegacy />
                 ))}
               </div>
             </div>

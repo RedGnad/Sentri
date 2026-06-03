@@ -10,6 +10,7 @@ import {
   TREASURY_VAULT_V2_ABI,
   TRUSTLESS_VAULT,
   LEGACY_VAULT_FACTORY_ADDRESS,
+  LEGACY_V2_VAULT_FACTORY_ADDRESS,
 } from "@/config/contracts";
 import { galileo } from "@/config/wagmi";
 import type { Policy, VaultTier } from "./use-vault";
@@ -102,9 +103,47 @@ const legacyFactoryContract = {
   chainId: CHAIN_ID,
 } as const;
 
+const legacyV2FactoryContract = {
+  address: LEGACY_V2_VAULT_FACTORY_ADDRESS as `0x${string}`,
+  abi: VAULT_FACTORY_V2_ABI,
+  chainId: CHAIN_ID,
+} as const;
+
 export function useLegacyVaultsByOwner(account: `0x${string}` | undefined) {
   return useReadContract({
     ...legacyFactoryContract,
+    functionName: "vaultsByOwner",
+    args: account ? [account] : undefined,
+    query: { enabled: !!account, refetchInterval: 60_000, retry: false },
+  });
+}
+
+export function useLegacyV2Vaults() {
+  const count = useReadContract({
+    ...legacyV2FactoryContract,
+    functionName: "vaultCount",
+    query: { refetchInterval: 60_000, retry: false },
+  });
+  const countNum = count.data ? Number(count.data as bigint) : 0;
+  const contracts = Array.from({ length: countNum }, (_, i) => ({
+    ...legacyV2FactoryContract,
+    functionName: "allVaults" as const,
+    args: [BigInt(i)] as const,
+  }));
+  const page = useReadContracts({
+    contracts,
+    query: { enabled: count.isSuccess && countNum > 0, refetchInterval: 60_000, retry: false },
+  });
+  return (
+    page.data
+      ?.map((e) => e.result as `0x${string}` | undefined)
+      .filter((a): a is `0x${string}` => !!a) ?? []
+  );
+}
+
+export function useLegacyV2VaultsByOwner(account: `0x${string}` | undefined) {
+  return useReadContract({
+    ...legacyV2FactoryContract,
     functionName: "vaultsByOwner",
     args: account ? [account] : undefined,
     query: { enabled: !!account, refetchInterval: 60_000, retry: false },

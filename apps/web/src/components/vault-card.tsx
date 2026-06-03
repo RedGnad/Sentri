@@ -43,6 +43,7 @@ export function VaultCard({
       href={`/v/${address}`}
       className={cn(
         "border bg-bg-elev/20 p-5 block hover:bg-bg-elev/40 transition-colors group",
+        isLegacy && "opacity-50 hover:opacity-100",
         isV2
           ? "border-orchid/50 hover:border-orchid/80"
           : "border-hairline hover:border-amber/60",
