@@ -30,7 +30,7 @@ export default function VaultOverviewPage() {
 
   const { data: vault, isLoading } = useParsedVaultData(address);
   const { data: usdcBalance } = useUsdcBalance(connected);
-  const { data: allowance } = useUsdcAllowance(connected, address);
+  const { data: allowance, refetch: refetchAllowance } = useUsdcAllowance(connected, address);
   const { data: agentState } = useVaultStateFromAgent(address);
 
   // Surface every new agent execution as a single auto-dismiss toast.
@@ -83,7 +83,10 @@ export default function VaultOverviewPage() {
     if (mintError) toastTxError("Mint", mintError);
   }, [mintError]);
   useEffect(() => {
-    if (approveSuccess) toast.success(`${BASE_SYMBOL} approved for deposit`);
+    if (approveSuccess) {
+      toast.success(`${BASE_SYMBOL} approved for deposit`);
+      refetchAllowance();
+    }
   }, [approveSuccess]);
   useEffect(() => {
     if (approveError) toastTxError("Approve", approveError);
