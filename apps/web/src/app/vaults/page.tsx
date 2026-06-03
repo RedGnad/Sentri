@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActiveVaultsPage } from "@/hooks/use-factory";
+import { useActiveVaultsPage, useLegacyVaults } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function VaultsPage() {
   const { data: vaults, isLoading } = useActiveVaultsPage(0n);
+  const legacyVaults = useLegacyVaults();
 
   const total = vaults.length;
 
@@ -60,6 +61,26 @@ export default function VaultsPage() {
             ))}
           </div>
         </>
+      )}
+
+      {legacyVaults.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+              Legacy — previous contract version
+            </span>
+            <div className="flex-1 border-t border-hairline" />
+          </div>
+          <p className="font-mono text-[10px] text-ink-faint">
+            These vaults run on an older implementation. The agent no longer manages them.
+            Owners can access emergency withdrawal from each vault&apos;s page.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-50">
+            {legacyVaults.map((address) => (
+              <VaultCard key={address} address={address} tier="standard" />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

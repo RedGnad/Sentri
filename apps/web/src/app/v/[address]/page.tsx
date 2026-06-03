@@ -357,10 +357,16 @@ export default function VaultOverviewPage() {
               ↘ Deposit
             </span>
             <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-              Anyone
+              Owner only
             </span>
           </header>
           <div className="px-5 py-5 space-y-3">
+            {!isOwner ? (
+              <p className="font-mono text-[11px] text-ink-faint py-2">
+                {connected ? "Only the vault owner can deposit." : "Connect as the vault owner to deposit."}
+              </p>
+            ) : (
+              <>
             <div className="relative">
               <Input
                 type="number"
@@ -369,17 +375,14 @@ export default function VaultOverviewPage() {
                 onChange={(e) => setDepositAmount(e.target.value)}
                 min="0"
                 className="pr-16"
-                disabled={!connected}
               />
-              {connected && (
-                <button
-                  type="button"
-                  onClick={() => setDepositAmount(formatUnits(userUsdc, 6))}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors px-2 py-1"
-                >
-                  MAX
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setDepositAmount(formatUnits(userUsdc, 6))}
+                className="absolute right-2 top-1/2 -translate-y-1/2 font-mono text-[10px] uppercase tracking-kicker text-amber hover:text-ink transition-colors px-2 py-1"
+              >
+                MAX
+              </button>
             </div>
             <div className="flex items-center justify-between font-mono text-[10px] text-ink-faint tabular">
               <span>Available: ${formatUSDC(userUsdc)}</span>
@@ -387,11 +390,7 @@ export default function VaultOverviewPage() {
                 <span className="text-alert">Insufficient balance</span>
               )}
             </div>
-            {!connected ? (
-              <Button className="w-full" disabled>
-                Connect wallet to deposit
-              </Button>
-            ) : needsApproval ? (
+            {needsApproval ? (
               <Button
                 className="w-full"
                 onClick={() => approve(address, depositAmount)}
@@ -427,6 +426,8 @@ export default function VaultOverviewPage() {
                     ? "Depositing..."
                     : "Deposit →"}
               </Button>
+            )}
+              </>
             )}
           </div>
         </div>

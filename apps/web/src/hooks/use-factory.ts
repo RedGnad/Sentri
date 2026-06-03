@@ -9,6 +9,7 @@ import {
   TREASURY_VAULT_ABI,
   TREASURY_VAULT_V2_ABI,
   TRUSTLESS_VAULT,
+  LEGACY_VAULT_FACTORY_ADDRESS,
 } from "@/config/contracts";
 import { galileo } from "@/config/wagmi";
 import type { Policy, VaultTier } from "./use-vault";
@@ -93,6 +94,28 @@ export function useVaultsV2Page(start: bigint, limit?: bigint) {
     isLoading: enabled && (count.isLoading || (readCount > 0 && page.isLoading)),
     totalRaw: countNum,
   };
+}
+
+const legacyFactoryContract = {
+  address: LEGACY_VAULT_FACTORY_ADDRESS as `0x${string}`,
+  abi: VAULT_FACTORY_ABI,
+  chainId: CHAIN_ID,
+} as const;
+
+export function useLegacyVaults() {
+  const count = useReadContract({
+    ...legacyFactoryContract,
+    functionName: "vaultsCount",
+    query: { refetchInterval: 60_000, retry: false },
+  });
+  const countNum = count.data ? Number(count.data as bigint) : 0;
+  const page = useReadContract({
+    ...legacyFactoryContract,
+    functionName: "vaultsPage",
+    args: [0n, BigInt(countNum)],
+    query: { enabled: count.isSuccess && countNum > 0, refetchInterval: 60_000, retry: false },
+  });
+  return (page.data as readonly `0x${string}`[] | undefined) ?? [];
 }
 
 export function useActiveVaultsPage(start: bigint, limit?: bigint) {
