@@ -120,10 +120,21 @@ export function Footer() {
 
         </div>
 
-        <div className="mt-10 pt-6 border-t border-hairline">
+        <div className="mt-10 pt-6 border-t border-hairline flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <p className="font-mono text-[9px] text-ink-faint uppercase tracking-kicker">
-            © 2026 Sentri · MIT License
+            © MMXXVI · Sentri · MIT License
           </p>
+          <a
+            href="https://x.com/sentri_fi"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-[9px] text-ink-faint uppercase tracking-kicker hover:text-ink transition-colors inline-flex items-center gap-1.5"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current" aria-hidden="true">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+            @sentri_fi
+          </a>
         </div>
       </div>
     </footer>
