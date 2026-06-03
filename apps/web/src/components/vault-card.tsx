@@ -103,7 +103,7 @@ function StatusDot({ status }: { status: "active" | "paused" | "killed" | "legac
     active: { color: "bg-phosphor animate-pulse-dot", text: "text-phosphor", label: "Active" },
     paused: { color: "bg-amber", text: "text-amber", label: "Paused" },
     killed: { color: "bg-alert", text: "text-alert", label: "Killed" },
-    legacy: { color: "bg-ink-faint", text: "text-ink-faint", label: "Legacy" },
+    legacy: { color: "bg-phosphor", text: "text-phosphor", label: "Legacy" },
   } as const;
   const s = map[status];
   return (
