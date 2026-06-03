@@ -17,14 +17,6 @@ const TRUST_TICKER = [
   "Slippage-guarded swap",
 ];
 
-const OG_COMPONENTS = [
-  "0G Chain",
-  "Compute / Sealed Inference",
-  "Storage Log",
-  "Storage KV",
-  "AgentINFT",
-];
-
 function networkLabel(chainId: number): string {
   return chainId === 16661 ? "0G Mainnet" : "0G Galileo";
 }
@@ -151,20 +143,6 @@ export default async function LandingPage() {
               <span key={item} className="inline-flex items-center gap-4">
                 <span className="text-ink">{item}</span>
                 {i < TRUST_TICKER.length - 1 && (
-                  <span className="text-ink-faint">·</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="px-5 py-3 border-t border-hairline overflow-x-auto">
-          <div className="inline-flex min-w-max items-center gap-4 font-mono text-[10px] uppercase tracking-kicker whitespace-nowrap">
-            <span className="text-amber shrink-0">Built on 0G</span>
-            <span className="text-ink-faint">·</span>
-            {OG_COMPONENTS.map((item, i) => (
-              <span key={item} className="inline-flex items-center gap-4">
-                <span className="text-ink">{item}</span>
-                {i < OG_COMPONENTS.length - 1 && (
                   <span className="text-ink-faint">·</span>
                 )}
               </span>
