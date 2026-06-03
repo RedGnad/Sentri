@@ -20,14 +20,9 @@ import {AgentINFT} from "../src/AgentINFT.sol";
 ///         immediate verification (Aggressive = 60s cooldown floor).
 contract RedeployFactory is Script {
     function run() external {
-        // PRIVATE_KEY_MAINNET takes precedence when set (mainnet runs); falls
-        // back to PRIVATE_KEY for Galileo / dev runs. Read via envBytes32 so
-        // the script tolerates both 0x-prefixed and bare hex private keys.
         uint256 deployerKey = vm.envExists("PRIVATE_KEY_MAINNET")
             ? uint256(vm.envBytes32("PRIVATE_KEY_MAINNET"))
-            : vm.envExists("PRIVATE_KEY_SEND")
-                ? uint256(vm.envBytes32("PRIVATE_KEY_SEND"))
-                : uint256(vm.envBytes32("PRIVATE_KEY"));
+            : uint256(vm.envBytes32("PRIVATE_KEY"));
         require(deployerKey != 0, "no deployer key configured");
         address agent = vm.envAddress("AGENT_ADDRESS");
         address agentNFT = vm.envAddress("AGENT_INFT_ADDRESS");

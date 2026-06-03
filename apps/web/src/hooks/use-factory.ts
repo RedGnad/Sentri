@@ -9,7 +9,6 @@ import {
   TREASURY_VAULT_ABI,
   TREASURY_VAULT_V2_ABI,
   TRUSTLESS_VAULT,
-  LEGACY_VAULT_FACTORY_ADDRESS,
 } from "@/config/contracts";
 import { galileo } from "@/config/wagmi";
 import type { Policy, VaultTier } from "./use-vault";
@@ -28,11 +27,6 @@ const factoryV2Contract = {
   chainId: CHAIN_ID,
 } as const;
 
-const legacyFactoryContract = {
-  address: LEGACY_VAULT_FACTORY_ADDRESS as `0x${string}`,
-  abi: VAULT_FACTORY_ABI,
-  chainId: CHAIN_ID,
-} as const;
 
 export interface VaultDirectoryItem {
   address: `0x${string}`;
@@ -101,22 +95,6 @@ export function useVaultsV2Page(start: bigint, limit?: bigint) {
   };
 }
 
-function useLegacyVaultsPage() {
-  const count = useReadContract({
-    ...legacyFactoryContract,
-    functionName: "vaultsCount",
-    query: { refetchInterval: 60_000, retry: false },
-  });
-  const countNum = count.data ? Number(count.data as bigint) : 0;
-  const page = useReadContract({
-    ...legacyFactoryContract,
-    functionName: "vaultsPage",
-    args: [0n, BigInt(countNum)],
-    query: { enabled: count.isSuccess && countNum > 0, refetchInterval: 60_000, retry: false },
-  });
-  return (page.data as readonly `0x${string}`[] | undefined) ?? [];
-}
-
 export function useActiveVaultsPage(start: bigint, limit?: bigint) {
   const standardCount = useVaultsCount();
   const standardLimit = limit ?? ((standardCount.data as bigint | undefined) ?? 0n);
@@ -125,14 +103,12 @@ export function useActiveVaultsPage(start: bigint, limit?: bigint) {
   const vaults = (page.data as readonly `0x${string}`[] | undefined) ?? [];
   const v2Page = useVaultsV2Page(start, limit);
   const v2Vaults = v2Page.data;
-  const legacyVaults = useLegacyVaultsPage();
-  const allStandardAddrs = [...vaults, ...legacyVaults.filter((a) => !vaults.includes(a))];
   const statuses = useReadContracts({
-    contracts: allStandardAddrs.flatMap((address) => [
+    contracts: vaults.flatMap((address) => [
       { address, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "killed" as const },
       { address, abi: TREASURY_VAULT_ABI, chainId: CHAIN_ID, functionName: "paused" as const },
     ]),
-    query: { enabled: allStandardAddrs.length > 0, refetchInterval: 30_000 },
+    query: { enabled: vaults.length > 0, refetchInterval: 30_000 },
   });
   const v2Statuses = useReadContracts({
     contracts: v2Vaults.flatMap((address) => [
@@ -141,9 +117,9 @@ export function useActiveVaultsPage(start: bigint, limit?: bigint) {
     ]),
     query: { enabled: v2Vaults.length > 0, refetchInterval: 30_000, retry: false },
   });
-  const statusesReady = allStandardAddrs.length === 0 || !!statuses.data;
+  const statusesReady = vaults.length === 0 || !!statuses.data;
   const standardAlive = statusesReady
-    ? allStandardAddrs
+    ? vaults
         .map((address, i) => ({
           address,
           killed: statuses.data?.[i * 2]?.result as boolean | undefined,

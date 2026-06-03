@@ -472,9 +472,9 @@ export const ERC20_ABI = [
 export const TRUSTLESS_VAULT = {
   status: "Genesis Canary · proof vault",
   explorer: "https://chainscan.0g.ai",
-  factory: "0xA3588d1964F7CeCDcFac15e38D286554955CF58C",
-  implementation: "0x0F8b9A0c064306F938912658c96c681D8655140B",
-  canaryVault: "0x86cE22c597D0C4EC309ba166360686C39A3f40ed",
+  factory: "0xd5660Ef30460baa74950774DA55b515bdce5259F",
+  implementation: "0x07b2b6f4f8185fBBa075Bb07F43bE9Fc05787eA7",
+  canaryVault: "0x7B6ee7D1145A59D725De47c59c4576e99B2cF0FC",
   pyth: "0x2880aB155794e7179c9eE2e38200202908C17B43",
   pythFeedId: "0xfa9e8d4591613476ad0961732475dc08969d248faca270cc6c47efe009ea3070",
   pythFeedLabel: "Crypto.0G/USD",

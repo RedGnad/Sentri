@@ -28,7 +28,7 @@ import {MockWETH} from "../src/MockWETH.sol";
 ///     --broadcast --verify
 contract DeployTrustlessOracle is Script {
     function run() external {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerKey = uint256(vm.envBytes32("PRIVATE_KEY"));
         address deployer    = vm.addr(deployerKey);
 
         address agentAddr   = vm.envAddress("AGENT_ADDRESS");
