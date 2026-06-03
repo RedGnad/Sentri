@@ -191,14 +191,21 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <div className="border-t border-hairline pt-8 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+      <footer className="border-t border-hairline pt-8 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+        <span>© Sentri · MIT License</span>
+        <span className="flex items-center gap-4">
+          <a href="https://github.com/RedGnad/Sentri/blob/main/docs/architecture.md" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">Architecture ↗</a>
+          <a href="https://github.com/RedGnad/Sentri/blob/main/docs/oracle-proof.md" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">Oracle proof ↗</a>
+          <a href="https://github.com/RedGnad/Sentri" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">GitHub ↗</a>
+          <a href="https://x.com/sentri_fi" target="_blank" rel="noopener noreferrer" className="hover:text-ink transition-colors">@sentri_fi</a>
+        </span>
         <span>
           {isMainnet
             ? "0G mainnet · USDC.E/W0G"
             : "Galileo rehearsal · MockUSDC/MockWETH"}
         </span>
         <FooterStatus snapshot={snapshot} />
-      </div>
+      </footer>
 
       </div>
     </div>

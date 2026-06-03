@@ -4,7 +4,6 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { Navbar } from "@/components/navbar";
 import { NavProgress } from "@/components/nav-progress";
-import { Footer } from "@/components/footer";
 import { Toaster } from "sonner";
 
 const serif = Instrument_Serif({
@@ -50,7 +49,6 @@ export default function RootLayout({
           <main className="max-w-[1200px] mx-auto px-6 sm:px-8 lg:px-12 py-12 relative">
             {children}
           </main>
-          <Footer />
           <Toaster theme="dark" position="bottom-right" />
         </Providers>
       </body>
