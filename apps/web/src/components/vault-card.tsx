@@ -14,9 +14,11 @@ import { Badge } from "@/components/ui/badge";
 export function VaultCard({
   address,
   tier,
+  isLegacy = false,
 }: {
   address: `0x${string}`;
   tier?: VaultTier;
+  isLegacy?: boolean;
 }) {
   const { data: vault, isLoading } = useParsedVaultData(address, tier);
 
@@ -30,7 +32,7 @@ export function VaultCard({
     );
   }
 
-  const status = vault.isKilled ? "killed" : vault.isPaused ? "paused" : "active";
+  const status = isLegacy ? "legacy" : vault.isKilled ? "killed" : vault.isPaused ? "paused" : "active";
   const allocPct = vault.policy ? bpsToPercent(vault.policy.maxAllocationBps) : "—";
   const isV2 = (tier ?? vault.tier) === "v2";
   const isGenesisCanary =
@@ -96,11 +98,12 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatusDot({ status }: { status: "active" | "paused" | "killed" }) {
+function StatusDot({ status }: { status: "active" | "paused" | "killed" | "legacy" }) {
   const map = {
     active: { color: "bg-phosphor animate-pulse-dot", text: "text-phosphor", label: "Active" },
     paused: { color: "bg-amber", text: "text-amber", label: "Paused" },
     killed: { color: "bg-alert", text: "text-alert", label: "Killed" },
+    legacy: { color: "bg-ink-faint", text: "text-ink-faint", label: "Legacy" },
   } as const;
   const s = map[status];
   return (

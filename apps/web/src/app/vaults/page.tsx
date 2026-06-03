@@ -77,7 +77,7 @@ export default function VaultsPage() {
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-50">
             {legacyVaults.map((address) => (
-              <VaultCard key={address} address={address} tier="standard" />
+              <VaultCard key={address} address={address} tier="standard" isLegacy />
             ))}
           </div>
         </div>
