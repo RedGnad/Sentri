@@ -46,9 +46,6 @@ export function VaultCard({
           : "border-hairline hover:border-amber/60",
       )}
     >
-      {/* Header — V2 badge gets its own row to avoid overflow when the
-          long "Genesis Canary · V2" label collides with the status dot. V1
-          cards stay one-row (no badge), so the visual change is V2-only. */}
       <div className="mb-3 space-y-2">
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint truncate min-w-0">
@@ -56,13 +53,17 @@ export function VaultCard({
           </span>
           <StatusDot status={status} />
         </div>
-        {isV2 && (
-          <div>
+        <div>
+          {isV2 ? (
             <Badge className="border-orchid/50 text-orchid px-1.5 py-0.5 inline-flex">
-              {isGenesisCanary ? "Genesis Canary · V2" : "Advanced · V2"}
+              {isGenesisCanary ? "Genesis Canary · V2" : "Trustless Oracle · V2"}
             </Badge>
-          </div>
-        )}
+          ) : (
+            <Badge className="border-hairline text-ink-faint px-1.5 py-0.5 inline-flex">
+              Standard · V1
+            </Badge>
+          )}
+        </div>
       </div>
       <div className="font-serif text-3xl text-ink tabular leading-none">
         {vault.tvlStatus === "estimating"
