@@ -120,12 +120,9 @@ export function Footer() {
 
         </div>
 
-        <div className="mt-10 pt-6 border-t border-hairline flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="mt-10 pt-6 border-t border-hairline">
           <p className="font-mono text-[9px] text-ink-faint uppercase tracking-kicker">
             © 2026 Sentri · MIT License
-          </p>
-          <p className="font-mono text-[9px] text-ink-faint">
-            0G APAC Hackathon · Track 2 — Agentic Trading Arena
           </p>
         </div>
       </div>
