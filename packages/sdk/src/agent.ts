@@ -1682,7 +1682,9 @@ function classifyRegime(input: {
   momentumAvailable?: boolean;
 }): Regime {
   if (input.drawdownPct >= DRAWDOWN_BREACH_PCT) return "drawdown_breach";
-  if (input.momentumAvailable === false) return "momentum_unavailable";
+  // When 24h source is unavailable (e.g. external API rate-limited), fall back
+  // to flat rather than refusing to act — maintains a conservative position.
+  if (input.momentumAvailable === false) return "flat";
   if (input.change24h <= -3) return "crash";
   if (input.change24h <= -1) return input.spreadPct >= 1 ? "down_wide" : "down_tight";
   if (input.change24h < 1) return "flat";
