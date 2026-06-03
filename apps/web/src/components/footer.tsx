@@ -122,7 +122,7 @@ export function Footer() {
 
         <div className="mt-10 pt-6 border-t border-hairline flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <p className="font-mono text-[9px] text-ink-faint uppercase tracking-kicker">
-            © MMXXVI · Sentri · MIT License
+            © Sentri · MIT License
           </p>
           <a
             href="https://x.com/sentri_fi"
