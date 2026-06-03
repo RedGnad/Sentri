@@ -19,7 +19,7 @@ export function PageHeader({
     <header className="border-b border-hairline pb-6 flex items-end justify-between gap-4">
       <div>
         <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-3">
-          § {num} · {section}
+          {num} · {section}
         </div>
         <h1 className="font-serif text-5xl sm:text-6xl text-ink tracking-tightest leading-none">
           {title}
