@@ -63,7 +63,7 @@ export default function VaultsPage() {
         </>
       )}
 
-      {legacyVaults.length > 0 && (
+      {!isLoading && legacyVaults.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
             <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">

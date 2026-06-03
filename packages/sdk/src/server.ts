@@ -355,8 +355,12 @@ async function bootstrapAuditIndexFromRoots(context: GlobalContext): Promise<voi
 
       const vaultKey = vaultAddress.toLowerCase();
       let chainLogs = chainLogsByVault.get(vaultKey);
-      if (!chainLogs) {
-        chainLogs = await readAuditFromChain(vaultAddress, context, 100);
+      if (chainLogs === undefined) {
+        try {
+          chainLogs = await readAuditFromChain(vaultAddress, context, 100);
+        } catch {
+          chainLogs = [];
+        }
         chainLogsByVault.set(vaultKey, chainLogs);
       }
       const match = chainLogs.find(
