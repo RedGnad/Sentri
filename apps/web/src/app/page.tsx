@@ -151,6 +151,31 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {/* 0G components */}
+      <section className="mt-8 animate-fade-up" style={{ animationDelay: "200ms" }}>
+        <div className="border border-hairline bg-bg-elev/20">
+          <div className="px-5 h-9 border-b border-hairline flex items-center">
+            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
+              Built on 0G · 5 components
+            </span>
+          </div>
+          <dl className="divide-y divide-hairline">
+            {[
+              { name: "0G Chain", detail: "VaultFactory + TreasuryVault on mainnet 16661 — policy enforcement and immutable execution log on-chain" },
+              { name: "0G Compute / Sealed Inference", detail: "Private TeeML strategy via 0G provider — processResponse validates TEE signature before any swap fires" },
+              { name: "0G Storage Log", detail: "Canonical audit blob uploaded before each execution — root hash bound to on-chain intent hash, permanent and verifiable" },
+              { name: "0G Storage KV", detail: "Per-vault audit index and portfolio state — recovery layer that survives agent restarts" },
+              { name: "AgentINFT", detail: "On-chain agent identity with registered TEE signer — isActiveAgentWithSigner gates every executeStrategy call" },
+            ].map((c) => (
+              <div key={c.name} className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-2 px-5 py-3 hover:bg-bg-elev/40 transition-colors">
+                <dt className="font-mono text-[11px] uppercase tracking-kicker text-amber">{c.name}</dt>
+                <dd className="font-mono text-[10px] text-ink-dim">{c.detail}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
       {/* Execution path */}
       <section
         className="mt-8 mb-10 animate-fade-up"
@@ -201,8 +226,8 @@ export default async function LandingPage() {
         </span>
         <span>
           {isMainnet
-            ? "0G mainnet · USDC.E/W0G"
-            : "Galileo rehearsal · MockUSDC/MockWETH"}
+            ? "Jaine · USDC.E/W0G"
+            : "SentriPair · MockUSDC/MockWETH"}
         </span>
         <FooterStatus snapshot={snapshot} />
       </footer>
