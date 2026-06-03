@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { useVaultsByOwner, useLegacyVaultsByOwner } from "@/hooks/use-factory";
+import { useVaultsByOwner, useLegacyVaultsByOwner, useV2VaultsByOwner } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,11 @@ export default function MyVaultsPage() {
   const { address } = useAccount();
   const { data: vaultsRaw, isLoading } = useVaultsByOwner(address);
   const { data: legacyRaw } = useLegacyVaultsByOwner(address);
+  const { data: v2Raw } = useV2VaultsByOwner(address);
   const vaults = (vaultsRaw as readonly `0x${string}`[] | undefined) ?? [];
   const legacyVaults = (legacyRaw as readonly `0x${string}`[] | undefined) ?? [];
-  const total = vaults.length + legacyVaults.length;
+  const v2Vaults = (v2Raw as readonly `0x${string}`[] | undefined) ?? [];
+  const total = vaults.length + v2Vaults.length + legacyVaults.length;
 
   return (
     <div className="space-y-10">
@@ -60,6 +62,11 @@ export default function MyVaultsPage() {
           {vaults.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {vaults.map((addr) => <VaultCard key={addr} address={addr} tier="standard" />)}
+            </div>
+          )}
+          {v2Vaults.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {v2Vaults.map((addr) => <VaultCard key={addr} address={addr} tier="v2" />)}
             </div>
           )}
           {legacyVaults.length > 0 && (

@@ -268,6 +268,13 @@ export const VAULT_FACTORY_V2_ABI = [
   { type: "function", name: "vaultCount", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   {
     type: "function",
+    name: "vaultsByOwner",
+    inputs: [{ type: "address", name: "owner" }],
+    outputs: [{ type: "address[]" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "allVaults",
     inputs: [{ type: "uint256" }],
     outputs: [{ type: "address" }],

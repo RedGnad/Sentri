@@ -111,6 +111,15 @@ export function useLegacyVaultsByOwner(account: `0x${string}` | undefined) {
   });
 }
 
+export function useV2VaultsByOwner(account: `0x${string}` | undefined) {
+  return useReadContract({
+    ...factoryV2Contract,
+    functionName: "vaultsByOwner",
+    args: account ? [account] : undefined,
+    query: { enabled: !!account, refetchInterval: 30_000, retry: false },
+  });
+}
+
 export function useLegacyVaults() {
   const count = useReadContract({
     ...legacyFactoryContract,
