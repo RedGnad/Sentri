@@ -59,13 +59,9 @@ export default function MyVaultsPage() {
         </div>
       ) : (
         <div className="space-y-10">
-          {vaults.length > 0 && (
+          {(vaults.length > 0 || v2Vaults.length > 0) && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {vaults.map((addr) => <VaultCard key={addr} address={addr} tier="standard" />)}
-            </div>
-          )}
-          {v2Vaults.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {v2Vaults.map((addr) => <VaultCard key={addr} address={addr} tier="v2" />)}
             </div>
           )}

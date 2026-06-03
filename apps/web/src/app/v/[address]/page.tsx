@@ -356,9 +356,11 @@ export default function VaultOverviewPage() {
             <span className="font-mono text-[10px] uppercase tracking-kicker text-amber">
               ↘ Deposit
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
-              Owner only
-            </span>
+            {!isOwner && (
+              <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">
+                Owner only
+              </span>
+            )}
           </header>
           <div className="px-5 py-5 space-y-3">
             <div className="relative">
