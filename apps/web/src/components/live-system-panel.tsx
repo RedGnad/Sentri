@@ -124,7 +124,7 @@ export function LiveSystemPanel({
     {
       key: "Chain",
       value: snapshot.chain.rpcOk
-        ? `${chainLabel} · #${snapshot.chain.blockNumber} · ${snapshot.chain.blockAgeSec}s`
+        ? `${chainLabel} · #${snapshot.chain.blockNumber}`
         : "RPC unreachable",
       state: c,
     },
