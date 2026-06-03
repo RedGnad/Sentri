@@ -21,14 +21,18 @@ const GALILEO_CONTRACTS = {
 } as const;
 
 const MAINNET_CONTRACTS = {
-  vaultFactory: "0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7",
+  // VaultFactory v2 — TreasuryVault impl with EmergencyDeleverage drawdown fix
+  vaultFactory: "0x8e129b97df1b513099329aC50B4774f8BeE1d538",
   agentINFT: "0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951",
   swapRouter: "0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4",
   priceFeed: "0x1289638A90da7F24DB069168648819607A7377e6",
   baseToken: "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E",
   riskToken: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c",
-  demoVault: "0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E",
+  demoVault: "0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710",
 } as const;
+
+// Previous standard factory — kept for legacy vault aggregation in live-state.ts
+export const LEGACY_VAULT_FACTORY_ADDRESS = "0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7";
 
 const SELECTED_CONTRACTS = IS_MAINNET ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
 const DEPRECATED_MAINNET_ADDRESSES = new Set(

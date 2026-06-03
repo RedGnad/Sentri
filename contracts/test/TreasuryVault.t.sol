@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Test, console2} from "forge-std/Test.sol";
+import {stdStorage, StdStorage} from "forge-std/StdStorage.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
 import {MockWETH} from "../src/MockWETH.sol";
@@ -13,6 +14,7 @@ import {SentriPriceFeed} from "../src/SentriPriceFeed.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract TreasuryVaultTest is Test {
+    using stdStorage for StdStorage;
     MockUSDC usdc;
     MockWETH weth;
     AgentINFT agentNFT;
@@ -428,6 +430,43 @@ contract TreasuryVaultTest is Test {
         vm.prank(agent);
         vm.expectRevert(TreasuryVault.AgentNotAuthorizedForVault.selector);
         _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "unauth");
+    }
+
+    // ── Drawdown: deleverage must succeed even when bound already breached ──
+
+    function test_emergencyDeleverage_succeedsWhenDrawdownAlreadyBreached() public {
+        // Deposit and open a risk position
+        _depositAs(alice, 10_000e6);
+        vm.prank(agent);
+        _execute(vault, TreasuryVault.Action.Rebalance, 2_000e6, "open");
+
+        // Price crash: 2000 → 200 USDC per WETH (−90% → far beyond 10% maxDrawdownBps)
+        vm.warp(block.timestamp + 61);
+        feed.pushAnswer(200 * 1e8, keccak256("crash"));
+
+        uint256 wethBal = vault.riskBalance();
+        assertGt(wethBal, 0);
+
+        // EmergencyDeleverage MUST succeed — vault should be able to reduce risk
+        // exposure even when already past the drawdown bound. Previously this
+        // reverted with DrawdownBreached, trapping the vault permanently.
+        vm.prank(agent);
+        _execute(vault, TreasuryVault.Action.EmergencyDeleverage, wethBal, "deleverage-breached");
+
+        assertEq(vault.riskBalance(), 0);
+    }
+
+    function test_rebalance_stillRevertsWhenDrawdownBreached() public {
+        _depositAs(alice, 10_000e6);
+        // Force HWM to a value that makes current TVL (10,000 USDC at price=2000)
+        // breach the 10% drawdown bound, without moving the oracle or pool
+        // (avoids InsufficientAmountOut firing before DrawdownBreached).
+        stdstore.target(address(vault)).sig("highWaterMark()").checked_write(100_000_000e6);
+
+        // Regular Rebalance (buy-risk) must still be blocked when in drawdown breach
+        vm.prank(agent);
+        vm.expectRevert(TreasuryVault.DrawdownBreached.selector);
+        _execute(vault, TreasuryVault.Action.Rebalance, 100e6, "rebalance-breached");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

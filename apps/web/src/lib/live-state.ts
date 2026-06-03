@@ -16,6 +16,7 @@ import {
   TREASURY_VAULT_ABI,
   TREASURY_VAULT_V2_ABI,
   TRUSTLESS_VAULT,
+  LEGACY_VAULT_FACTORY_ADDRESS,
 } from "@/config/contracts";
 import { fetchPythMarketPrice, quoteRiskToBaseUnits } from "@/lib/v2-market-price";
 
@@ -387,6 +388,46 @@ async function readV2ProtocolStats(client: PublicClient): Promise<ProtocolAggreg
   }
 }
 
+// Reads execution counts from the previous standard factory, including killed
+// vaults, to preserve historical on-chain execution history after migration.
+async function readLegacyExecutionCount(client: PublicClient): Promise<number | null> {
+  try {
+    const count = (await client.readContract({
+      address: LEGACY_VAULT_FACTORY_ADDRESS as `0x${string}`,
+      abi: VAULT_FACTORY_ABI,
+      functionName: "vaultsCount",
+    })) as bigint;
+
+    const vaultsCount = Number(count);
+    if (vaultsCount === 0) return 0;
+
+    const addrs = (await client.readContract({
+      address: LEGACY_VAULT_FACTORY_ADDRESS as `0x${string}`,
+      abi: VAULT_FACTORY_ABI,
+      functionName: "vaultsPage",
+      args: [0n, BigInt(vaultsCount)],
+    })) as readonly `0x${string}`[];
+
+    const results = await Promise.allSettled(
+      addrs.map((addr) =>
+        client.readContract({
+          address: addr,
+          abi: TREASURY_VAULT_ABI,
+          functionName: "executionLogCount",
+        }) as Promise<bigint>,
+      ),
+    );
+
+    let total = 0;
+    for (const r of results) {
+      if (r.status === "fulfilled") total += Number(r.value);
+    }
+    return total;
+  } catch {
+    return null;
+  }
+}
+
 async function probeChainAndProtocol(): Promise<{
   chain: LiveSnapshot["chain"];
   protocol: LiveSnapshot["protocol"];
@@ -409,9 +450,10 @@ async function probeChainAndProtocol(): Promise<{
       rpcOk: true,
     };
 
-    const [standard, v2] = await Promise.all([
+    const [standard, v2, legacyExecs] = await Promise.all([
       readStandardProtocolStats(client),
       readV2ProtocolStats(client),
+      readLegacyExecutionCount(client),
     ]);
     const totalTVLStatus: ProtocolTvlStatus =
       standard.tvlStatus === "unavailable" || v2.tvlStatus === "unavailable"
@@ -424,6 +466,8 @@ async function probeChainAndProtocol(): Promise<{
         ? standard.totalTVL + v2.totalTVL
         : null;
 
+    const standardPlusLegacy = combineNullableCounts(standard.totalExecutions, legacyExecs);
+
     return {
       chain,
       protocol: {
@@ -433,9 +477,9 @@ async function probeChainAndProtocol(): Promise<{
         v2VaultsCount: v2.vaultsCount,
         totalTVL: totalTVL !== null ? formatBaseUnits(totalTVL) : null,
         totalTVLStatus,
-        standardExecutions: standard.totalExecutions,
+        standardExecutions: standardPlusLegacy,
         v2Executions: v2.totalExecutions,
-        totalExecutions: combineNullableCounts(standard.totalExecutions, v2.totalExecutions),
+        totalExecutions: combineNullableCounts(standardPlusLegacy, v2.totalExecutions),
       },
     };
   } catch {

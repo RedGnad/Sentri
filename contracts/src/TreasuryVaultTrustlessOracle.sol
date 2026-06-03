@@ -319,8 +319,8 @@ contract TreasuryVaultTrustlessOracle is
         uint256 tvlAfter = _tvl(price);
         if (action != Action.EmergencyDeleverage) {
             _enforceRiskExposure(tvlAfter, price);
+            _enforceDrawdown(tvlAfter);
         }
-        _enforceDrawdown(tvlAfter);
 
         if (tvlAfter > highWaterMark) highWaterMark = tvlAfter;
 

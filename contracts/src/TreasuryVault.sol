@@ -294,8 +294,8 @@ contract TreasuryVault is
         uint256 tvlAfter = _tvl(price, feedDec);
         if (action != Action.EmergencyDeleverage) {
             _enforceRiskExposure(tvlAfter, price, feedDec);
+            _enforceDrawdown(tvlAfter);
         }
-        _enforceDrawdown(tvlAfter);
 
         if (tvlAfter > highWaterMark) highWaterMark = tvlAfter;
 
