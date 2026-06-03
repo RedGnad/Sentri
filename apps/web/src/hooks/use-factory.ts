@@ -102,6 +102,15 @@ const legacyFactoryContract = {
   chainId: CHAIN_ID,
 } as const;
 
+export function useLegacyVaultsByOwner(account: `0x${string}` | undefined) {
+  return useReadContract({
+    ...legacyFactoryContract,
+    functionName: "vaultsByOwner",
+    args: account ? [account] : undefined,
+    query: { enabled: !!account, refetchInterval: 60_000, retry: false },
+  });
+}
+
 export function useLegacyVaults() {
   const count = useReadContract({
     ...legacyFactoryContract,

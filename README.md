@@ -4,8 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Solidity](https://img.shields.io/badge/solidity-0.8.24-363636.svg)](./contracts/foundry.toml)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-43853d.svg)](./package.json)
-[![Tests](https://img.shields.io/badge/forge%20tests-105%20passing-brightgreen.svg)](./contracts/test)
-[![0G Mainnet](https://img.shields.io/badge/0G-mainnet%2016661-FFB300.svg)](https://chainscan.0g.ai/address/0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7)
+[![Tests](https://img.shields.io/badge/forge%20tests-130%20passing-brightgreen.svg)](./contracts/test)
+[![0G Mainnet](https://img.shields.io/badge/0G-mainnet%2016661-FFB300.svg)](https://chainscan.0g.ai/address/0x8e129b97df1b513099329aC50B4774f8BeE1d538)
 
 **Verified AI treasury execution with hard on-chain limits, for stablecoin reserves on 0G.**
 Private strategy, verifiable results. The agent proposes, the vault disposes.
@@ -32,9 +32,9 @@ Demo live: https://sentri-fi.xyz
 
 Mainnet deployment:
 
-• VaultFactory: 0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7
+• VaultFactory: 0x8e129b97df1b513099329aC50B4774f8BeE1d538
 
-• TreasuryVault impl: 0xf86013C68811047F6dEc98c4ED6601C80B720668
+• TreasuryVault impl: 0xe8a843715c776A9d44943DF9CD246C6df1610437
 
 • AgentINFT: 0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951
 
@@ -42,7 +42,7 @@ Mainnet deployment:
 
 • SentriPriceFeed: 0x1289638A90da7F24DB069168648819607A7377e6
 
-• Demo vault (Aggressive): 0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E
+• Demo vault (Aggressive): 0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710
 
 
 | Question | Answer |
@@ -101,15 +101,15 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7`](https://chainscan.0g.ai/address/0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7) |
-| `TreasuryVault` impl | [`0xf86013C68811047F6dEc98c4ED6601C80B720668`](https://chainscan.0g.ai/address/0xf86013C68811047F6dEc98c4ED6601C80B720668) |
+| `VaultFactory` (entry point) | [`0x8e129b97df1b513099329aC50B4774f8BeE1d538`](https://chainscan.0g.ai/address/0x8e129b97df1b513099329aC50B4774f8BeE1d538) |
+| `TreasuryVault` impl | [`0xe8a843715c776A9d44943DF9CD246C6df1610437`](https://chainscan.0g.ai/address/0xe8a843715c776A9d44943DF9CD246C6df1610437) |
 | `AgentINFT` | [`0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951`](https://chainscan.0g.ai/address/0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951) |
 | `JaineV3PoolAdapter` | [`0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4`](https://chainscan.0g.ai/address/0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4) |
 | Jaine `USDC.E/W0G` pool, 0.3% | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
 | `SentriPriceFeed` | [`0x1289638A90da7F24DB069168648819607A7377e6`](https://chainscan.0g.ai/address/0x1289638A90da7F24DB069168648819607A7377e6) |
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
-| Demo vault (Aggressive preset) | [`0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E`](https://chainscan.0g.ai/address/0x20e8B2De8Ac2c8c5EE662Ea9986EC280FaebcA8E) |
+| Demo vault (Aggressive preset) | [`0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710`](https://chainscan.0g.ai/address/0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710) |
 | Primary v2 execution tx — `EmergencyDeleverage` (`W0G → USDC.E`) | [`0x4b44c506…9ac4`](https://chainscan.0g.ai/tx/0x4b44c5063ca3b7f618a6dab5c20e840cb7d605e761162b6fbe847995df3d9ac4) |
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on the current demo execution: `0x4386909Ef321651ab78298Ae454A05FF5d354118`.
@@ -122,9 +122,9 @@ For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proo
 
 | Contract / tx | Address |
 |---|---|
-| `VaultFactoryV2` | [`0xA3588d…CF58C`](https://chainscan.0g.ai/address/0xA3588d1964F7CeCDcFac15e38D286554955CF58C) |
-| `TreasuryVaultTrustlessOracle` impl | [`0x0F8b9A…140B`](https://chainscan.0g.ai/address/0x0F8b9A0c064306F938912658c96c681D8655140B) |
-| Reference V2 vault (Balanced preset) | [`0x86cE22…f40ed`](https://chainscan.0g.ai/address/0x86cE22c597D0C4EC309ba166360686C39A3f40ed) |
+| `VaultFactoryV2` | [`0xd5660Ef30460baa74950774DA55b515bdce5259F`](https://chainscan.0g.ai/address/0xd5660Ef30460baa74950774DA55b515bdce5259F) |
+| `TreasuryVaultTrustlessOracle` impl | [`0x07b2b6f4f8185fBBa075Bb07F43bE9Fc05787eA7`](https://chainscan.0g.ai/address/0x07b2b6f4f8185fBBa075Bb07F43bE9Fc05787eA7) |
+| Reference V2 vault (Balanced preset) | [`0x7B6ee7D1145A59D725De47c59c4576e99B2cF0FC`](https://chainscan.0g.ai/address/0x7B6ee7D1145A59D725De47c59c4576e99B2cF0FC) |
 | Pyth oracle (0G mainnet) | [`0x2880aB…7B43`](https://chainscan.0g.ai/address/0x2880aB155794e7179c9eE2e38200202908C17B43) |
 | Pyth feed `Crypto.0G/USD` | `0xfa9e8d45…ea3070` |
 | `createVault` tx | [`0x81cff80a…f4fcb8`](https://chainscan.0g.ai/tx/0x81cff80ace50a2cfb8051c015505667c5df7812e754a0c4b56a6fdf410f4fcb8) |

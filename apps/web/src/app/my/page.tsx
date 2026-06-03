@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { useVaultsByOwner } from "@/hooks/use-factory";
+import { useVaultsByOwner, useLegacyVaultsByOwner } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function MyVaultsPage() {
   const { address } = useAccount();
   const { data: vaultsRaw, isLoading } = useVaultsByOwner(address);
+  const { data: legacyRaw } = useLegacyVaultsByOwner(address);
   const vaults = (vaultsRaw as readonly `0x${string}`[] | undefined) ?? [];
+  const legacyVaults = (legacyRaw as readonly `0x${string}`[] | undefined) ?? [];
+  const total = vaults.length + legacyVaults.length;
 
   return (
     <div className="space-y-10">
@@ -22,7 +25,7 @@ export default function MyVaultsPage() {
         subtitle={
           !address
             ? "Connect a wallet to see vaults you own."
-            : `${vaults.length} vault${vaults.length === 1 ? "" : "s"} owned by ${address.slice(0, 6)}…${address.slice(-4)}`
+            : `${total} vault${total === 1 ? "" : "s"} owned by ${address.slice(0, 6)}…${address.slice(-4)}`
         }
         right={
           <Link href="/deploy">
@@ -42,7 +45,7 @@ export default function MyVaultsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-56 w-full" />)}
         </div>
-      ) : vaults.length === 0 ? (
+      ) : total === 0 ? (
         <div className="border border-hairline bg-bg-elev/20 py-20 text-center">
           <p className="font-serif italic text-xl text-ink-dim mb-2">No vaults owned by this wallet yet.</p>
           <p className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-6">
@@ -53,8 +56,30 @@ export default function MyVaultsPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {vaults.map((addr) => <VaultCard key={addr} address={addr} tier="standard" />)}
+        <div className="space-y-10">
+          {vaults.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {vaults.map((addr) => <VaultCard key={addr} address={addr} tier="standard" />)}
+            </div>
+          )}
+          {legacyVaults.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+                  Legacy — previous contract version
+                </span>
+                <div className="flex-1 border-t border-hairline" />
+              </div>
+              <p className="font-mono text-[10px] text-ink-faint">
+                These vaults run on an older implementation. Access the vault page to emergency withdraw.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 opacity-50">
+                {legacyVaults.map((addr) => (
+                  <VaultCard key={addr} address={addr} tier="standard" isLegacy />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
