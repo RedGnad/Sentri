@@ -230,16 +230,22 @@ async function readStandardProtocolStats(client: PublicClient): Promise<Protocol
       }
     }
 
-    const tvlForDisplay = successfulTvlReads > 0 ? totalTVL : fallbackTotalTVL;
-    const successfulDisplayTvlReads =
-      successfulTvlReads > 0 ? successfulTvlReads : successfulFallbackTvlReads;
+    // All-or-nothing: a partial sum (one vault's totalValue read flaked) must
+    // not be shown as a complete, lower TVL. Prefer the primary totalValue path
+    // only if every vault read succeeds; else the balance-based fallback only if
+    // it covers every vault; otherwise report unavailable so the panel holds the
+    // last known-good value instead of flashing a too-low number.
+    const allTvlSucceeded = successfulTvlReads === activeAddrs.length;
+    const allFallbackSucceeded = successfulFallbackTvlReads === activeAddrs.length;
+    const useTvl = allTvlSucceeded;
+    const useFallback = !allTvlSucceeded && allFallbackSucceeded;
+    const complete = activeAddrs.length === 0 || useTvl || useFallback;
+    const tvlForDisplay = useTvl ? totalTVL : fallbackTotalTVL;
 
     return {
       vaultsCount: activeAddrs.length,
-      totalTVL:
-        activeAddrs.length === 0 || successfulDisplayTvlReads > 0 ? tvlForDisplay : null,
-      tvlStatus:
-        activeAddrs.length === 0 || successfulDisplayTvlReads > 0 ? "ready" : "unavailable",
+      totalTVL: complete ? tvlForDisplay : null,
+      tvlStatus: complete ? "ready" : "unavailable",
       totalExecutions: failedLogReads === 0 ? totalExecutions : null,
     };
   } catch {
