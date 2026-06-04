@@ -175,6 +175,32 @@ export function useLegacyVaults() {
   return (page.data as readonly `0x${string}`[] | undefined) ?? [];
 }
 
+/**
+ * From a list of legacy vaults, keep only those that still hold funds. Drained
+ * legacy vaults (emergency-withdrawn to zero) are hidden from the public
+ * directory — owners still find them on the My Vaults page, which does not use
+ * this filter. Returns [] until balances load, so empties never flash in.
+ */
+export function useNonEmptyLegacyVaults(items: VaultDirectoryItem[]): VaultDirectoryItem[] {
+  const contracts = items.flatMap(({ address, tier }) => {
+    const abi = tier === "v2" ? TREASURY_VAULT_V2_ABI : TREASURY_VAULT_ABI;
+    return [
+      { address, abi, chainId: CHAIN_ID, functionName: "vaultBalance" as const },
+      { address, abi, chainId: CHAIN_ID, functionName: "riskBalance" as const },
+    ];
+  });
+  const { data } = useReadContracts({
+    contracts,
+    query: { enabled: items.length > 0, refetchInterval: 60_000, retry: false },
+  });
+  if (!data) return [];
+  return items.filter((_, i) => {
+    const base = (data[i * 2]?.result as bigint | undefined) ?? 0n;
+    const risk = (data[i * 2 + 1]?.result as bigint | undefined) ?? 0n;
+    return base + risk > 0n;
+  });
+}
+
 export function useActiveVaultsPage(start: bigint, limit?: bigint) {
   const standardCount = useVaultsCount();
   const standardLimit = limit ?? ((standardCount.data as bigint | undefined) ?? 0n);

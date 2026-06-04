@@ -17,6 +17,7 @@ import {
   TREASURY_VAULT_V2_ABI,
   TRUSTLESS_VAULT,
   LEGACY_VAULT_FACTORY_ADDRESS,
+  LEGACY_V2_VAULT_FACTORY_ADDRESS,
 } from "@/config/contracts";
 import { fetchPythMarketPrice, quoteRiskToBaseUnits } from "@/lib/v2-market-price";
 
@@ -428,6 +429,55 @@ async function readLegacyExecutionCount(client: PublicClient): Promise<number | 
   }
 }
 
+// Same idea as readLegacyExecutionCount, for the previous V2 (trustless oracle)
+// factory: aggregate execution history across all its vaults so the V2 counter
+// stays consistent with the V1 one after migration.
+async function readLegacyV2ExecutionCount(client: PublicClient): Promise<number | null> {
+  if (!IS_MAINNET) return 0;
+  try {
+    const count = (await client.readContract({
+      address: LEGACY_V2_VAULT_FACTORY_ADDRESS as `0x${string}`,
+      abi: VAULT_FACTORY_V2_ABI,
+      functionName: "vaultCount",
+    })) as bigint;
+
+    const vaultsCount = Number(count);
+    if (vaultsCount === 0) return 0;
+
+    const addrsSettled = await Promise.allSettled(
+      Array.from({ length: vaultsCount }, (_, i) =>
+        client.readContract({
+          address: LEGACY_V2_VAULT_FACTORY_ADDRESS as `0x${string}`,
+          abi: VAULT_FACTORY_V2_ABI,
+          functionName: "allVaults",
+          args: [BigInt(i)],
+        }) as Promise<`0x${string}`>,
+      ),
+    );
+    const addrs = addrsSettled
+      .filter((r): r is PromiseFulfilledResult<`0x${string}`> => r.status === "fulfilled")
+      .map((r) => r.value);
+
+    const results = await Promise.allSettled(
+      addrs.map((addr) =>
+        client.readContract({
+          address: addr,
+          abi: TREASURY_VAULT_V2_ABI,
+          functionName: "executionLogCount",
+        }) as Promise<bigint>,
+      ),
+    );
+
+    let total = 0;
+    for (const r of results) {
+      if (r.status === "fulfilled") total += Number(r.value);
+    }
+    return total;
+  } catch {
+    return null;
+  }
+}
+
 async function probeChainAndProtocol(): Promise<{
   chain: LiveSnapshot["chain"];
   protocol: LiveSnapshot["protocol"];
@@ -450,10 +500,11 @@ async function probeChainAndProtocol(): Promise<{
       rpcOk: true,
     };
 
-    const [standard, v2, legacyExecs] = await Promise.all([
+    const [standard, v2, legacyExecs, legacyV2Execs] = await Promise.all([
       readStandardProtocolStats(client),
       readV2ProtocolStats(client),
       readLegacyExecutionCount(client),
+      readLegacyV2ExecutionCount(client),
     ]);
     const totalTVLStatus: ProtocolTvlStatus =
       standard.tvlStatus === "unavailable" || v2.tvlStatus === "unavailable"
@@ -467,6 +518,7 @@ async function probeChainAndProtocol(): Promise<{
         : null;
 
     const standardPlusLegacy = combineNullableCounts(standard.totalExecutions, legacyExecs);
+    const v2PlusLegacy = combineNullableCounts(v2.totalExecutions, legacyV2Execs);
 
     return {
       chain,
@@ -478,8 +530,8 @@ async function probeChainAndProtocol(): Promise<{
         totalTVL: totalTVL !== null ? formatBaseUnits(totalTVL) : null,
         totalTVLStatus,
         standardExecutions: standardPlusLegacy,
-        v2Executions: v2.totalExecutions,
-        totalExecutions: combineNullableCounts(standardPlusLegacy, v2.totalExecutions),
+        v2Executions: v2PlusLegacy,
+        totalExecutions: combineNullableCounts(standardPlusLegacy, v2PlusLegacy),
       },
     };
   } catch {
