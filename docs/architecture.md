@@ -28,9 +28,12 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     TreasuryVault.t.sol           30 tests (init pattern, deposit/withdraw, strategy, HWM)
     VaultFactory.t.sol            21 tests (presets, custom policy, registry, atomic deposit)
     MultiVault.t.sol              13 tests (multi-vault isolation, agent across owners)
-    AgentINFT.t.sol               28 tests (mint, revoke, O(k) gas, factory authorize, signer rotation admin)
+    AgentINFT.t.sol               30 tests (mint, revoke, O(k) gas, factory authorize, signer rotation admin)
     SentriPair.t.sol              8 tests (swap, K invariant, slippage)
     JaineV3PoolAdapter.t.sol      5 tests (callback validation, path safety)
+    TrustlessOracle.t.sol         15 tests (V2 Pyth pull verify, conf/staleness bounds, replay, policy)
+    PythPriceAdapter.t.sol        7 tests (price decode, expo scaling, confidence gate)
+    StandardVaultUnchanged.t.sol  1 test (V2 stack leaves Standard tier behavior intact)
                                   Total: 130 unit + integration tests, 0 failing
 
 packages/sdk/                    TypeScript multi-vault agent runtime
