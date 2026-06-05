@@ -11,6 +11,10 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
   src/
     VaultFactory.sol              EIP-1167 clone factory + presets + per-owner registry
     TreasuryVault.sol             Per-user clone (init pattern). Funds, policy, execution, audit log
+                                    Standard tier — keeper-pushed SentriPriceFeed oracle
+    TreasuryVaultTrustlessOracle.sol  V2 tier — same vault surface, but executeStrategyWithPyth
+                                    verifies a Pyth pull-oracle price on-chain in the swap tx
+    VaultFactoryV2.sol            EIP-1167 clone factory for the V2 trustless-oracle vault
     AgentINFT.sol                 Agentic ID v2 (ERC-7857-aligned: metadataRoot, intelligentDataOf,
                                     authorizeUsage, authorized factories, rotateSigner admin-only).
                                     Mainnet v2 uses the redeployed AgentINFT + VaultFactory stack.
@@ -27,7 +31,7 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     AgentINFT.t.sol               28 tests (mint, revoke, O(k) gas, factory authorize, signer rotation admin)
     SentriPair.t.sol              8 tests (swap, K invariant, slippage)
     JaineV3PoolAdapter.t.sol      5 tests (callback validation, path safety)
-                                  Total: 105 unit + integration tests, 0 failing
+                                  Total: 130 unit + integration tests, 0 failing
 
 packages/sdk/                    TypeScript multi-vault agent runtime
   src/
@@ -129,6 +133,15 @@ Any contract violation is rejected at the agent layer with a logged reason; the 
 
 ---
 
+## Oracle tiers
+
+Sentri ships two vault tiers that differ only in how the execution price is trusted:
+
+- **Standard tier** (`TreasuryVault` + `VaultFactory`) — the agent is the sole keeper and pushes a quorum-checked price to `SentriPriceFeed`; the vault enforces freshness on read. Cheap, no per-tx oracle fee, suited to frequent retail micro-treasuries.
+- **V2 trustless-oracle tier** (`TreasuryVaultTrustlessOracle` + `VaultFactoryV2`) — `executeStrategyWithPyth(...)` submits a Pyth price update and reads it back **in the same transaction**, so the price is cryptographically verified on-chain (confidence + staleness bounds enforced) with no trusted keeper. Carries the Pyth update fee (~0.2 OG/execution on 0G), so it fits larger / lower-frequency vaults.
+
+Both tiers share the identical security envelope (ownership, TEE signer, replay/deadline, exposure, drawdown, cooldown, slippage). See `docs/oracle-proof.md` and `docs/trustless-oracle-vault-v2.md` for the full pull-oracle path and on-chain proofs.
+
 ## Trust boundary
 
 Sentri does not oversell what's verified on-chain.
@@ -141,7 +154,7 @@ Sentri does not oversell what's verified on-chain.
 - **Intent freshness and replay protection** — each execution includes a deadline checked on-chain, and both the `intentHash` and signed `responseHash` are single-use.
 - **Cooldown elapsed** — `block.timestamp ≥ lastExecutionTime + cooldownPeriod`.
 - **Post-trade risk exposure within policy** — risk-on actions revert if risk-asset value after the swap exceeds `maxAllocationBps` of TVL. Emergency deleverage is never blocked by the exposure cap.
-- **Drawdown within policy** — post-trade TVL must remain within `maxDrawdownBps` of the high-water mark.
+- **Drawdown within policy** — post-trade TVL must remain within `maxDrawdownBps` of the high-water mark. Emergency deleverage is exempt from this check, so a vault that has already breached drawdown can still exit its risk exposure rather than being trapped.
 - **Oracle price is fresh** — `block.timestamp - oracleUpdatedAt ≤ maxPriceStaleness`.
 - **Swap respects oracle slippage bound** — `minOut = expected × (1 − maxSlippageBps)`. Router reverts otherwise.
 - **Vault is not paused or killed.**

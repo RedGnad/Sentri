@@ -1,7 +1,16 @@
 # Trustless Oracle Vault (V2) — mainnet canary
 
-**Status:** validated, **isolated** on `feature/trustless-oracle-vault`. NOT merged
-to `main`; no impact on production Standard vaults; no migration.
+**Status:** **live on 0G mainnet**, merged to `main`. The V2 tier runs alongside
+the Standard tier; both are agent-operated. The stack below was later redeployed
+to carry the emergency-deleverage drawdown fix — current live addresses:
+
+| Contract | Address |
+|---|---|
+| TreasuryVaultTrustlessOracle (impl) | `0x07b2b6f4f8185fBBa075Bb07F43bE9Fc05787eA7` |
+| VaultFactoryV2 | `0xd5660Ef30460baa74950774DA55b515bdce5259F` |
+| Canary vault (Balanced) | `0x7B6ee7D1145A59D725De47c59c4576e99B2cF0FC` |
+
+The original canary deployment (superseded, now legacy) is documented below for history.
 
 ## Product positioning (two tiers)
 
@@ -55,12 +64,13 @@ Env for the script: `PRIVATE_KEY` (0x-prefixed), `AGENT_ADDRESS`, `AGENT_NFT_ADD
 `ROUTER_ADDRESS`, `BASE_TOKEN_ADDRESS`, `RISK_TOKEN_ADDRESS`, `AGENT_TOKEN_ID=0`,
 `PYTH_CONTRACT_ADDRESS`, `PYTH_PRICE_ID`.
 
-## Executions (optional, deferred)
+## Executions
 
 `executeStrategyWithPyth` is `onlyAgent` + `_verifyTEE`: the tx signer must HOLD the
 active AgentINFT (token 0) bound to the TEE signer `0x0038F7…`. Only `0x981F…`
-qualifies, and it needs the working 0G compute broker for sealed inference. Per
-decision, real trustless executions are deferred to the secure `0x981F…` runtime
-and treated as optional — the architecture, Pyth flow, and security boundary are
-already proven. To run them: fund the canary vault with USDC.e, set the agent to
-`ORACLE_MODE=trustless-pyth` for this vault, expect ~0.2 OG fee + gas per execution.
+qualifies, and it needs the working 0G compute broker for sealed inference.
+
+The full trustless path has executed on mainnet — execution tx
+`0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa` — so the
+Pyth pull, on-chain verification, TEE boundary, and swap are proven end-to-end,
+not just in theory. The agent runs the V2 tier with ~0.2 OG fee + gas per execution.
