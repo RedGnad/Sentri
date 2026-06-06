@@ -174,10 +174,10 @@ export default async function LandingPage() {
                 <span className="font-mono text-[10px] text-ink-faint tabular">
                   {step.id}
                 </span>
-                <span className="font-mono text-[11px] uppercase tracking-kicker text-ink group-hover:text-amber transition-colors">
+                <span className="font-mono text-[12px] uppercase tracking-kicker text-ink group-hover:text-amber transition-colors">
                   {step.label}
                 </span>
-                <span className="font-mono text-[10px] text-ink-dim hidden sm:inline">
+                <span className="font-mono text-[12px] leading-relaxed text-ink-dim hidden sm:inline">
                   {step.detail}
                 </span>
               </li>
