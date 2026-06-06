@@ -202,7 +202,7 @@ The agent wallet must be (1) registered as `agent` on the `VaultFactory`, (2) ho
 cd contracts && forge test
 ```
 
-130 tests passing across 9 suites: `TreasuryVault` (30), `AgentINFT` (30), `VaultFactory` (21), `TrustlessOracle` (15), `MultiVault` (13), `SentriPair` (8), `PythPriceAdapter` (7), `JaineV3PoolAdapter` (5), `StandardVaultUnchanged` (1). See [`docs/architecture.md`](./docs/architecture.md#test-coverage) for coverage detail.
+136 tests passing across 10 suites: `TreasuryVault` (30), `AgentINFT` (30), `VaultFactory` (21), `TrustlessOracle` (15), `MultiVault` (13), `SentriPair` (8), `PythPriceAdapter` (7), `TrustlessOracleKillSwitch` (6), `JaineV3PoolAdapter` (5), `StandardVaultUnchanged` (1). See [`docs/architecture.md`](./docs/architecture.md#test-coverage) for coverage detail.
 
 ---
 

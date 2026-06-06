@@ -33,8 +33,9 @@ contracts/                       Foundry project (Solidity 0.8.24, OpenZeppelin 
     JaineV3PoolAdapter.t.sol      5 tests (callback validation, path safety)
     TrustlessOracle.t.sol         15 tests (V2 Pyth pull verify, conf/staleness bounds, replay, policy)
     PythPriceAdapter.t.sol        7 tests (price decode, expo scaling, confidence gate)
+    TrustlessOracleKillSwitch     6 tests (V2 emergency withdraw/deleverage, pause, killed-state guards)
     StandardVaultUnchanged.t.sol  1 test (V2 stack leaves Standard tier behavior intact)
-                                  Total: 130 unit + integration tests, 0 failing
+                                  Total: 136 unit + integration tests, 0 failing
 
 packages/sdk/                    TypeScript multi-vault agent runtime
   src/

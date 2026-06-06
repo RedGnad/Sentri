@@ -692,6 +692,109 @@ contract TrustlessOracleVaultTest is TrustlessOracleTestBase {
     }
 }
 
+// ── Kill-switch + pause (V2) ────────────────────────────────────────────────
+
+contract TrustlessOracleKillSwitchTest is TrustlessOracleTestBase {
+    // Hard kill returns BOTH assets to the owner, no swap involved.
+    function test_emergencyWithdraw_drainsBoth() public {
+        _execute(vault, TreasuryVaultTrustlessOracle.Action.Rebalance, 100e6, "kw_buy");
+        assertGt(weth.balanceOf(address(vault)), 0);
+
+        uint256 baseBefore = usdc.balanceOf(owner);
+        uint256 riskBefore = weth.balanceOf(owner);
+
+        vm.prank(owner);
+        vault.emergencyWithdraw();
+
+        assertTrue(vault.killed());
+        assertEq(vault.vaultBalance(), 0);
+        assertEq(vault.riskBalance(), 0);
+        assertGt(usdc.balanceOf(owner), baseBefore);
+        assertGt(weth.balanceOf(owner), riskBefore);
+    }
+
+    // Base-exit kill swaps risk → base first, then returns base only.
+    function test_emergencyDeleverageAndWithdraw_returnsBaseOnly() public {
+        _execute(vault, TreasuryVaultTrustlessOracle.Action.Rebalance, 100e6, "dl_buy");
+        assertGt(weth.balanceOf(address(vault)), 0);
+
+        uint256 baseBefore = usdc.balanceOf(owner);
+
+        vm.prank(owner);
+        vault.emergencyDeleverageAndWithdraw(0); // minOut=0 → no slippage revert
+
+        assertTrue(vault.killed());
+        assertEq(vault.vaultBalance(), 0);
+        assertEq(vault.riskBalance(), 0);
+        assertGt(usdc.balanceOf(owner), baseBefore);
+    }
+
+    function test_emergencyWithdraw_onlyOwner() public {
+        vm.prank(attacker);
+        vm.expectRevert(); // OwnableUnauthorizedAccount
+        vault.emergencyWithdraw();
+    }
+
+    // The safety property: once killed, no new capital and no agent execution.
+    function test_deposit_reverts_whenKilled() public {
+        vm.prank(owner);
+        vault.emergencyWithdraw();
+
+        vm.prank(owner);
+        vm.expectRevert(TreasuryVaultTrustlessOracle.VaultKilled.selector);
+        vault.deposit(100e6);
+    }
+
+    function test_execute_reverts_whenKilled() public {
+        vm.prank(owner);
+        vault.emergencyWithdraw();
+
+        string memory response = '{"action":"Rebalance","amount_bps":500,"tag":"killExec"}';
+        bytes memory sig = _signature(teeSignerKey, response);
+
+        vm.prank(agentWallet);
+        vm.expectRevert(TreasuryVaultTrustlessOracle.VaultKilled.selector);
+        vault.executeStrategyWithPyth{value: 1}(
+            TreasuryVaultTrustlessOracle.Action.Rebalance,
+            100e6,
+            keccak256("intent:killExec"),
+            response,
+            sig,
+            keccak256("att:killExec"),
+            block.timestamp + 300,
+            _dummyUpdateData()
+        );
+    }
+
+    // Soft halt blocks the agent while paused, and unpause restores execution.
+    function test_pause_blocks_execute_then_unpause_restores() public {
+        vm.prank(owner);
+        vault.pause();
+
+        string memory response = '{"action":"Rebalance","amount_bps":500,"tag":"paused"}';
+        bytes memory sig = _signature(teeSignerKey, response);
+
+        vm.prank(agentWallet);
+        vm.expectRevert(); // EnforcedPause
+        vault.executeStrategyWithPyth{value: 1}(
+            TreasuryVaultTrustlessOracle.Action.Rebalance,
+            100e6,
+            keccak256("intent:paused"),
+            response,
+            sig,
+            keccak256("att:paused"),
+            block.timestamp + 300,
+            _dummyUpdateData()
+        );
+
+        vm.prank(owner);
+        vault.unpause();
+
+        _execute(vault, TreasuryVaultTrustlessOracle.Action.Rebalance, 100e6, "unpaused");
+        assertEq(vault.executionLogCount(), 1);
+    }
+}
+
 // ── Regression: existing standard vault tests unaffected ────────────────────
 
 contract StandardVaultUnchangedTest is Test {
