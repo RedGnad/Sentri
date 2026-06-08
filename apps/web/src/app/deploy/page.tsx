@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { TrustlessVaultPanel } from "@/components/trustless-vault-panel";
 import { useCreateVault } from "@/hooks/use-factory";
 import { useApproveUsdc, useUsdcBalance, useUsdcAllowance, useMintUsdc } from "@/hooks/use-vault";
+import { useGaslessDeposit } from "@/hooks/use-gasless-deposit";
 import {
   BASE_SYMBOL,
   IS_MAINNET,
@@ -37,8 +38,17 @@ export default function DeployPage() {
   const [tier, setTier] = useState<number>(PresetTier.Balanced);
   const [depositAmount, setDepositAmount] = useState<string>("1000");
 
-  const { data: usdcBalance, isSuccess: balanceLoaded } = useUsdcBalance(address);
-  const { data: allowance } = useUsdcAllowance(address, VAULT_FACTORY_ADDRESS);
+  // Gasless path: when a Privy smart wallet is active, funds come from the smart
+  // account (not the embedded EOA) and the deposit is a single sponsored UserOp.
+  // When no smart wallet is present, everything falls back to the wagmi flow.
+  const gasless = useGaslessDeposit();
+  const gaslessReady = gasless.isReady;
+  const effectiveAccount = (gaslessReady ? gasless.smartAccountAddress : address) as
+    | `0x${string}`
+    | undefined;
+
+  const { data: usdcBalance, isSuccess: balanceLoaded } = useUsdcBalance(effectiveAccount);
+  const { data: allowance } = useUsdcAllowance(effectiveAccount, VAULT_FACTORY_ADDRESS);
   const { approve, isPending: isApproving, isConfirming: isApproveConfirming, isSuccess: approveSuccess } = useApproveUsdc();
   const { mint, isPending: isMinting, isConfirming: isMintConfirming, isSuccess: mintSuccess } = useMintUsdc();
   const {
@@ -52,6 +62,7 @@ export default function DeployPage() {
 
   useEffect(() => { if (mintSuccess) toast.success(`10,000 ${BASE_SYMBOL} minted`); }, [mintSuccess]);
   useEffect(() => { if (approveSuccess) toast.success(`${BASE_SYMBOL} approved for factory`); }, [approveSuccess]);
+  useEffect(() => { if (gasless.error) toast.error(`Gasless deposit failed: ${gasless.error.message}`); }, [gasless.error]);
 
   // Once vault is created, parse the VaultCreated event from the receipt and
   // redirect to the new vault's page.
@@ -88,6 +99,16 @@ export default function DeployPage() {
   const insufficient = depositWei > userUsdc;
 
   function handleSubmit() {
+    // Gasless: one signature, sponsored UserOp (approve + create+deposit batched).
+    if (gaslessReady) {
+      void gasless.gaslessDeposit(tier, String(depositNum)).then((r) => {
+        if (r?.vault) {
+          toast.success(`Vault deployed: ${r.vault.slice(0, 10)}…`);
+          router.push(`/v/${r.vault}`);
+        }
+      });
+      return;
+    }
     if (depositNum > 0) {
       createPresetAndDeposit(tier, String(depositNum));
     } else {
@@ -168,6 +189,8 @@ export default function DeployPage() {
           isApproveConfirming={isApproveConfirming}
           isCreating={isCreating}
           isCreateConfirming={isCreateConfirming}
+          gasless={gaslessReady}
+          gaslessPending={gasless.isPending}
           onApprove={() => approve(VAULT_FACTORY_ADDRESS, depositAmount)}
           onSubmit={handleSubmit}
           onBack={() => setStep(3)}
@@ -482,6 +505,8 @@ function SubmitStep({
   isApproveConfirming,
   isCreating,
   isCreateConfirming,
+  gasless,
+  gaslessPending,
   onApprove,
   onSubmit,
   onBack,
@@ -494,6 +519,8 @@ function SubmitStep({
   isApproveConfirming: boolean;
   isCreating: boolean;
   isCreateConfirming: boolean;
+  gasless: boolean;
+  gaslessPending: boolean;
   onApprove: () => void;
   onSubmit: () => void;
   onBack: () => void;
@@ -505,6 +532,47 @@ function SubmitStep({
       <div className="border border-hairline p-8 text-center space-y-4">
         <p className="font-serif italic text-xl text-ink-dim">Connect your wallet to deploy.</p>
         <Button variant="outline" onClick={onBack}>← Back</Button>
+      </div>
+    );
+  }
+
+  // Gasless path (Privy smart wallet): one signature, no gas. The factory
+  // create + deposit are batched into a single sponsored UserOp, so there's no
+  // separate approve step and no native-token balance needed for gas.
+  if (gasless) {
+    return (
+      <div className="space-y-6">
+        <h2 className="font-serif text-3xl text-ink">Submit</h2>
+        <p className="font-serif italic text-base text-ink-dim">
+          One signature, no gas. Your {BASE_SYMBOL} deposit and the vault creation are
+          sent together as a single sponsored transaction.
+        </p>
+
+        {depositNum <= 0 && (
+          <div className="border border-amber/40 bg-amber/[0.04] px-4 py-3 font-mono text-[11px] text-amber">
+            Enter a deposit amount to create your vault.
+          </div>
+        )}
+        {insufficient && (
+          <div className="border border-alert/40 bg-alert/[0.04] px-4 py-3 font-mono text-[11px] text-alert">
+            Insufficient {BASE_SYMBOL} balance for this deposit.
+          </div>
+        )}
+
+        <Button
+          className="w-full"
+          onClick={onSubmit}
+          disabled={gaslessPending || insufficient || depositNum <= 0}
+        >
+          {gaslessPending ? "Sponsoring…" : `Create vault + deposit ${depositNum} ${BASE_SYMBOL} ∎`}
+        </Button>
+
+        <div className="flex justify-between">
+          <Button variant="outline" onClick={onBack} disabled={gaslessPending}>← Back</Button>
+          <Link href="/vaults" className="font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber transition-colors self-center">
+            Cancel
+          </Link>
+        </div>
       </div>
     );
   }
