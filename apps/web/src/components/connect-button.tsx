@@ -8,30 +8,30 @@ import {
   useConnect,
   useDisconnect,
   useSwitchChain,
+  useReadContract,
 } from "wagmi";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useLoginWithEmail, useConnectWallet } from "@privy-io/react-auth";
+import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
 import { toast } from "sonner";
-import { formatUnits } from "viem";
+import { formatUnits, erc20Abi } from "viem";
 import { Button } from "@/components/ui/button";
 import { galileo } from "@/config/wagmi";
 import { shortenAddress } from "@/lib/utils";
+import { BASE_SYMBOL, BASE_TOKEN_ADDRESS } from "@/config/contracts";
 import { LogOut, Copy, Check, ExternalLink, AlertTriangle } from "lucide-react";
 
 // Privy is the active path when an App ID is configured (email/social sign-in +
-// embedded wallet). Otherwise we render the original wallet-only button so the
-// injected / WalletConnect flow keeps working unchanged. Switching here mirrors
-// the same env gate used in providers.tsx, so the button always matches the
-// active provider stack.
+// embedded wallet + smart account). Otherwise we render the original wallet-only
+// button so the injected / WalletConnect flow keeps working unchanged.
 const PRIVY_ENABLED = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
 export function ConnectButton() {
   return PRIVY_ENABLED ? <PrivyConnectButton /> : <WalletConnectButton />;
 }
 
-// ── Privy path: email/social sign-in + embedded wallet ──────────────────────
+// ── Privy path ──────────────────────────────────────────────────────────────
 function PrivyConnectButton() {
-  const { ready, authenticated, login, logout } = usePrivy();
-  const { address } = useAccount();
+  const { ready, authenticated, logout } = usePrivy();
 
   if (!ready) {
     return (
@@ -40,26 +40,249 @@ function PrivyConnectButton() {
       </Button>
     );
   }
-
   if (!authenticated) {
-    return (
-      <Button size="sm" onClick={() => login()}>
+    return <PrivySignIn />;
+  }
+  return <PrivyConnected onDisconnect={() => logout()} />;
+}
+
+// Sign-in entry: opens a custom (headless) login modal in our own visual style.
+function PrivySignIn() {
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  return (
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>
         Sign in
       </Button>
-    );
+      {open && mounted && createPortal(<LoginModal onClose={() => setOpen(false)} />, document.body)}
+    </>
+  );
+}
+
+// Fully custom login UI (Privy headless): email OTP + connect wallet. Keeps our
+// own modal look instead of Privy's default modal.
+function LoginModal({ onClose }: { onClose: () => void }) {
+  const { state, sendCode, loginWithCode } = useLoginWithEmail();
+  const { connectWallet } = useConnectWallet();
+  const { authenticated } = usePrivy();
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+
+  // Close once the user is authenticated (email OTP success or wallet connect).
+  useEffect(() => {
+    if (authenticated) onClose();
+  }, [authenticated, onClose]);
+
+  const status = state.status;
+  const awaitingCode = status === "awaiting-code-input" || status === "submitting-code";
+  const sending = status === "sending-code";
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg-sunk/80 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-bg-elev border border-hairline-strong w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 h-11 border-b border-hairline">
+          <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+            Sign in to Sentri
+          </span>
+          <button
+            onClick={onClose}
+            className="font-mono text-xs text-ink-dim hover:text-amber transition-colors"
+            aria-label="Close"
+          >
+            [ esc ]
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-4">
+          {!awaitingCode ? (
+            <>
+              <label className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint block">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.currentTarget.value)}
+                placeholder="you@email.com"
+                className="w-full bg-bg border border-hairline px-3 h-10 text-[13px] text-ink outline-none focus:border-amber transition-colors"
+              />
+              <Button
+                className="w-full"
+                onClick={() => sendCode({ email })}
+                disabled={sending || !email.includes("@")}
+              >
+                {sending ? "Sending code…" : "Continue with email →"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="font-mono text-[10px] text-ink-dim leading-relaxed">
+                Enter the code sent to <span className="text-ink">{email}</span>.
+              </p>
+              <input
+                inputMode="numeric"
+                value={code}
+                onChange={(e) => setCode(e.currentTarget.value)}
+                placeholder="123456"
+                className="w-full bg-bg border border-hairline px-3 h-10 text-[15px] tabular tracking-widest text-ink outline-none focus:border-amber transition-colors"
+              />
+              <Button
+                className="w-full"
+                onClick={() => loginWithCode({ code })}
+                disabled={status === "submitting-code" || code.length < 6}
+              >
+                {status === "submitting-code" ? "Verifying…" : "Verify & sign in ∎"}
+              </Button>
+            </>
+          )}
+
+          {status === "error" && (
+            <p className="font-mono text-[10px] text-alert">Something went wrong. Try again.</p>
+          )}
+
+          <div className="flex items-center gap-3 pt-1">
+            <span className="h-px flex-1 bg-hairline" />
+            <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">or</span>
+            <span className="h-px flex-1 bg-hairline" />
+          </div>
+
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              connectWallet();
+            }}
+          >
+            Connect a wallet
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Connected view for Privy: surfaces the SMART ACCOUNT (where funds live + what
+// sends gasless tx) prominently, plus the signer EOA and a logout.
+function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
+  const { address: eoa } = useAccount();
+  const { client } = useSmartWallets();
+  const smart = client?.account?.address as `0x${string}` | undefined;
+
+  const { data: usdce } = useReadContract({
+    address: BASE_TOKEN_ADDRESS,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: smart ? [smart] : undefined,
+    chainId: galileo.id,
+    query: { enabled: !!smart, refetchInterval: 10_000 },
+  });
+
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState<"smart" | "eoa" | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      const t = e.target as Node;
+      if (
+        popoverRef.current && !popoverRef.current.contains(t) &&
+        buttonRef.current && !buttonRef.current.contains(t)
+      ) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  function copy(value: string, which: "smart" | "eoa") {
+    navigator.clipboard.writeText(value);
+    setCopied(which);
+    toast.success("Address copied");
+    setTimeout(() => setCopied(null), 1500);
   }
 
-  // Authenticated but the wagmi bridge hasn't surfaced the wallet yet (embedded
-  // wallet provisioning is async on first login).
-  if (!address) {
-    return (
-      <Button size="sm" disabled>
-        Finishing…
-      </Button>
-    );
-  }
+  const usdceFormatted =
+    usdce !== undefined ? `${Number(formatUnits(usdce as bigint, 6)).toFixed(2)} ${BASE_SYMBOL}` : "—";
 
-  return <ConnectedAccount onDisconnect={() => logout()} />;
+  const label = smart ? shortenAddress(smart) : eoa ? "Finishing…" : "—";
+
+  return (
+    <div className="relative">
+      <button
+        ref={buttonRef}
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 h-10 px-3 border border-hairline-strong text-ink hover:border-amber hover:text-amber font-mono text-[10px] uppercase tracking-kicker transition-colors"
+      >
+        <span className="inline-block w-1.5 h-1.5 bg-phosphor animate-pulse-dot" />
+        <span>{label}</span>
+      </button>
+
+      {open && (
+        <div ref={popoverRef} className="absolute right-0 mt-2 w-80 bg-bg-elev border border-hairline-strong z-[100]">
+          <div className="px-5 h-11 flex items-center justify-between border-b border-hairline">
+            <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">Account</span>
+            <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-kicker">
+              <span className="inline-block w-1.5 h-1.5 bg-phosphor animate-pulse-dot" />
+              <span className="text-phosphor">Online · gasless</span>
+            </span>
+          </div>
+
+          <div className="px-5 py-4 border-b border-hairline">
+            <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
+              Smart account (fund this)
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[12px] text-ink tabular">{smart ? shortenAddress(smart) : "…"}</span>
+              {smart && (
+                <button onClick={() => copy(smart, "smart")} className="text-ink-faint hover:text-amber transition-colors" aria-label="Copy smart account">
+                  {copied === "smart" ? <Check className="h-3.5 w-3.5 text-phosphor" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              )}
+            </div>
+            <div className="font-mono text-[10px] text-ink-dim tabular mt-1">Balance: {usdceFormatted}</div>
+          </div>
+
+          <div className="px-5 py-3 border-b border-hairline">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">Signer</span>
+              <span className="font-mono text-[10px] text-ink-dim tabular">{eoa ? shortenAddress(eoa) : "—"}</span>
+            </div>
+          </div>
+
+          <div className="divide-y divide-hairline">
+            {smart && (
+              <a
+                href={`${galileo.blockExplorers.default.url}/address/${smart}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-between px-5 h-11 font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber hover:bg-bg-elev/60 transition-colors"
+              >
+                <span className="flex items-center gap-2"><ExternalLink className="h-3.5 w-3.5" />View on explorer</span>
+                <span>→</span>
+              </a>
+            )}
+            <button
+              onClick={() => { onDisconnect(); setOpen(false); toast.success("Signed out"); }}
+              className="w-full flex items-center justify-between px-5 h-11 font-mono text-[10px] uppercase tracking-kicker text-alert hover:bg-alert/5 transition-colors"
+            >
+              <span className="flex items-center gap-2"><LogOut className="h-3.5 w-3.5" />Sign out</span>
+              <span>×</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Wallet-only path (fallback): injected / WalletConnect ───────────────────
@@ -139,7 +362,7 @@ function WalletConnectButton() {
   );
 }
 
-// ── Shared connected-account popover (used by both paths) ────────────────────
+// ── Shared connected-account popover (wallet-only path) ──────────────────────
 function ConnectedAccount({ onDisconnect }: { onDisconnect: () => void }) {
   const { address, chainId: walletChainId, connector } = useAccount();
   const { data: balanceData } = useBalance({
@@ -231,11 +454,6 @@ function ConnectedAccount({ onDisconnect }: { onDisconnect: () => void }) {
   const balanceFormatted = balanceData
     ? `${Number(formatUnits(balanceData.value, balanceData.decimals)).toFixed(3)} ${balanceData.symbol}`
     : "—";
-  // Native balance = 0 means every TX (approve, deposit, withdraw, vault
-  // create, kill-switch) will revert from the wallet before signing. Surface it
-  // once, here, instead of letting the user discover it via an "insufficient
-  // funds" wallet popup on the first action. Hidden on wrong network because the
-  // balance is then irrelevant.
   const gasEmpty =
     !wrongNetwork && balanceData !== undefined && balanceData.value === 0n;
 
