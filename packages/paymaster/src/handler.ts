@@ -1,12 +1,7 @@
 import { toHex, type Address } from "viem";
 import { config } from "./config.js";
 import { isSponsorable } from "./policy.js";
-import {
-  buildPaymasterData,
-  signPaymasterData,
-  DUMMY_SIGNATURE,
-  type UnpackedUserOp,
-} from "./sign.js";
+import { signPaymasterData, type UnpackedUserOp } from "./sign.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: string;
@@ -77,14 +72,11 @@ export async function handlePaymasterRpc(body: JsonRpcRequest): Promise<JsonRpcR
         paymasterPostOpGasLimit: toHex(config.pmPostOpGasLimit),
       };
 
-      if (method === "pm_getPaymasterStubData") {
-        return ok({
-          ...base,
-          paymasterData: buildPaymasterData(validUntil, validAfter, DUMMY_SIGNATURE),
-          isFinal: false,
-        });
-      }
-
+      // Sign for both stub and final. A real (canonical low-s) signature is
+      // required even for the estimation stub: VerifyingPaymaster runs
+      // ECDSA.recover during validation, and a malformed/high-s dummy makes OZ's
+      // ECDSA revert (ECDSAInvalidSignatureS) → AA33. A real signature recovers
+      // to a valid address so validation returns cleanly during estimation.
       const paymasterData = await signPaymasterData({
         signerPrivateKey: config.signerPrivateKey,
         op,
@@ -95,6 +87,10 @@ export async function handlePaymasterRpc(body: JsonRpcRequest): Promise<JsonRpcR
         validUntil,
         validAfter,
       });
+
+      if (method === "pm_getPaymasterStubData") {
+        return ok({ ...base, paymasterData, isFinal: false });
+      }
       return ok({ ...base, paymasterData });
     }
 
