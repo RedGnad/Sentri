@@ -36,7 +36,7 @@ function PrivyConnectButton() {
   if (!ready) {
     return (
       <Button size="sm" disabled>
-        …
+        Sign in
       </Button>
     );
   }
@@ -296,6 +296,11 @@ function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
               </div>
             </div>
           )}
+
+          {/* TEMP debug — surfaces why an address may not resolve. Remove later. */}
+          <div className="px-5 py-2 border-b border-hairline font-mono text-[8px] text-ink-faint break-all leading-relaxed">
+            dbg · wallets:{wallets.length} [{wallets.map((w) => w.walletClientType).join(",") || "none"}] · smart:{smart ? "Y" : "N"} · userWallet:{user?.wallet?.address ? "Y" : "N"}
+          </div>
 
           <div className="divide-y divide-hairline">
             {account && (
