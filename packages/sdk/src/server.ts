@@ -842,10 +842,16 @@ async function runCycle(): Promise<void> {
 
 const app = express();
 
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  // Answer CORS preflight directly (204) instead of falling through to 404,
+  // which strict browsers reject — needed for the browser-side bundler calls.
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
   next();
 });
 
@@ -864,6 +870,32 @@ app.get("/paymaster/health", (_req, res) => {
 });
 app.post("/paymaster", async (req, res) => {
   res.json(await handlePaymasterRpc(req.body));
+});
+
+// ── Bundler CORS proxy ──────────────────────────────────────────────────────
+// The alto bundler (separate Render service) speaks JSON-RPC but sends no CORS
+// headers, so browser-side smart-wallet calls (eth_sendUserOperation, gas
+// estimation, receipts) are blocked. We forward them through this same-origin
+// route, which inherits the CORS middleware above. Privy's bundler URL =
+// https://<host>/bundler. Override the upstream with BUNDLER_RPC_URL if needed.
+const BUNDLER_RPC_URL =
+  process.env.BUNDLER_RPC_URL ?? "https://sentri-bundler.onrender.com/rpc";
+app.post("/bundler", async (req, res) => {
+  try {
+    const upstream = await fetch(BUNDLER_RPC_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req.body),
+    });
+    const data = await upstream.json();
+    res.status(upstream.status).json(data);
+  } catch {
+    res.status(502).json({
+      jsonrpc: "2.0",
+      id: req.body?.id ?? null,
+      error: { code: -32000, message: "bundler proxy: upstream request failed" },
+    });
+  }
 });
 
 app.get("/healthz", (_req, res) => {
