@@ -214,7 +214,11 @@ function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
   const usdceFormatted =
     usdce !== undefined ? `${Number(formatUnits(usdce as bigint, 6)).toFixed(2)} ${BASE_SYMBOL}` : "—";
 
-  const label = smart ? shortenAddress(smart) : eoa ? "Finishing…" : "—";
+  // Prefer the smart account (gasless); fall back to the signer EOA when no
+  // smart wallet is provisioned (e.g. an external wallet was linked instead of
+  // an email sign-in). Avoids being stuck on a "Finishing…" placeholder.
+  const account = (smart ?? eoa) as `0x${string}` | undefined;
+  const label = account ? shortenAddress(account) : "…";
 
   return (
     <div className="relative">
@@ -233,36 +237,49 @@ function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
             <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">Account</span>
             <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-kicker">
               <span className="inline-block w-1.5 h-1.5 bg-phosphor animate-pulse-dot" />
-              <span className="text-phosphor">Online · gasless</span>
+              <span className="text-phosphor">{smart ? "Online · gasless" : "Online"}</span>
             </span>
           </div>
 
-          <div className="px-5 py-4 border-b border-hairline">
-            <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
-              Smart account (fund this)
+          {smart ? (
+            <>
+              <div className="px-5 py-4 border-b border-hairline">
+                <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">
+                  Smart account (fund this)
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[12px] text-ink tabular">{shortenAddress(smart)}</span>
+                  <button onClick={() => copy(smart, "smart")} className="text-ink-faint hover:text-amber transition-colors" aria-label="Copy smart account">
+                    {copied === "smart" ? <Check className="h-3.5 w-3.5 text-phosphor" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+                <div className="font-mono text-[10px] text-ink-dim tabular mt-1">Balance: {usdceFormatted}</div>
+              </div>
+              <div className="px-5 py-3 border-b border-hairline">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">Signer</span>
+                  <span className="font-mono text-[10px] text-ink-dim tabular">{eoa ? shortenAddress(eoa) : "—"}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="px-5 py-4 border-b border-hairline">
+              <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">Wallet</div>
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[12px] text-ink tabular">{eoa ? shortenAddress(eoa) : "…"}</span>
+                {eoa && (
+                  <button onClick={() => copy(eoa, "eoa")} className="text-ink-faint hover:text-amber transition-colors" aria-label="Copy address">
+                    {copied === "eoa" ? <Check className="h-3.5 w-3.5 text-phosphor" /> : <Copy className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[12px] text-ink tabular">{smart ? shortenAddress(smart) : "…"}</span>
-              {smart && (
-                <button onClick={() => copy(smart, "smart")} className="text-ink-faint hover:text-amber transition-colors" aria-label="Copy smart account">
-                  {copied === "smart" ? <Check className="h-3.5 w-3.5 text-phosphor" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-              )}
-            </div>
-            <div className="font-mono text-[10px] text-ink-dim tabular mt-1">Balance: {usdceFormatted}</div>
-          </div>
-
-          <div className="px-5 py-3 border-b border-hairline">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">Signer</span>
-              <span className="font-mono text-[10px] text-ink-dim tabular">{eoa ? shortenAddress(eoa) : "—"}</span>
-            </div>
-          </div>
+          )}
 
           <div className="divide-y divide-hairline">
-            {smart && (
+            {account && (
               <a
-                href={`${galileo.blockExplorers.default.url}/address/${smart}`}
+                href={`${galileo.blockExplorers.default.url}/address/${account}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full flex items-center justify-between px-5 h-11 font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber hover:bg-bg-elev/60 transition-colors"
