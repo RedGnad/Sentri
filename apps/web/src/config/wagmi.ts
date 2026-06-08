@@ -76,7 +76,7 @@ export const privyWagmiConfig = createPrivyWagmiConfig({
 export const privyConfig: PrivyClientConfig = {
   defaultChain: galileo,
   supportedChains: [galileo],
-  loginMethods: ["email", "wallet", "discord", "twitter"],
+  loginMethods: ["email", "wallet", "google", "discord", "twitter"],
   embeddedWallets: {
     ethereum: { createOnLogin: "users-without-wallets" },
     showWalletUIs: true,

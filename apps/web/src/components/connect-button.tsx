@@ -165,6 +165,9 @@ function LoginModal({ onClose }: { onClose: () => void }) {
             <span className="h-px flex-1 bg-hairline" />
           </div>
 
+          <Button variant="outline" className="w-full" onClick={() => initOAuth({ provider: "google" })}>
+            Continue with Google
+          </Button>
           <div className="grid grid-cols-2 gap-2">
             <Button variant="outline" onClick={() => initOAuth({ provider: "discord" })}>
               Discord
