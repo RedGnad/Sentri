@@ -1,8 +1,0 @@
-{
-  "entryPoints": ["0x0000000071727De22E5E9d8BAf0edAc6f37da032"],
-  "relayers": ["test test test test test test test test test test test junk"],
-  "rpcEndpoint": "https://evmrpc.0g.ai",
-  "minInclusionDenominator": 10,
-  "throttlingSlack": 10,
-  "banSlack": 10
-}
