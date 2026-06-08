@@ -322,7 +322,7 @@ function PresetStep({ tier, setTier, onNext }: { tier: number; setTier: (t: numb
               onClick={() => setTier(t)}
               className={cn(
                 "border p-5 text-left transition-colors",
-                selected ? "border-amber bg-bg-elev/40" : "border-hairline hover:border-hairline-strong bg-bg-elev/20",
+                selected ? "border-amber bg-bg-elev/40" : "border-hairline hover:border-amber/60 bg-bg-elev/20",
               )}
             >
               <div className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint mb-2">
