@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "description": "ERC-7677 paymaster signer service: sponsors gas for Sentri Safe smart wallets on 0G",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",

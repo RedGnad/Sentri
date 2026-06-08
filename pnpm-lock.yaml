@@ -111,6 +111,9 @@ importers:
       '@skillmint/sdk':
         specifier: 0.4.1
         version: 0.4.1(ethers@6.16.0(bufferutil@4.1.0)(utf-8-validate@5.0.10))
+      '@steward/paymaster':
+        specifier: workspace:*
+        version: link:../paymaster
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1

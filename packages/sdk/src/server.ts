@@ -77,6 +77,7 @@ import { getMarketDataHealth, isMarketDataUnavailableError, updatePythOnChain } 
 import { getSkillMintConfig } from "./skillmint.js";
 import { decodeVaultError } from "./vault-errors.js";
 import { recoverAuditEntry, type ChainAuditEntry } from "./audit-recovery.js";
+import { handlePaymasterRpc, paymasterConfigured } from "@steward/paymaster";
 
 const ACTION_LABELS = ["Rebalance", "YieldFarm", "EmergencyDeleverage"] as const;
 
@@ -843,9 +844,26 @@ const app = express();
 
 app.use((_req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   next();
+});
+
+// JSON body parsing — needed only for the POST /paymaster route below. GET
+// routes are unaffected (no body to parse).
+app.use(express.json({ limit: "1mb" }));
+
+// ── Gas-sponsorship paymaster (ERC-7677) ────────────────────────────────────
+// Grafted onto the agent server so Sentri's Safe smart wallets get gasless
+// onboarding without running a separate Render instance. The signing logic is
+// the shared handler from @steward/paymaster. Returns "not configured" until the
+// PAYMASTER_* env (address + signer key + allowlist) is set on this service, so
+// it never affects the agent loop. Privy's paymaster URL = https://<host>/paymaster.
+app.get("/paymaster/health", (_req, res) => {
+  res.json({ configured: paymasterConfigured() });
+});
+app.post("/paymaster", async (req, res) => {
+  res.json(await handlePaymasterRpc(req.body));
 });
 
 app.get("/healthz", (_req, res) => {
