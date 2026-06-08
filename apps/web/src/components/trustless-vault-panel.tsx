@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/use-active-account";
 import { toast } from "sonner";
 import { decodeEventLog } from "viem";
 import { Check, Copy, ExternalLink } from "lucide-react";
@@ -56,7 +56,7 @@ function Point({ children }: { children: React.ReactNode }) {
 type CreateMode = "idle" | "preset";
 
 export function TrustlessVaultPanel({ onBack }: { onBack: () => void }) {
-  const { address: connectedAddress } = useAccount();
+  const connectedAddress = useActiveAddress();
   const [createMode, setCreateMode] = useState<CreateMode>("idle");
   const [tier, setTier] = useState<number>(PresetTier.Balanced);
   const [createdVault, setCreatedVault] = useState<`0x${string}` | null>(null);

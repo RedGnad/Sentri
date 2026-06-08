@@ -2,7 +2,7 @@
 
 import { isAddress } from "viem";
 import { useParsedVaultData } from "@/hooks/use-vault";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/use-active-account";
 import { formatUSDC, shortenAddress } from "@/lib/utils";
 import { VaultTabs } from "@/components/vault-tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,7 +43,7 @@ function VaultLayoutInner({
   children: React.ReactNode;
 }) {
   const { data: vault, isLoading } = useParsedVaultData(address);
-  const { address: connected } = useAccount();
+  const connected = useActiveAddress();
   const isOwner = connected && vault && connected.toLowerCase() === vault.owner.toLowerCase();
 
   return (

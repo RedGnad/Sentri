@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/use-active-account";
 import { toast } from "sonner";
 import { decodeEventLog, parseUnits, formatUnits } from "viem";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,9 @@ type VaultType = "standard" | "trustless" | null;
 
 export default function DeployPage() {
   const router = useRouter();
-  const { address } = useAccount();
+  // Single identity source: the smart account in gasless mode (what owns the
+  // vault + holds funds), the wagmi account otherwise.
+  const address = useActiveAddress();
 
   const [vaultType, setVaultType] = useState<VaultType>(null);
   const [step, setStep] = useState<Step>(1);
@@ -43,9 +45,7 @@ export default function DeployPage() {
   // When no smart wallet is present, everything falls back to the wagmi flow.
   const gasless = useGaslessDeposit();
   const gaslessReady = gasless.isReady;
-  const effectiveAccount = (gaslessReady ? gasless.smartAccountAddress : address) as
-    | `0x${string}`
-    | undefined;
+  const effectiveAccount = address;
 
   const { data: usdcBalance, isSuccess: balanceLoaded } = useUsdcBalance(effectiveAccount);
   const { data: allowance } = useUsdcAllowance(effectiveAccount, VAULT_FACTORY_ADDRESS);

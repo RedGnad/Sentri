@@ -78,7 +78,10 @@ export const privyConfig: PrivyClientConfig = {
   supportedChains: [galileo],
   loginMethods: ["email", "wallet", "google", "discord", "twitter"],
   embeddedWallets: {
-    ethereum: { createOnLogin: "users-without-wallets" },
+    // "all-users" so EVERY user gets an embedded wallet (and thus a smart
+    // account for gasless), even if they also link an external wallet. Without
+    // this, linking MetaMask suppresses the embedded wallet → no smart account.
+    ethereum: { createOnLogin: "all-users" },
     showWalletUIs: true,
   },
   appearance: { theme: "dark" },

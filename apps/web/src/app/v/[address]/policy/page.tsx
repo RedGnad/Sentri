@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/use-active-account";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ import { toastTxError } from "@/lib/tx-error";
 export default function VaultPolicyPage() {
   const params = useParams<{ address: string }>();
   const address = params.address as `0x${string}`;
-  const { address: connected } = useAccount();
+  const connected = useActiveAddress();
 
   const { data: vault, isLoading } = useParsedVaultData(address);
   const { setPolicy, isPending, isConfirming, isSuccess, error } = useSetPolicy();

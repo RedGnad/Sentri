@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/use-active-account";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatUSDC, shortenAddress } from "@/lib/utils";
@@ -14,7 +14,7 @@ import { toastTxError } from "@/lib/tx-error";
 export default function VaultEmergencyPage() {
   const params = useParams<{ address: string }>();
   const address = params.address as `0x${string}`;
-  const { address: connected } = useAccount();
+  const connected = useActiveAddress();
 
   const { data: vault, isLoading } = useParsedVaultData(address);
   const { emergencyWithdraw, isPending: isKilling, isSuccess: killSuccess, error: killError } = useEmergencyWithdraw();

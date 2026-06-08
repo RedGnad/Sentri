@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/use-active-account";
 import { useVaultsByOwner, useLegacyVaultsByOwner, useV2VaultsByOwner, useLegacyV2VaultsByOwner } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function MyVaultsPage() {
-  const { address } = useAccount();
+  const address = useActiveAddress();
   const { data: vaultsRaw, isLoading } = useVaultsByOwner(address);
   const { data: legacyRaw } = useLegacyVaultsByOwner(address);
   const { data: v2Raw } = useV2VaultsByOwner(address);
