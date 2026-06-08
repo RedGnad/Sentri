@@ -10,7 +10,7 @@ import {
   useSwitchChain,
   useReadContract,
 } from "wagmi";
-import { usePrivy, useLoginWithEmail, useConnectWallet } from "@privy-io/react-auth";
+import { usePrivy, useLoginWithEmail, useConnectWallet, useLoginWithOAuth, useWallets } from "@privy-io/react-auth";
 import { useSmartWallets } from "@privy-io/react-auth/smart-wallets";
 import { toast } from "sonner";
 import { formatUnits, erc20Abi } from "viem";
@@ -67,18 +67,22 @@ function PrivySignIn() {
 function LoginModal({ onClose }: { onClose: () => void }) {
   const { state, sendCode, loginWithCode } = useLoginWithEmail();
   const { connectWallet } = useConnectWallet();
+  const { initOAuth } = useLoginWithOAuth();
   const { authenticated } = usePrivy();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
 
-  // Close once the user is authenticated (email OTP success or wallet connect).
+  // Close once the user is authenticated (email OTP, OAuth, or wallet connect).
   useEffect(() => {
     if (authenticated) onClose();
   }, [authenticated, onClose]);
 
   const status = state.status;
-  const awaitingCode = status === "awaiting-code-input" || status === "submitting-code";
   const sending = status === "sending-code";
+  // Only show the code step when an email is actually on file. Privy's hook
+  // state persists across remounts, so without this guard reopening the modal
+  // mid-flow shows a stuck "Enter the code sent to ." with no way back.
+  const showCode = (status === "awaiting-code-input" || status === "submitting-code") && !!email;
 
   return (
     <div
@@ -103,7 +107,7 @@ function LoginModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="px-5 py-5 space-y-4">
-          {!awaitingCode ? (
+          {!showCode ? (
             <>
               <label className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint block">
                 Email
@@ -142,6 +146,12 @@ function LoginModal({ onClose }: { onClose: () => void }) {
               >
                 {status === "submitting-code" ? "Verifying…" : "Verify & sign in ∎"}
               </Button>
+              <button
+                onClick={() => { setEmail(""); setCode(""); }}
+                className="w-full font-mono text-[10px] uppercase tracking-kicker text-ink-dim hover:text-amber transition-colors"
+              >
+                ← Use a different email
+              </button>
             </>
           )}
 
@@ -155,13 +165,15 @@ function LoginModal({ onClose }: { onClose: () => void }) {
             <span className="h-px flex-1 bg-hairline" />
           </div>
 
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => {
-              connectWallet();
-            }}
-          >
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" onClick={() => initOAuth({ provider: "discord" })}>
+              Discord
+            </Button>
+            <Button variant="outline" onClick={() => initOAuth({ provider: "twitter" })}>
+              Twitter
+            </Button>
+          </div>
+          <Button variant="outline" className="w-full" onClick={() => connectWallet()}>
             Connect a wallet
           </Button>
         </div>
@@ -173,9 +185,15 @@ function LoginModal({ onClose }: { onClose: () => void }) {
 // Connected view for Privy: surfaces the SMART ACCOUNT (where funds live + what
 // sends gasless tx) prominently, plus the signer EOA and a logout.
 function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
-  const { address: eoa } = useAccount();
+  const { user } = usePrivy();
+  const { wallets } = useWallets();
   const { client } = useSmartWallets();
   const smart = client?.account?.address as `0x${string}` | undefined;
+  // The Privy embedded wallet (the signer) — NOT wagmi's useAccount, which can
+  // surface a leftover injected browser wallet and show the wrong address for an
+  // email user.
+  const embedded = (wallets.find((w) => w.walletClientType === "privy")?.address ??
+    user?.wallet?.address) as `0x${string}` | undefined;
 
   const { data: usdce } = useReadContract({
     address: BASE_TOKEN_ADDRESS,
@@ -217,7 +235,7 @@ function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
   // Prefer the smart account (gasless); fall back to the signer EOA when no
   // smart wallet is provisioned (e.g. an external wallet was linked instead of
   // an email sign-in). Avoids being stuck on a "Finishing…" placeholder.
-  const account = (smart ?? eoa) as `0x${string}` | undefined;
+  const account = (smart ?? embedded) as `0x${string}` | undefined;
   const label = account ? shortenAddress(account) : "…";
 
   return (
@@ -258,7 +276,7 @@ function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
               <div className="px-5 py-3 border-b border-hairline">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint">Signer</span>
-                  <span className="font-mono text-[10px] text-ink-dim tabular">{eoa ? shortenAddress(eoa) : "—"}</span>
+                  <span className="font-mono text-[10px] text-ink-dim tabular">{embedded ? shortenAddress(embedded) : "—"}</span>
                 </div>
               </div>
             </>
@@ -266,9 +284,9 @@ function PrivyConnected({ onDisconnect }: { onDisconnect: () => void }) {
             <div className="px-5 py-4 border-b border-hairline">
               <div className="font-mono text-[9px] uppercase tracking-kicker text-ink-faint mb-1">Wallet</div>
               <div className="flex items-center justify-between">
-                <span className="font-mono text-[12px] text-ink tabular">{eoa ? shortenAddress(eoa) : "…"}</span>
-                {eoa && (
-                  <button onClick={() => copy(eoa, "eoa")} className="text-ink-faint hover:text-amber transition-colors" aria-label="Copy address">
+                <span className="font-mono text-[12px] text-ink tabular">{embedded ? shortenAddress(embedded) : "…"}</span>
+                {embedded && (
+                  <button onClick={() => copy(embedded, "eoa")} className="text-ink-faint hover:text-amber transition-colors" aria-label="Copy address">
                     {copied === "eoa" ? <Check className="h-3.5 w-3.5 text-phosphor" /> : <Copy className="h-3.5 w-3.5" />}
                   </button>
                 )}
