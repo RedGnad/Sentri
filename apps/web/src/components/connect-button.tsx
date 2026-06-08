@@ -9,6 +9,7 @@ import {
   useDisconnect,
   useSwitchChain,
 } from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
 import { toast } from "sonner";
 import { formatUnits } from "viem";
 import { Button } from "@/components/ui/button";
@@ -16,32 +17,142 @@ import { galileo } from "@/config/wagmi";
 import { shortenAddress } from "@/lib/utils";
 import { LogOut, Copy, Check, ExternalLink, AlertTriangle } from "lucide-react";
 
+// Privy is the active path when an App ID is configured (email/social sign-in +
+// embedded wallet). Otherwise we render the original wallet-only button so the
+// injected / WalletConnect flow keeps working unchanged. Switching here mirrors
+// the same env gate used in providers.tsx, so the button always matches the
+// active provider stack.
+const PRIVY_ENABLED = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+
 export function ConnectButton() {
-  const {
-    address,
-    isConnected,
-    chainId: walletChainId,
-    connector,
-  } = useAccount();
+  return PRIVY_ENABLED ? <PrivyConnectButton /> : <WalletConnectButton />;
+}
+
+// ── Privy path: email/social sign-in + embedded wallet ──────────────────────
+function PrivyConnectButton() {
+  const { ready, authenticated, login, logout } = usePrivy();
+  const { address } = useAccount();
+
+  if (!ready) {
+    return (
+      <Button size="sm" disabled>
+        …
+      </Button>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <Button size="sm" onClick={() => login()}>
+        Sign in
+      </Button>
+    );
+  }
+
+  // Authenticated but the wagmi bridge hasn't surfaced the wallet yet (embedded
+  // wallet provisioning is async on first login).
+  if (!address) {
+    return (
+      <Button size="sm" disabled>
+        Finishing…
+      </Button>
+    );
+  }
+
+  return <ConnectedAccount onDisconnect={() => logout()} />;
+}
+
+// ── Wallet-only path (fallback): injected / WalletConnect ───────────────────
+function WalletConnectButton() {
+  const { isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
+  const [showConnect, setShowConnect] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (isConnected) {
+    return <ConnectedAccount onDisconnect={() => disconnect()} />;
+  }
+
+  return (
+    <>
+      <Button size="sm" onClick={() => setShowConnect(true)}>
+        Connect Wallet
+      </Button>
+
+      {showConnect &&
+        mounted &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg-sunk/80 backdrop-blur-sm p-4"
+            onClick={() => setShowConnect(false)}
+          >
+            <div
+              className="bg-bg-elev border border-hairline-strong w-full max-w-sm"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 h-11 border-b border-hairline">
+                <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
+                  Select wallet
+                </span>
+                <button
+                  onClick={() => setShowConnect(false)}
+                  className="font-mono text-xs text-ink-dim hover:text-amber transition-colors"
+                  aria-label="Close"
+                >
+                  [ esc ]
+                </button>
+              </div>
+              <ul className="divide-y divide-hairline">
+                {connectors.map((c) => (
+                  <li key={c.uid}>
+                    <button
+                      onClick={() => {
+                        connect({ connector: c });
+                        setShowConnect(false);
+                      }}
+                      className="w-full flex items-center gap-4 px-5 h-14 hover:bg-bg-elev/40 transition-colors text-left group"
+                    >
+                      {c.icon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.icon} alt={c.name} className="w-6 h-6" />
+                      ) : null}
+                      <span className="font-mono text-[11px] uppercase tracking-kicker text-ink flex-1 group-hover:text-amber transition-colors">
+                        {c.name === "Injected" ? "Browser wallet" : c.name}
+                      </span>
+                      <span className="font-mono text-[10px] text-ink-faint group-hover:text-amber transition-colors">
+                        →
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+// ── Shared connected-account popover (used by both paths) ────────────────────
+function ConnectedAccount({ onDisconnect }: { onDisconnect: () => void }) {
+  const { address, chainId: walletChainId, connector } = useAccount();
   const { data: balanceData } = useBalance({
     address,
     chainId: galileo.id,
     query: { enabled: !!address && walletChainId === galileo.id },
   });
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
   const { switchChainAsync, isPending: isSwitching } = useSwitchChain();
 
-  const [showConnect, setShowConnect] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!showAccount) return;
@@ -92,8 +203,7 @@ export function ConnectButton() {
           toast.success(`${galileo.name} added to wallet`);
           return;
         } catch (addErr: unknown) {
-          const msg =
-            addErr instanceof Error ? addErr.message : "Unknown error";
+          const msg = addErr instanceof Error ? addErr.message : "Unknown error";
           toast.error("Failed to add network", { description: msg });
           return;
         }
@@ -112,85 +222,20 @@ export function ConnectButton() {
   }
 
   function handleDisconnect() {
-    disconnect();
+    onDisconnect();
     setShowAccount(false);
     toast.success("Wallet disconnected");
   }
 
-  // ── Not connected ────────────────────────────────────────────────────
-  if (!isConnected) {
-    return (
-      <>
-        <Button size="sm" onClick={() => setShowConnect(true)}>
-          Connect Wallet
-        </Button>
-
-        {showConnect &&
-          mounted &&
-          createPortal(
-            <div
-              className="fixed inset-0 z-[9999] flex items-center justify-center bg-bg-sunk/80 backdrop-blur-sm p-4"
-              onClick={() => setShowConnect(false)}
-            >
-              <div
-                className="bg-bg-elev border border-hairline-strong w-full max-w-sm"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between px-5 h-11 border-b border-hairline">
-                  <span className="font-mono text-[10px] uppercase tracking-kicker text-ink-faint">
-                    Select wallet
-                  </span>
-                  <button
-                    onClick={() => setShowConnect(false)}
-                    className="font-mono text-xs text-ink-dim hover:text-amber transition-colors"
-                    aria-label="Close"
-                  >
-                    [ esc ]
-                  </button>
-                </div>
-                <ul className="divide-y divide-hairline">
-                  {connectors.map((c) => (
-                    <li key={c.uid}>
-                      <button
-                        onClick={() => {
-                          connect({ connector: c });
-                          setShowConnect(false);
-                        }}
-                        className="w-full flex items-center gap-4 px-5 h-14 hover:bg-bg-elev/40 transition-colors text-left group"
-                      >
-                        {c.icon ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={c.icon} alt={c.name} className="w-6 h-6" />
-                        ) : null}
-                        <span className="font-mono text-[11px] uppercase tracking-kicker text-ink flex-1 group-hover:text-amber transition-colors">
-                          {c.name === "Injected" ? "Browser wallet" : c.name}
-                        </span>
-                        <span className="font-mono text-[10px] text-ink-faint group-hover:text-amber transition-colors">
-                          →
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>,
-            document.body,
-          )}
-      </>
-    );
-  }
-
-  // ── Connected ────────────────────────────────────────────────────────
   const wrongNetwork = walletChainId !== galileo.id;
   const balanceFormatted = balanceData
     ? `${Number(formatUnits(balanceData.value, balanceData.decimals)).toFixed(3)} ${balanceData.symbol}`
     : "—";
   // Native balance = 0 means every TX (approve, deposit, withdraw, vault
-  // create, kill-switch) will revert from the wallet before signing. Surface
-  // it once, here, instead of letting the user discover it via a "insufficient
-  // funds" wallet popup on the first action. Tied to the same Connect popover
-  // so the warning lives where the address/balance is — not as a global
-  // banner. Hidden when on wrong network because the balance is then irrelevant.
+  // create, kill-switch) will revert from the wallet before signing. Surface it
+  // once, here, instead of letting the user discover it via an "insufficient
+  // funds" wallet popup on the first action. Hidden on wrong network because the
+  // balance is then irrelevant.
   const gasEmpty =
     !wrongNetwork && balanceData !== undefined && balanceData.value === 0n;
 

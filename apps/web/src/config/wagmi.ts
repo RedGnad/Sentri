@@ -1,8 +1,10 @@
 "use client";
 
 import { http, createConfig } from "wagmi";
+import { createConfig as createPrivyWagmiConfig } from "@privy-io/wagmi";
 import { defineChain } from "viem";
 import { injected, walletConnect } from "wagmi/connectors";
+import type { PrivyClientConfig } from "@privy-io/react-auth";
 
 const selectedRpc =
   process.env.NEXT_PUBLIC_RPC_URL ??
@@ -37,18 +39,47 @@ export const galileo = defineChain({
 
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
+// `batch: true` coalesces independent reads (e.g. the tier-detection probe and
+// unrelated queries) into a single JSON-RPC batch POST. 0G RPC supports it.
+const transports = {
+  [16602]: http(galileo.id === 16602 ? selectedRpc : "https://evmrpc-testnet.0g.ai", { batch: true }),
+  [16661]: http(galileo.id === 16661 ? selectedRpc : "https://evmrpc.0g.ai", { batch: true }),
+};
+
+// Wallet-only config (original behaviour). Used as the fallback provider stack
+// when no Privy App ID is configured, so the app keeps running without Privy and
+// the existing injected / WalletConnect flow stays fully intact.
 export const config = createConfig({
   chains: [galileo],
   connectors: [
     injected(),
     ...(projectId ? [walletConnect({ projectId, showQrModal: false })] : []),
   ],
-  // `batch: true` coalesces independent reads (e.g. the tier-detection probe and
-  // unrelated queries) into a single JSON-RPC batch POST. 0G RPC supports it.
-  transports: {
-    [16602]: http(galileo.id === 16602 ? selectedRpc : "https://evmrpc-testnet.0g.ai", { batch: true }),
-    [16661]: http(galileo.id === 16661 ? selectedRpc : "https://evmrpc.0g.ai", { batch: true }),
-  },
+  transports,
   ssr: true,
   multiInjectedProviderDiscovery: true,
 });
+
+// Privy-managed wagmi config. No connectors here on purpose: Privy injects the
+// embedded wallet (email/social sign-in) plus any external wallet connected
+// through its login modal, and bridges them to wagmi. createConfig is imported
+// from @privy-io/wagmi (not wagmi) so the embedded wallet is wired correctly.
+export const privyWagmiConfig = createPrivyWagmiConfig({
+  chains: [galileo],
+  transports,
+  ssr: true,
+});
+
+// PrivyProvider client config. Email-first for web2 onboarding; an embedded
+// wallet is created for users who sign in without one. Pinned to 0G as the only
+// chain. Visual theming is kept minimal here and refined with the consumer mockups.
+export const privyConfig: PrivyClientConfig = {
+  defaultChain: galileo,
+  supportedChains: [galileo],
+  loginMethods: ["email", "wallet"],
+  embeddedWallets: {
+    ethereum: { createOnLogin: "users-without-wallets" },
+    showWalletUIs: true,
+  },
+  appearance: { theme: "dark" },
+};
