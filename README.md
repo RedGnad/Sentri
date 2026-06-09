@@ -53,7 +53,7 @@ Mainnet deployment:
 | What 0G components are used? | 5 0G components: Chain (deployed contracts), Compute/Sealed Inference (TEE provider path), Storage Log (immutable audit blobs), Storage KV (per-vault state index), AgentINFT (on-chain agent identity + signer binding). Execution venue: Jaine V3 on 0G mainnet. |
 | Is the AI trusted blindly? | No, the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
 | Can judges verify it? | Yes, public dashboard, chainscan links, execution txs, storage root hashes, and storage tx links when available. |
-| How does a user start? | Email or social sign-in, no seed phrase, no native OG — the first vault deploys and funds in one paymaster-sponsored transaction (feature-flagged). |
+| How does a user start? | Email, Google, Discord or X sign-in, no seed phrase, no native OG — the first vault deploys and takes its first deposit in one gas-sponsored transaction. Sponsorship covers gas only; the deposit is the user's own `USDC.E`. Feature-flagged. |
 
 ---
 
@@ -64,20 +64,23 @@ Mainnet deployment:
 - **Spread-bounded oracle path.** Each cycle requires Jaine V3 `slot0()` on-chain plus Pyth Network `0G/USD` via Hermes. 2-of-2 quorum, spread-bounded, then keeper-pushed to `SentriPriceFeed`.
 - **Real assets, real venue.** The mainnet stack uses `USDC.E` and `W0G`, with execution routed through the live Jaine V3 `USDC.E/W0G` pool via a hardened single-pool adapter.
 - **Owner recourse always available.** `pause` to freeze activity reversibly, `emergencyWithdraw` to return all assets immediately, `emergencyDeleverageAndWithdraw(minBaseOut)` to attempt a base-asset exit with slippage protection.
-- **Gasless, seedless onboarding.** Email or social sign-in creates an embedded wallet and an ERC-4337 Safe smart account; the first vault is deployed and funded in a single paymaster-sponsored UserOp, with zero native OG required from the user. Feature-flagged, falls back to standard external-wallet connect.
+- **Gasless, seedless onboarding.** Email, Google, Discord or X sign-in creates an embedded wallet and an ERC-4337 Safe smart account; the first vault is deployed and its first deposit made in a single paymaster-sponsored UserOp, with zero native OG required. The paymaster sponsors gas only — the deposit is the user's own `USDC.E`, pulled from the smart account in the same tx. Feature-flagged, falls back to standard external-wallet connect.
 
 ## Onboarding — gasless and seedless
 
-Most treasury tools assume the user already has a wallet, a seed phrase, and native gas. Sentri removes all three. The user signs in with email or a social login, an embedded wallet is created for them (no seed phrase to store), and a Safe smart account (ERC-4337, EntryPoint v0.7) is deployed on first use. Deploying a funded vault is a single sponsored `UserOperation`: the `approve` and `createVaultAndDeposit` calls are batched and the gas is paid by a `VerifyingPaymaster`, so the user needs **zero native OG** to start.
+Most treasury tools assume the user already has a wallet, a seed phrase, and native gas. Sentri removes the wallet, the seed, and the gas barrier. The user signs in with email, Google, Discord, or X, an embedded wallet is created for them (no seed phrase to store), and a Safe smart account (ERC-4337, EntryPoint v0.7) is deployed on first use. Creating the first vault is a single `UserOperation` that batches the ERC-20 `approve` and the factory `createVaultAndDeposit`; a `VerifyingPaymaster` pays the **gas**, so the user signs once and needs **zero native OG**.
+
+To be exact about what is and isn't sponsored: the paymaster sponsors **gas only**. The deposit itself is the user's own `USDC.E`, pulled from their smart account in the same transaction — Sentri does not fund the treasury, it removes the gas barrier to opening and funding one. A user holding `USDC.E` but no `OG` can still deploy a vault and make its first deposit in one click.
 
 | Step | Mechanism |
 |---|---|
-| Sign in | Email / social login (Privy), no seed phrase |
+| Sign in | Email, Google, Discord, or X (Privy), no seed phrase |
 | Wallet | Embedded signer → Safe smart account (ERC-4337, EntryPoint v0.7) |
 | Gas | Sponsored by a `VerifyingPaymaster` restricted to an on-chain target allowlist (factory + base token); batched calls are decoded so only Sentri actions are paid for |
-| First action | One batched UserOp: `approve` + `createVaultAndDeposit` → vault deployed and funded |
+| Funds | The user's own `USDC.E`, pulled from their smart account — **not** sponsored |
+| First action | One batched UserOp: `approve` + `createVaultAndDeposit` → vault deployed, first deposit made, no gas paid by the user |
 
-Verified end-to-end on 0G mainnet: an email sign-in created a smart account that deployed and funded a vault in a single sponsored transaction, holding no native OG. The flow is feature-flagged behind `NEXT_PUBLIC_PRIVY_APP_ID`; without it the dashboard uses the standard external-wallet (RainbowKit / wagmi) connect.
+Verified end-to-end on 0G mainnet: a sign-in created a smart account that deployed a vault and made its first `USDC.E` deposit in a single transaction while holding zero native OG. The flow is feature-flagged behind `NEXT_PUBLIC_PRIVY_APP_ID`; without it the dashboard uses the standard external-wallet (RainbowKit / wagmi) connect.
 
 Why it matters: autonomous treasury management is the hardest use case to trust and to onboard. Making it the easiest to *start* — no seed, no gas, with every risk bound still enforced on-chain — is the point.
 
