@@ -38,7 +38,7 @@ export default function DeployPage() {
   const [vaultType, setVaultType] = useState<VaultType>(null);
   const [step, setStep] = useState<Step>(1);
   const [tier, setTier] = useState<number>(PresetTier.Balanced);
-  const [depositAmount, setDepositAmount] = useState<string>("1000");
+  const [depositAmount, setDepositAmount] = useState<string>("");
 
   // Gasless path: when a Privy smart wallet is active, funds come from the smart
   // account (not the embedded EOA) and the deposit is a single sponsored UserOp.
@@ -96,7 +96,9 @@ export default function DeployPage() {
   const depositNum = Number(depositAmount) || 0;
   const depositWei = depositNum > 0 ? parseUnits(String(depositNum), 6) : 0n;
   const needsApproval = depositWei > 0n && currentAllowance < depositWei;
-  const insufficient = depositWei > userUsdc;
+  // Only flag insufficiency once the real balance has loaded — otherwise the
+  // default render (balance still undefined → 0) shows a false "insufficient".
+  const insufficient = balanceLoaded && depositWei > userUsdc;
 
   function handleSubmit() {
     // Gasless: one signature, sponsored UserOp (approve + create+deposit batched).
@@ -220,7 +222,7 @@ function VaultTypeSelect({
         <button
           type="button"
           onClick={onStandard}
-          className="group border border-hairline hover:border-hairline-strong bg-bg-elev/20 p-6 text-left transition-colors flex flex-col"
+          className="group border border-hairline hover:border-amber/60 bg-bg-elev/20 p-6 text-left transition-colors flex flex-col"
         >
           <div className="flex items-center gap-2 mb-3">
             <Badge variant="success">Live</Badge>
