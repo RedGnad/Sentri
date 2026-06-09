@@ -18,13 +18,14 @@ import {
   VAULT_FACTORY_ABI,
 } from "@/config/contracts";
 
-// NOTE (unverified end-to-end): this is the gasless path. It needs the live
-// stack to validate — a reachable /paymaster signer, a running bundler, and the
-// 0G chain configured in the Privy dashboard (bundler + paymaster URL, smart
-// wallet type `safe`). The PAYMASTER_TARGET_ALLOWLIST on the signer must include
-// BASE_TOKEN_ADDRESS (approve) and VAULT_FACTORY_ADDRESS (create) used here, or
-// the paymaster will refuse to sponsor. Types are checked by tsc; behaviour is
-// confirmed only against the live stack.
+// Gasless path, verified end-to-end on 0G mainnet: email/social sign-in →
+// embedded wallet → Safe smart account → one sponsored UserOp that deploys a
+// vault and makes its first USDC.E deposit, the user paying no gas.
+// Operational requirements for this to work: a reachable /paymaster signer, a
+// running bundler, and the 0G chain configured in the Privy dashboard (bundler +
+// paymaster URL, smart wallet type `safe`). The PAYMASTER_TARGET_ALLOWLIST on
+// the signer must include BASE_TOKEN_ADDRESS (approve) and VAULT_FACTORY_ADDRESS
+// (create) used here, or the paymaster will refuse to sponsor.
 
 const publicClient = createPublicClient({ chain: galileo, transport: http() });
 
