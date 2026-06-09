@@ -53,6 +53,7 @@ Mainnet deployment:
 | What 0G components are used? | 5 0G components: Chain (deployed contracts), Compute/Sealed Inference (TEE provider path), Storage Log (immutable audit blobs), Storage KV (per-vault state index), AgentINFT (on-chain agent identity + signer binding). Execution venue: Jaine V3 on 0G mainnet. |
 | Is the AI trusted blindly? | No, the vault enforces signer, replay, deadline, exposure, drawdown, slippage, oracle freshness, pause and kill. |
 | Can judges verify it? | Yes, public dashboard, chainscan links, execution txs, storage root hashes, and storage tx links when available. |
+| How does a user start? | Email or social sign-in, no seed phrase, no native OG — the first vault deploys and funds in one paymaster-sponsored transaction (feature-flagged). |
 
 ---
 
@@ -63,6 +64,22 @@ Mainnet deployment:
 - **Spread-bounded oracle path.** Each cycle requires Jaine V3 `slot0()` on-chain plus Pyth Network `0G/USD` via Hermes. 2-of-2 quorum, spread-bounded, then keeper-pushed to `SentriPriceFeed`.
 - **Real assets, real venue.** The mainnet stack uses `USDC.E` and `W0G`, with execution routed through the live Jaine V3 `USDC.E/W0G` pool via a hardened single-pool adapter.
 - **Owner recourse always available.** `pause` to freeze activity reversibly, `emergencyWithdraw` to return all assets immediately, `emergencyDeleverageAndWithdraw(minBaseOut)` to attempt a base-asset exit with slippage protection.
+- **Gasless, seedless onboarding.** Email or social sign-in creates an embedded wallet and an ERC-4337 Safe smart account; the first vault is deployed and funded in a single paymaster-sponsored UserOp, with zero native OG required from the user. Feature-flagged, falls back to standard external-wallet connect.
+
+## Onboarding — gasless and seedless
+
+Most treasury tools assume the user already has a wallet, a seed phrase, and native gas. Sentri removes all three. The user signs in with email or a social login, an embedded wallet is created for them (no seed phrase to store), and a Safe smart account (ERC-4337, EntryPoint v0.7) is deployed on first use. Deploying a funded vault is a single sponsored `UserOperation`: the `approve` and `createVaultAndDeposit` calls are batched and the gas is paid by a `VerifyingPaymaster`, so the user needs **zero native OG** to start.
+
+| Step | Mechanism |
+|---|---|
+| Sign in | Email / social login (Privy), no seed phrase |
+| Wallet | Embedded signer → Safe smart account (ERC-4337, EntryPoint v0.7) |
+| Gas | Sponsored by a `VerifyingPaymaster` restricted to an on-chain target allowlist (factory + base token); batched calls are decoded so only Sentri actions are paid for |
+| First action | One batched UserOp: `approve` + `createVaultAndDeposit` → vault deployed and funded |
+
+Verified end-to-end on 0G mainnet: an email sign-in created a smart account that deployed and funded a vault in a single sponsored transaction, holding no native OG. The flow is feature-flagged behind `NEXT_PUBLIC_PRIVY_APP_ID`; without it the dashboard uses the standard external-wallet (RainbowKit / wagmi) connect.
+
+Why it matters: autonomous treasury management is the hardest use case to trust and to onboard. Making it the easiest to *start* — no seed, no gas, with every risk bound still enforced on-chain — is the point.
 
 ## 0G integration
 
