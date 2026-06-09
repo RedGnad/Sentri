@@ -19,8 +19,10 @@ import {
 } from "@/config/contracts";
 
 // Gasless path, verified end-to-end on 0G mainnet: email/social sign-in →
-// embedded wallet → Safe smart account → one sponsored UserOp that deploys a
-// vault and makes its first USDC.E deposit, the user paying no gas.
+// embedded wallet → Safe smart account → one UserOp (gas sponsored by the
+// paymaster) that deploys a vault and deposits the user's OWN USDC.E into it.
+// Only gas is sponsored — the USDC.E is pulled from the smart account via
+// transferFrom (after the approve below), never funded by Sentri.
 // Operational requirements for this to work: a reachable /paymaster signer, a
 // running bundler, and the 0G chain configured in the Privy dashboard (bundler +
 // paymaster URL, smart wallet type `safe`). The PAYMASTER_TARGET_ALLOWLIST on
