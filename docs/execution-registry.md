@@ -178,9 +178,19 @@ forge script script/DeployExecutionRegistry.s.sol --rpc-url og_mainnet
 forge script script/DeployExecutionRegistry.s.sol --rpc-url og_mainnet --broadcast
 ```
 
-| Network | ExecutionRegistry | AgentINFTSignerVerifier |
-| --- | --- | --- |
-| 0G mainnet (16661) | _to be filled after broadcast_ | _optional_ |
+### Live on 0G mainnet (16661)
+
+| Contract | Address |
+| --- | --- |
+| ExecutionRegistry | `0xded9a0E7385663bE530d7d849588aBe693cc4DD1` |
+| AgentINFTSignerVerifier | `0x89Ad6106b1BAe4FC68f007BF0963e436986b4C68` |
+| FullStackAttestedConsumer | `0x5A4CE05104e5562D340a9db843682654Ce321437` |
+
+First live full-stack receipt (consumer receipt #0): tx
+`0xec3e6042fc18d8813f2343bbdbd3e6a6c5bccaf318da633ef39b3cd54f7e49f3` —
+its `attestation` is the real 0G Storage root of the reasoning blob, and it
+verified a fresh Pyth price on-chain before recording. Record one yourself with
+`packages/sdk/src/record-fullstack-receipt.ts`.
 
 ## Files
 
@@ -195,3 +205,4 @@ forge script script/DeployExecutionRegistry.s.sol --rpc-url og_mainnet --broadca
 - `contracts/script/DeployPriceAttestedConsumer.s.sol` — price-attested example deploy
 - `contracts/script/DeployFullStackConsumer.s.sol` — full-stack example deploy
 - `packages/sdk/src/execution-registry.ts` — TypeScript read/verify/calldata client
+- `packages/sdk/src/record-fullstack-receipt.ts` — one-shot live full-stack receipt recorder
