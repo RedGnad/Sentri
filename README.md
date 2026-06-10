@@ -12,6 +12,8 @@ Private strategy, verifiable results. The agent proposes, the vault disposes.
 
 Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded vault from a public factory, with their own risk policy. A shared agent operates across every vault: it requests strategy through a verifiable 0G Sealed Inference TEE provider path, and the vault enforces every cryptographic and economic check on-chain before any swap can fire. The vault owner can pause, reconfigure, or hard-kill at any moment.
 
+> **🔌 Build on Sentri:** the verifiable execution layer is now a standalone primitive any 0G agent can plug into — one call gives every decision a tamper-proof, verifiable on-chain receipt. Live on mainnet. **→ [docs/execution-registry.md](./docs/execution-registry.md)**
+
 ```
 ┌──────────────┐   ┌───────────────┐   ┌───────────────┐   ┌───────────────┐   ┌──────────────┐
 │ Market data  │ → │ Sealed        │ → │ Per-vault     │ → │ On-chain      │ → │ 0G Storage   │
