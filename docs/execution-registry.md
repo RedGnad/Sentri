@@ -102,22 +102,40 @@ the signer, and compare to the stored receipt. Storage keeps only hashes.
   reenter or mutate state. A misconfigured verifier only blocks the consumer that
   set it.
 
-## Price-attested receipts (the differentiated composition)
+## The differentiated compositions
+
+The registry alone is a log; the value is in what you bind to a receipt. Two
+reference consumers show the climb:
+
+### Price-attested receipts
 
 `PriceAttestedConsumer` composes the registry with Sentri's hardened Pyth adapter
 (`PythPriceAdapter`): it pulls a fresh Pyth price, verifies it on-chain in the
 same transaction (freshness + bounded confidence), then records a receipt whose
 `payloadHash` commits to `abi.encode(price, publishTime, confBps)` and whose
-`attestation` is the Pyth feed id. The result is a tamper-evident proof that the
-agent executed **against a fresh, verified, bounded-confidence price** — not a
-stale or trusted feed. Pyth alone is a commodity and the registry alone is a log;
-the *composition* is the differentiator for verifiable finance.
+`attestation` is the Pyth feed id — tamper-evident proof the agent executed
+**against a fresh, verified, bounded-confidence price**.
+
+### Full-stack receipts (the headline)
+
+`FullStackAttestedConsumer` binds the **complete 0G verifiable-AI stack in one
+receipt**:
+
+1. **TEE signer** — recovered from the receipt signature,
+2. **private reasoning** — anchored by its **0G Storage root** (the `attestation`),
+3. **verified price** — fresh Pyth value checked on-chain (the `payload`),
+4. **timing** — cooldown enforced by the registry.
+
+The strategy reasoning stays private in 0G Storage; only its root is on-chain,
+next to the verified price it acted on. This makes *"verifiable results without
+revealing strategy"* literal — and uses Chain + Storage + TEE signer + Pyth in a
+single composable artifact.
 
 ```solidity
-(uint256 index, uint256 price) = consumer.executeWithVerifiedPrice{value: fee}(
-    intentHash, signedResponse, signature, pythUpdateData // Hermes VAAs
+(uint256 index, uint256 price) = consumer.executeFullStack{value: fee}(
+    intentHash, signedResponse, signature, pythUpdateData, storageRoot // 0G Storage root
 );
-// later: keccak256(abi.encode(price, publishTime, confBps)) == receipt.payloadHash
+// price tuple committed in payloadHash; reasoning anchored by attestation == storageRoot
 ```
 
 ## TypeScript client
@@ -170,8 +188,10 @@ forge script script/DeployExecutionRegistry.s.sol --rpc-url og_mainnet --broadca
 - `contracts/src/AgentINFTSignerVerifier.sol` — AgentINFT-backed verifier
 - `contracts/src/examples/ExampleRegistryConsumer.sol` — minimal reference integration
 - `contracts/src/examples/PriceAttestedConsumer.sol` — price-attested composition
+- `contracts/src/examples/FullStackAttestedConsumer.sol` — full-stack composition (headline)
 - `contracts/test/ExecutionRegistry.t.sol` — 20 tests
-- `contracts/test/PriceAttestedConsumer.t.sol` — 6 tests
+- `contracts/test/PriceAttestedConsumer.t.sol` — price-attested + full-stack tests
 - `contracts/script/DeployExecutionRegistry.s.sol` — registry deploy script
 - `contracts/script/DeployPriceAttestedConsumer.s.sol` — price-attested example deploy
+- `contracts/script/DeployFullStackConsumer.s.sol` — full-stack example deploy
 - `packages/sdk/src/execution-registry.ts` — TypeScript read/verify/calldata client
