@@ -63,16 +63,12 @@ Mainnet deployment:
 
 - **Multi-tenant factory.** Anyone deploys their own `TreasuryVault` clone (EIP-1167 minimal proxy) with their own risk policy. Per-vault registry, per-vault audit trail, per-vault kill controls.
 - **AI as defensive verifier.** A deterministic vol-adjusted regime-aware matrix computes the safe action envelope. The TeeML LLM may confirm the recommendation or pick a strictly more cautious one — never more aggressive. `validateAgainstRecommendation()` machine-checks this in the call path.
-- **Spread-bounded oracle path.** Each cycle requires Jaine V3 `slot0()` on-chain plus Pyth Network `0G/USD` via Hermes. 2-of-2 quorum, spread-bounded, then keeper-pushed to `SentriPriceFeed`.
+- **Spread-bounded oracle path.** Each cycle requires Jaine V3 `slot0()` on-chain plus Pyth Network `0G/USD` via Hermes. 2-of-2 quorum, spread-bounded, then keeper-pushed to `SentriPriceFeed`. V2 vaults : Pyth pull oracle verified on-chain in the same transaction as the swap
 - **Real assets, real venue.** The mainnet stack uses `USDC.E` and `W0G`, with execution routed through the live Jaine V3 `USDC.E/W0G` pool via a hardened single-pool adapter.
 - **Owner recourse always available.** `pause` to freeze activity reversibly, `emergencyWithdraw` to return all assets immediately, `emergencyDeleverageAndWithdraw(minBaseOut)` to attempt a base-asset exit with slippage protection.
 - **Gasless, seedless onboarding.** Email, Google, Discord or X sign-in creates an embedded wallet and an ERC-4337 Safe smart account; the first vault is deployed and its first deposit made in a single paymaster-sponsored UserOp, with zero native OG required. The paymaster sponsors gas only — the deposit is the user's own `USDC.E`, pulled from the smart account in the same tx. Feature-flagged, falls back to standard external-wallet connect.
 
 ## Onboarding — gasless and seedless
-
-Most treasury tools assume the user already has a wallet, a seed phrase, and native gas. Sentri removes the wallet, the seed, and the gas barrier. The user signs in with email, Google, Discord, or X, an embedded wallet is created for them (no seed phrase to store), and a Safe smart account (ERC-4337, EntryPoint v0.7) is deployed on first use. Creating the first vault is a single `UserOperation` that batches the ERC-20 `approve` and the factory `createVaultAndDeposit`; a `VerifyingPaymaster` pays the **gas**, so the user signs once and needs **zero native OG**.
-
-To be exact about what is and isn't sponsored: the paymaster sponsors **gas only**. The deposit itself is the user's own `USDC.E`, pulled from their smart account in the same transaction — Sentri does not fund the treasury, it removes the gas barrier to opening and funding one. A user holding `USDC.E` but no `OG` can still deploy a vault and make its first deposit in one click.
 
 | Step | Mechanism |
 |---|---|
