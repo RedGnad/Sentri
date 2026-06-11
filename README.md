@@ -117,7 +117,7 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 `USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on the current demo execution: `0x4386909Ef321651ab78298Ae454A05FF5d354118`.
 
-### Trustless Oracle Vault: Advanced Tier
+### Trustless Oracle Vault: Advanced Tier V2
 
 An advanced execution tier that replaces the keeper-pushed price step with a **Pyth pull oracle verified on-chain in the same transaction as the swap**. **Live on 0G mainnet with a verified `executeStrategyWithPyth` tx** (see canonical execution below). **Opt-in per vault**, the Standard keeper path remains the default for vaults too small to amortize the Pyth update fee.
 
