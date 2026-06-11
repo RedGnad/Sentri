@@ -137,7 +137,7 @@ For one-page protocol references see [`docs/oracle-proof.md`](./docs/oracle-proo
 
 **Canonical execution (verified on mainnet).** `executeStrategyWithPyth` tx [`0x45ab1a82…7317fa`](https://chainscan.0g.ai/tx/0x45ab1a82282d72850c11e16f19e912e60ba89d491d42d5f8010b0bf0df7317fa) — Rebalance `0.3186 USDC.E → 0.7468 W0G`, Pyth `0G/USD` verified on-chain in the same tx (price 0.42406745, 22 bps conf, 9 s fresh), `executionLogCount` 0 → 1.
 
-**Exact scope (no overclaiming).** Pyth price is pull-verified on-chain per execution. The TEE binding is signer-based (ECDSA recovery against the AgentINFT-bound signer); the contract does not parse the full TEE attestation report, and there is **no on-chain Jaine/Pyth cross-check yet**.
+**Exact scope.** Pyth price is pull-verified on-chain per execution. The TEE binding is signer-based (ECDSA recovery against the AgentINFT-bound signer); the contract does not parse the full TEE attestation report, and there is **no on-chain Jaine/Pyth cross-check yet**.
 
 Verify it yourself (read-only, no key) from a fresh clone:
 
