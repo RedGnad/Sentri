@@ -29,7 +29,7 @@ Sentri is a multi-tenant treasury protocol. Anyone can deploy their own bounded 
 
 Demo video: https://www.youtube.com/watch?v=8eVnhSPZd_4
 
-Demo live: https://sentri-fi.xyz
+Live app: https://sentri-fi.xyz
 
 
 Mainnet deployment:
@@ -267,7 +267,7 @@ The thesis: the treasury problem is not about clever trading, it is about **boun
 
 ---
 
-Live demo : https://sentri-fi.xyz/
+Live app : https://sentri-fi.xyz/
 
 ## Contributing
 
