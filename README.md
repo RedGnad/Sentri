@@ -62,11 +62,11 @@ Mainnet deployment:
 ## Features
 
 - **Multi-tenant factory.** Anyone deploys their own `TreasuryVault` clone (EIP-1167 minimal proxy) with their own risk policy. Per-vault registry, per-vault audit trail, per-vault kill controls.
-- **AI as defensive verifier.** A deterministic vol-adjusted regime-aware matrix computes the safe action envelope. The TeeML LLM may confirm the recommendation or pick a strictly more cautious one — never more aggressive. `validateAgainstRecommendation()` machine-checks this in the call path.
+- **AI as defensive verifier.** A deterministic vol-adjusted regime-aware matrix computes the safe action envelope. The TeeML LLM may confirm the recommendation or pick a strictly more cautious one, never more aggressive. `validateAgainstRecommendation()` machine-checks this in the call path.
 - **Spread-bounded oracle path.** Each cycle requires Jaine V3 `slot0()` on-chain plus Pyth Network `0G/USD` via Hermes. 2-of-2 quorum, spread-bounded, then keeper-pushed to `SentriPriceFeed`. V2 vaults : Pyth pull oracle verified on-chain in the same transaction as the swap
 - **Real assets, real venue.** The mainnet stack uses `USDC.E` and `W0G`, with execution routed through the live Jaine V3 `USDC.E/W0G` pool via a hardened single-pool adapter.
 - **Owner recourse always available.** `pause` to freeze activity reversibly, `emergencyWithdraw` to return all assets immediately, `emergencyDeleverageAndWithdraw(minBaseOut)` to attempt a base-asset exit with slippage protection.
-- **Gasless, seedless onboarding.** Email, Google, Discord or X sign-in creates an embedded wallet and an ERC-4337 Safe smart account; the first vault is deployed and its first deposit made in a single paymaster-sponsored UserOp, with zero native OG required. The paymaster sponsors gas only — the deposit is the user's own `USDC.E`, pulled from the smart account in the same tx. Feature-flagged, falls back to standard external-wallet connect.
+- **Gasless, seedless onboarding.** Email, Google, Discord or X sign-in creates an embedded wallet and an ERC-4337 Safe smart account; the first vault is deployed and its first deposit made in a single paymaster-sponsored UserOp, with zero native OG required. The paymaster sponsors gas only, the deposit is the user's own `USDC.E`, pulled from the smart account in the same tx. Feature-flagged, falls back to standard external-wallet connect.
 
 ## 0G integration
 
