@@ -278,10 +278,6 @@ The thesis: the treasury problem is not about clever trading, it is about **boun
 
 ---
 
-## Submission
-
-Sentri was submitted to the [0G APAC Hackathon], Track 2: Agentic Trading Arena (Verifiable Finance). The submission summary lives in [`SUBMISSION.md`](./SUBMISSION.md); the demo video walkthrough is linked from the HackQuest entry.
-
 Live demo : https://sentri-web-dusky.vercel.app/
 
 ## Contributing
