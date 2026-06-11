@@ -79,7 +79,7 @@ Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
 | 0G TEE / Private Sandbox | Strategy reasoning runs inside the sealed provider path; `chatID`, signed payload, and recovered signer are propagated to the audit trail for verifiable review. |
 | 0G Storage Log Layer (blob) | Immutable canonical audit record uploaded per execution; root hash and optional storage tx metadata are mirrored into the per-vault KV/cache index for tamper-evidence. |
 | 0G Storage KV | Fast per-vault audit index and portfolio state, namespaced by vault address; used as recovery layer after agent restart. |
-| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. The AgentINFT is a vault-execution gating token — it does not implement `iTransferFrom` by design. The agent's cryptographic identity binds to a registered signer, not to a marketplace transfer flow; `authorizeUsage`, `rotateSigner`, and `isActiveAgentWithSigner` are the operative ERC-7857 surfaces. |
+| Agent INFT | ERC-7857-aligned Agentic ID execution profile: gates `executeStrategy` on every vault; owner-revocable kill-switch across all vaults at once. The AgentINFT is a vault-execution gating token, it does not implement `iTransferFrom` by design. The agent's cryptographic identity binds to a registered signer, not to a marketplace transfer flow; `authorizeUsage`, `rotateSigner`, and `isActiveAgentWithSigner` are the operative ERC-7857 surfaces. |
 | 0G ecosystem venue: Jaine | Real `USDC.E/W0G` execution through `JaineV3PoolAdapter`, locked to the immutable Jaine pool address. |
 
 
