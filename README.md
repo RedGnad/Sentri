@@ -78,10 +78,6 @@ Mainnet deployment:
 | Funds | The user's own `USDC.E`, pulled from their smart account — **not** sponsored |
 | First action | One batched UserOp: `approve` + `createVaultAndDeposit` → vault deployed, first deposit made, no gas paid by the user |
 
-Verified end-to-end on 0G mainnet: a sign-in created a smart account that deployed a vault and made its first `USDC.E` deposit in a single transaction while holding zero native OG. The flow is feature-flagged behind `NEXT_PUBLIC_PRIVY_APP_ID`; without it the dashboard uses the standard external-wallet (RainbowKit / wagmi) connect.
-
-Why it matters: autonomous treasury management is the hardest use case to trust and to onboard. Making it the easiest to *start* — no seed, no gas, with every risk bound still enforced on-chain — is the point.
-
 ## 0G integration
 
 Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
