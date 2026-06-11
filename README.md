@@ -249,7 +249,6 @@ This is a forward-looking section.
 
 - **Extend the standard keeper runtime to auto-cycle Advanced vaults** — each Advanced execution is currently triggered on-demand per vault. Surface per-vault tier selection in the deploy UI. (Pyth pull integration itself is already live on mainnet for the Advanced tier — see "Trustless Oracle Vault — Advanced Tier" above; canonical tx `0x45ab…7317fa`.)
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
-- Canonical audit recovery from 0G Storage Log/blob + KV index is live: pre-execution blobs are uploaded before each swap, root hashes are bound to the on-chain intent hash, and `audit-recovery.ts` implements a three-tier fallback (blob → KV index → on-chain entry) that survives node and KV outages. Next hardening: full generic offline verification CLI and restart-proof indexing without requiring demo recovery records.
 - Third-party security audit.
 
 **Future productive treasury extensions (months)**
