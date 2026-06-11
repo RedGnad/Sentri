@@ -278,7 +278,7 @@ The thesis: the treasury problem is not about clever trading, it is about **boun
 
 ---
 
-Live demo : https://sentri-web-dusky.vercel.app/
+Live demo : https://sentri-fi.xyz/
 
 ## Contributing
 
