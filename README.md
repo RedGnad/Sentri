@@ -68,16 +68,6 @@ Mainnet deployment:
 - **Owner recourse always available.** `pause` to freeze activity reversibly, `emergencyWithdraw` to return all assets immediately, `emergencyDeleverageAndWithdraw(minBaseOut)` to attempt a base-asset exit with slippage protection.
 - **Gasless, seedless onboarding.** Email, Google, Discord or X sign-in creates an embedded wallet and an ERC-4337 Safe smart account; the first vault is deployed and its first deposit made in a single paymaster-sponsored UserOp, with zero native OG required. The paymaster sponsors gas only — the deposit is the user's own `USDC.E`, pulled from the smart account in the same tx. Feature-flagged, falls back to standard external-wallet connect.
 
-## Onboarding — gasless and seedless
-
-| Step | Mechanism |
-|---|---|
-| Sign in | Email, Google, Discord, or X (Privy), no seed phrase |
-| Wallet | Embedded signer → Safe smart account (ERC-4337, EntryPoint v0.7) |
-| Gas | Sponsored by a `VerifyingPaymaster` restricted to an on-chain target allowlist (factory + base token); batched calls are decoded so only Sentri actions are paid for |
-| Funds | The user's own `USDC.E`, pulled from their smart account — **not** sponsored |
-| First action | One batched UserOp: `approve` + `createVaultAndDeposit` → vault deployed, first deposit made, no gas paid by the user |
-
 ## 0G integration
 
 Sentri uses 5 highlighted 0G surfaces + 1 real 0G mainnet ecosystem venue.
