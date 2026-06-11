@@ -245,13 +245,13 @@ For the complete enumeration, see [`docs/architecture.md#trust-boundary`](./docs
 
 This is a forward-looking section.
 
-**Next hardening (weeks)**
+**Next goals**
 
 - **Extend the standard keeper runtime to auto-cycle Advanced vaults** — each Advanced execution is currently triggered on-demand per vault. Surface per-vault tier selection in the deploy UI. (Pyth pull integration itself is already live on mainnet for the Advanced tier — see "Trustless Oracle Vault — Advanced Tier" above; canonical tx `0x45ab…7317fa`.)
 - Jaine TWAP cross-check on `slot0()` once `observe()` cardinality permits a 30-minute window — flash-trade-resistant manipulation guard.
 - Third-party security audit.
 
-**Future productive treasury extensions (months)**
+**Future productive treasury extensions**
 
 - Yield-bearing base asset (`sUSDS` / `sUSDe` / `sFRAX` / any 4626-compatible) — idle capital earns the staking rate.
 - Multi-asset risk side: vol-weighted basket (W0G + ETH + tokenized RWAs) instead of one risk asset per vault.
