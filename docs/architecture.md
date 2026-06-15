@@ -148,8 +148,6 @@ Both tiers share the identical security envelope (ownership, TEE signer, replay/
 
 ## Trust boundary
 
-Sentri does not oversell what's verified on-chain.
-
 ### What the chain verifies (on every `executeStrategy`)
 
 - **Caller is the registered agent** — `msg.sender == agent` (set at vault creation, owner-mutable).
@@ -164,7 +162,7 @@ Sentri does not oversell what's verified on-chain.
 - **Vault is not paused or killed.**
 - **Re-entrancy guarded.**
 
-### What the chain does NOT verify (and why this is honest)
+### What the chain does NOT verify
 
 - **The full TEE attestation report is NOT cryptographically verified on-chain.** The agent verifies the 0G response off-chain with `broker.inference.processResponse(provider, chatID, content)` and the vault verifies the TEE signer signature over the provider signed chat payload on-chain. The on-chain check proves the payload came from the INFT-bound TEE signer; the broader provider attestation and service verification remain off-chain and auditable.
 - **The contract does not parse the model JSON response.** The vault verifies the TEE signer, deadline, and single-use hashes on-chain, then stores the intent/response hashes for audit. The dashboard's audit page binds the verified model response, signed chat payload, reconstructed execution intent, transaction hash, and 0G Storage proof for human verification.
