@@ -1,9 +1,10 @@
 import { type Abi } from "viem";
 
-// Replay-protected multi-tenant deployment on Galileo testnet (May 2026).
+// Replay-protected multi-tenant deployment. The live app runs on 0G mainnet
+// (chain 16661); the Galileo testnet stack is kept for local/dev only.
 // VaultFactory is the public entry point; users create their own vaults via it.
-// Set NEXT_PUBLIC_SENTRI_NETWORK=mainnet and override addresses after the
-// required 0G mainnet deployment for HackQuest review.
+// Set NEXT_PUBLIC_SENTRI_NETWORK=mainnet (default for the live app) to select
+// the mainnet stack, or override any address via NEXT_PUBLIC_*_ADDRESS.
 
 export const SENTRI_NETWORK = process.env.NEXT_PUBLIC_SENTRI_NETWORK ?? "galileo";
 export const IS_MAINNET = SENTRI_NETWORK === "mainnet";
@@ -21,15 +22,20 @@ const GALILEO_CONTRACTS = {
 } as const;
 
 const MAINNET_CONTRACTS = {
-  // VaultFactory v2 — TreasuryVault impl with EmergencyDeleverage drawdown fix
-  vaultFactory: "0x8e129b97df1b513099329aC50B4774f8BeE1d538",
-  agentINFT: "0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951",
-  swapRouter: "0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4",
-  priceFeed: "0x1289638A90da7F24DB069168648819607A7377e6",
-  baseToken: "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E",
-  riskToken: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c",
-  demoVault: "0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710",
+  // VaultFactory v3 — TreasuryVault impl with owner-authorized multi-operator
+  // (decentralized operator: addOperator/removeOperator + onlyOperator).
+  vaultFactory: "0xa29E41e8f674825d2c3170B5b5F0D369D06c40c1",
+  agentINFT: "0x3520e212B8A7920ac98291B9E6230916305A1a84",
+  swapRouter: "0xEe30ce3D1d2E9E4781e563393EEfcC5d0F26e4FB", // JaineV3PoolAdapter (USDC.E/W0G)
+  priceFeed: "0x14C7bb7b6edCB5c179ce79B3bfd3158Fd5e8AD6d",
+  baseToken: "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E", // USDC.E (unchanged)
+  riskToken: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c", // W0G (unchanged)
+  demoVault: "0x1fA2Cba800BeDA82C8DE13cC8a6552ed450982e9",
 } as const;
+
+// Previous v2 standard factory (pre multi-operator) — superseded by the v3
+// factory above. Vaults created under it keep the old impl (no migration).
+export const LEGACY_V2_STANDARD_VAULT_FACTORY_ADDRESS = "0x8e129b97df1b513099329aC50B4774f8BeE1d538";
 
 // Previous standard factory — kept for legacy vault aggregation in live-state.ts
 export const LEGACY_VAULT_FACTORY_ADDRESS = "0x9EE0c94c87FaDeB6dFb619B2C429eC05bc623cc7";
@@ -391,6 +397,9 @@ export const TREASURY_VAULT_ABI = [
     stateMutability: "nonpayable",
   },
   { type: "function", name: "setAgent", inputs: [{ name: "_agent", type: "address" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "addOperator", inputs: [{ name: "operator", type: "address" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "removeOperator", inputs: [{ name: "operator", type: "address" }], outputs: [], stateMutability: "nonpayable" },
+  { type: "function", name: "authorizedOperators", inputs: [{ name: "operator", type: "address" }], outputs: [{ type: "bool" }], stateMutability: "view" },
   { type: "function", name: "vaultBalance", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "riskBalance", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },
   { type: "function", name: "totalValue", inputs: [], outputs: [{ type: "uint256" }], stateMutability: "view" },

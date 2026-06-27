@@ -5,7 +5,7 @@
 [![Solidity](https://img.shields.io/badge/solidity-0.8.24-363636.svg)](./contracts/foundry.toml)
 [![Node](https://img.shields.io/badge/node-%E2%89%A520-43853d.svg)](./package.json)
 [![Tests](https://img.shields.io/badge/forge%20tests-130%20passing-brightgreen.svg)](./contracts/test)
-[![0G Mainnet](https://img.shields.io/badge/0G-mainnet%2016661-FFB300.svg)](https://chainscan.0g.ai/address/0x8e129b97df1b513099329aC50B4774f8BeE1d538)
+[![0G Mainnet](https://img.shields.io/badge/0G-mainnet%2016661-FFB300.svg)](https://chainscan.0g.ai/address/0xa29E41e8f674825d2c3170B5b5F0D369D06c40c1)
 
 **Verified AI treasury execution with hard on-chain limits, for stablecoin reserves on 0G.**
 Private strategy, verifiable results. The agent proposes, the vault disposes.
@@ -32,19 +32,19 @@ Demo video: https://www.youtube.com/watch?v=8eVnhSPZd_4
 Live app: https://sentri-fi.xyz
 
 
-Mainnet deployment:
+Mainnet deployment (v3 — owner-authorized multi-operator):
 
-• VaultFactory: 0x8e129b97df1b513099329aC50B4774f8BeE1d538
+• VaultFactory: 0xa29E41e8f674825d2c3170B5b5F0D369D06c40c1
 
-• TreasuryVault impl: 0xe8a843715c776A9d44943DF9CD246C6df1610437
+• TreasuryVault impl: 0x33B5f7d997E426483D7f9A998efedda76540595C
 
-• AgentINFT: 0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951
+• AgentINFT: 0x3520e212B8A7920ac98291B9E6230916305A1a84
 
-• JaineV3PoolAdapter: 0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4
+• JaineV3PoolAdapter: 0xEe30ce3D1d2E9E4781e563393EEfcC5d0F26e4FB
 
-• SentriPriceFeed: 0x1289638A90da7F24DB069168648819607A7377e6
+• SentriPriceFeed: 0x14C7bb7b6edCB5c179ce79B3bfd3158Fd5e8AD6d
 
-• Demo vault (Aggressive): 0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710
+• Demo vault (Balanced): 0x1fA2Cba800BeDA82C8DE13cC8a6552ed450982e9
 
 
 | Question | Answer |
@@ -100,22 +100,31 @@ Custom policies are validated on-chain at vault creation; out-of-range values re
 
 ## Deployed contracts
 
-### 0G Mainnet official v2 stack (chain `16661`)
+### 0G Mainnet official v3 stack (chain `16661`)
+
+Decentralized operator: the vault owner authorizes one or more operators
+(`addOperator` / `removeOperator`, `onlyOperator`), removing the single-operator
+point of failure. INFT gating and single-use intent/response + shared cooldown
+are unchanged, so extra operators add no risk.
 
 | Contract | Address |
 |---|---|
-| `VaultFactory` (entry point) | [`0x8e129b97df1b513099329aC50B4774f8BeE1d538`](https://chainscan.0g.ai/address/0x8e129b97df1b513099329aC50B4774f8BeE1d538) |
-| `TreasuryVault` impl | [`0xe8a843715c776A9d44943DF9CD246C6df1610437`](https://chainscan.0g.ai/address/0xe8a843715c776A9d44943DF9CD246C6df1610437) |
-| `AgentINFT` | [`0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951`](https://chainscan.0g.ai/address/0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951) |
-| `JaineV3PoolAdapter` | [`0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4`](https://chainscan.0g.ai/address/0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4) |
+| `VaultFactory` (entry point) | [`0xa29E41e8f674825d2c3170B5b5F0D369D06c40c1`](https://chainscan.0g.ai/address/0xa29E41e8f674825d2c3170B5b5F0D369D06c40c1) |
+| `TreasuryVault` impl | [`0x33B5f7d997E426483D7f9A998efedda76540595C`](https://chainscan.0g.ai/address/0x33B5f7d997E426483D7f9A998efedda76540595C) |
+| `AgentINFT` | [`0x3520e212B8A7920ac98291B9E6230916305A1a84`](https://chainscan.0g.ai/address/0x3520e212B8A7920ac98291B9E6230916305A1a84) |
+| `JaineV3PoolAdapter` | [`0xEe30ce3D1d2E9E4781e563393EEfcC5d0F26e4FB`](https://chainscan.0g.ai/address/0xEe30ce3D1d2E9E4781e563393EEfcC5d0F26e4FB) |
 | Jaine `USDC.E/W0G` pool, 0.3% | [`0xa9e824Eddb9677fB2189AB9c439238A83695C091`](https://chainscan.0g.ai/address/0xa9e824Eddb9677fB2189AB9c439238A83695C091) |
-| `SentriPriceFeed` | [`0x1289638A90da7F24DB069168648819607A7377e6`](https://chainscan.0g.ai/address/0x1289638A90da7F24DB069168648819607A7377e6) |
+| `SentriPriceFeed` | [`0x14C7bb7b6edCB5c179ce79B3bfd3158Fd5e8AD6d`](https://chainscan.0g.ai/address/0x14C7bb7b6edCB5c179ce79B3bfd3158Fd5e8AD6d) |
 | `USDC.E` | [`0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E`](https://chainscan.0g.ai/address/0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E) |
 | `W0G` | [`0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c`](https://chainscan.0g.ai/address/0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c) |
-| Demo vault (Aggressive preset) | [`0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710`](https://chainscan.0g.ai/address/0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710) |
-| Primary v2 execution tx — `EmergencyDeleverage` (`W0G → USDC.E`) | [`0x4b44c506…9ac4`](https://chainscan.0g.ai/tx/0x4b44c5063ca3b7f618a6dab5c20e840cb7d605e761162b6fbe847995df3d9ac4) |
+| Demo vault (Balanced preset) | [`0x1fA2Cba800BeDA82C8DE13cC8a6552ed450982e9`](https://chainscan.0g.ai/address/0x1fA2Cba800BeDA82C8DE13cC8a6552ed450982e9) |
 
-`USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. Recovered TEE signer on the current demo execution: `0x4386909Ef321651ab78298Ae454A05FF5d354118`.
+All five v3 contracts are source-verified (Sourcify `exact_match`). The previous
+v2 factory `0x8e129b97df1b513099329aC50B4774f8BeE1d538` is superseded; its clones
+keep the old single-operator impl (no migration).
+
+`USDC.E` is bridged USDC on 0G mainnet, not native Circle USDC. TEE signer bound
+to the v3 AgentINFT: `0x4386909Ef321651ab78298Ae454A05FF5d354118`.
 
 ### Trustless Oracle Vault: Advanced Tier V2
 

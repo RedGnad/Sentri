@@ -8,10 +8,13 @@ Autonomous stablecoin treasury agent. Plans privately in TEE (Sealed Inference),
 **Pitch**: "Your AI treasurer — private strategy, verifiable results."
 
 ## Chain
-- 0G Galileo testnet — EVM, chain ID 16602
-- RPC: https://evmrpc-testnet.0g.ai
-- Explorer: https://chainscan-galileo.0g.ai
-- Faucet: 0.1 OG/jour/wallet
+- **Live: 0G mainnet — EVM, chain ID 16661** (l'app tourne en prod ici)
+  - RPC: https://evmrpc.0g.ai
+  - Explorer: https://chainscan.0g.ai
+- Galileo testnet (dev/rehearsal uniquement) — chain ID 16602
+  - RPC: https://evmrpc-testnet.0g.ai
+  - Explorer: https://chainscan-galileo.0g.ai
+  - Faucet: 0.1 OG/jour/wallet
 
 ## Stack
 - Contracts: Solidity 0.8.24, Foundry, OpenZeppelin v5
