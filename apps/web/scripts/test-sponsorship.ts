@@ -22,7 +22,7 @@ const RPC = process.env.RPC ?? "https://evmrpc.0g.ai";
 const BUNDLER = process.env.BUNDLER_URL ?? "https://sentri-bundler.onrender.com/rpc";
 const PAYMASTER = process.env.PAYMASTER_URL ?? "https://sentri-agent.onrender.com/paymaster";
 const USDCE = "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E" as const;
-const FACTORY = "0x8e129b97df1b513099329aC50B4774f8BeE1d538" as const; // allowlisted target
+const FACTORY = "0xa29E41e8f674825d2c3170B5b5F0D369D06c40c1" as const; // v3 factory (allowlisted target)
 
 let key = process.env.PRIVATE_KEY_SEND ?? "";
 if (key && !key.startsWith("0x")) key = "0x" + key;

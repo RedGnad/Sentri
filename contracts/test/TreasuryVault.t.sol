@@ -469,7 +469,163 @@ contract TreasuryVaultTest is Test {
         _execute(vault, TreasuryVault.Action.Rebalance, 100e6, "rebalance-breached");
     }
 
+    // ── Decentralized operator (multi-operator) ──────────────────────────
+
+    function test_addOperator_onlyOwner() public {
+        address op2 = makeAddr("operator2");
+        vm.prank(alice);
+        vm.expectRevert();
+        vault.addOperator(op2);
+    }
+
+    function test_removeOperator_onlyOwner() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        vault.removeOperator(agent);
+    }
+
+    function test_addOperator_setsAuthorization() public {
+        address op2 = makeAddr("operator2");
+        vault.addOperator(op2);
+        assertTrue(vault.authorizedOperators(op2));
+    }
+
+    function test_removeOperator_clearsAuthorization() public {
+        vault.removeOperator(agent);
+        assertFalse(vault.authorizedOperators(agent));
+    }
+
+    // onlyOperator: passes with all 3 conditions, reverts when any one is missing.
+
+    function test_onlyOperator_passesWithAllThreeConditions() public {
+        _depositAs(alice, 10_000e6);
+        address op2 = makeAddr("operator2");
+        _provisionOperator(op2);
+        vm.prank(op2);
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "op2-exec");
+        assertEq(vault.executionLogCount(), 1);
+    }
+
+    function test_onlyOperator_reverts_whenNotInAllowList() public {
+        _depositAs(alice, 10_000e6);
+        address op2 = makeAddr("operator2");
+        // Active INFT + authorized for vault, but NOT added to the allow-list.
+        uint256 tid = agentNFT.mint(op2, keccak256("enclave:op2"), keccak256("att-op2"), "0G Sealed Inference", teeSigner, bytes32(0));
+        agentNFT.authorizeUsageAdmin(tid, address(vault));
+        vm.prank(op2);
+        vm.expectRevert(TreasuryVault.NotOperator.selector);
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "no-allow");
+    }
+
+    function test_onlyOperator_reverts_whenInftRevoked() public {
+        _depositAs(alice, 10_000e6);
+        address op2 = makeAddr("operator2");
+        uint256 tid = _provisionOperator(op2);
+        agentNFT.revoke(tid);
+        vm.prank(op2);
+        vm.expectRevert(TreasuryVault.AgentNotVerified.selector);
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "revoked");
+    }
+
+    function test_onlyOperator_reverts_whenNotAuthorizedForVault() public {
+        _depositAs(alice, 10_000e6);
+        address op2 = makeAddr("operator2");
+        // In allow-list + active INFT, but INFT not authorized for THIS vault.
+        agentNFT.mint(op2, keccak256("enclave:op2"), keccak256("att-op2"), "0G Sealed Inference", teeSigner, bytes32(0));
+        vault.addOperator(op2);
+        vm.prank(op2);
+        vm.expectRevert(TreasuryVault.AgentNotAuthorizedForVault.selector);
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "no-vault-auth");
+    }
+
+    // Two operators acting on the same vault — single-use hashes + shared cooldown.
+
+    function test_twoOperators_distinctIntents_bothExecute() public {
+        _depositAs(alice, 10_000e6);
+        address op2 = makeAddr("operator2");
+        _provisionOperator(op2);
+
+        vm.prank(agent);
+        _executeWithIntent(vault, TreasuryVault.Action.Rebalance, 500e6, "op1", keccak256("intent-1"), block.timestamp + 300);
+
+        vm.warp(block.timestamp + 61);
+        vm.prank(op2);
+        _executeWithIntent(vault, TreasuryVault.Action.YieldFarm, 500e6, "op2", keccak256("intent-2"), block.timestamp + 300);
+
+        assertEq(vault.executionLogCount(), 2);
+    }
+
+    function test_twoOperators_sameIntent_secondReverts() public {
+        _depositAs(alice, 10_000e6);
+        address op2 = makeAddr("operator2");
+        _provisionOperator(op2);
+
+        bytes32 shared = keccak256("shared-intent");
+        vm.prank(agent);
+        _executeWithIntent(vault, TreasuryVault.Action.Rebalance, 500e6, "op1", shared, block.timestamp + 300);
+
+        vm.warp(block.timestamp + 61);
+        vm.prank(op2);
+        vm.expectRevert(TreasuryVault.IntentAlreadyUsed.selector);
+        _executeWithIntent(vault, TreasuryVault.Action.YieldFarm, 500e6, "op2", shared, block.timestamp + 300);
+    }
+
+    function test_cooldown_sharedAcrossOperators() public {
+        _depositAs(alice, 10_000e6);
+        address op2 = makeAddr("operator2");
+        _provisionOperator(op2);
+
+        vm.prank(agent);
+        _executeWithIntent(vault, TreasuryVault.Action.Rebalance, 500e6, "op1", keccak256("c1"), block.timestamp + 300);
+
+        // No warp: op2 hits the SAME cooldown window set by op1.
+        vm.prank(op2);
+        vm.expectRevert(TreasuryVault.CooldownNotElapsed.selector);
+        _executeWithIntent(vault, TreasuryVault.Action.YieldFarm, 500e6, "op2", keccak256("c2"), block.timestamp + 300);
+    }
+
+    // Backward-compat: a vault that never adds operators behaves as before.
+
+    function test_backwardCompat_initAgentIsOperator() public view {
+        assertTrue(vault.authorizedOperators(agent));
+    }
+
+    function test_backwardCompat_nonOperatorCannotExecute() public {
+        _depositAs(alice, 10_000e6);
+        address stranger = makeAddr("stranger");
+        // Even with a valid, vault-authorized INFT, no owner consent → NotOperator.
+        uint256 tid = agentNFT.mint(stranger, keccak256("enclave:stranger"), keccak256("att-s"), "0G Sealed Inference", teeSigner, bytes32(0));
+        agentNFT.authorizeUsageAdmin(tid, address(vault));
+        vm.prank(stranger);
+        vm.expectRevert(TreasuryVault.NotOperator.selector);
+        _execute(vault, TreasuryVault.Action.Rebalance, 500e6, "stranger");
+    }
+
+    function test_setAgent_swapsOperatorAuthorization() public {
+        address newAgent = makeAddr("newAgent");
+        vault.setAgent(newAgent);
+        assertFalse(vault.authorizedOperators(agent));
+        assertTrue(vault.authorizedOperators(newAgent));
+        assertEq(vault.agent(), newAgent);
+    }
+
+    function test_setAgent_keepsExtraOperators() public {
+        address op2 = makeAddr("operator2");
+        vault.addOperator(op2);
+        vault.setAgent(makeAddr("newAgent"));
+        assertTrue(vault.authorizedOperators(op2)); // unrelated operator untouched
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    /// @dev Fully provision an operator: mint an INFT bound to the shared
+    ///      teeSigner (so the existing signing helper is valid), authorize it
+    ///      for the vault, and add it to the owner-curated allow-list.
+    function _provisionOperator(address op) internal returns (uint256 tokenId) {
+        tokenId = agentNFT.mint(op, keccak256(abi.encodePacked("enclave:", op)), keccak256("att-op"), "0G Sealed Inference", teeSigner, bytes32(0));
+        agentNFT.authorizeUsageAdmin(tokenId, address(vault));
+        vault.addOperator(op);
+    }
 
     function _depositAs(address user, uint256 amount) internal {
         vm.startPrank(user);

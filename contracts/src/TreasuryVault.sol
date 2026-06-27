@@ -98,6 +98,16 @@ contract TreasuryVault is
     mapping(bytes32 => bool) public usedIntentHashes;
     mapping(bytes32 => bool) public usedResponseHashes;
 
+    /// @notice Owner-curated set of addresses allowed to call executeStrategy.
+    ///         Decouples "who operates" from the single `agent` field so the
+    ///         owner can authorize multiple operators, removing the single
+    ///         point of failure (roadmap: Operator INFTs). Seeded at init with
+    ///         the `agent` address, so a single-operator vault behaves exactly
+    ///         as before. Adding operators does not weaken safety: intentHash /
+    ///         responseHash are single-use and the cooldown is shared, so two
+    ///         operators racing the same intent simply revert the second tx.
+    mapping(address => bool) public authorizedOperators;
+
     // ── Events ───────────────────────────────────────────────────────────
 
     event Deposited(address indexed from, uint256 amount);
@@ -116,11 +126,14 @@ contract TreasuryVault is
     );
     event PolicyUpdated(Policy newPolicy);
     event AgentUpdated(address newAgent);
+    event OperatorAdded(address indexed operator);
+    event OperatorRemoved(address indexed operator);
     event EmergencyKillSwitchActivated(address indexed by, uint256 baseWithdrawn, uint256 riskWithdrawn);
 
     // ── Errors ───────────────────────────────────────────────────────────
 
     error NotAgent();
+    error NotOperator();
     error AgentNotVerified();
     error VaultKilled();
     error ZeroAmount();
@@ -140,8 +153,12 @@ contract TreasuryVault is
 
     // ── Modifiers ────────────────────────────────────────────────────────
 
-    modifier onlyAgent() {
-        if (msg.sender != agent) revert NotAgent();
+    /// @dev An operator may call executeStrategy iff the owner has authorized
+    ///      it AND it holds an active AgentINFT bound to this vault. The INFT
+    ///      gating is preserved verbatim from the previous onlyAgent check — we
+    ///      only swap `msg.sender == agent` for the owner-curated allow-list.
+    modifier onlyOperator() {
+        if (!authorizedOperators[msg.sender]) revert NotOperator();
         if (!agentNFT.isActiveAgent(msg.sender)) revert AgentNotVerified();
         if (!agentNFT.isAuthorizedForVault(msg.sender, address(this))) revert AgentNotAuthorizedForVault();
         _;
@@ -191,8 +208,12 @@ contract TreasuryVault is
         router = SentriSwapRouter(p.router);
         priceFeed = SentriPriceFeed(p.priceFeed);
         agent = p.agent;
+        // Backward-compat: seed the allow-list with the init agent so a
+        // single-operator vault behaves identically to the pre-operator design.
+        authorizedOperators[p.agent] = true;
         factory = msg.sender;
         policy = p.policy;
+        emit OperatorAdded(p.agent);
     }
 
     // ── Deposit / Withdraw ───────────────────────────────────────────────
@@ -256,7 +277,7 @@ contract TreasuryVault is
         bytes calldata teeSignature,
         bytes32 teeAttestation,
         uint256 deadline
-    ) external onlyAgent whenNotPaused notKilled nonReentrant {
+    ) external onlyOperator whenNotPaused notKilled nonReentrant {
         if (amountIn == 0) revert ZeroAmount();
         if (block.timestamp > deadline) revert ExpiredIntent();
         if (usedIntentHashes[intentHash]) revert IntentAlreadyUsed();
@@ -395,8 +416,38 @@ contract TreasuryVault is
     ///         allowed caller, the INFT gating still applies.
     function setAgent(address _agent) external onlyOwner {
         if (_agent == address(0)) revert ZeroAddress();
+        // Keep the single-operator model coherent: rotating the primary agent
+        // de-authorizes the old one and authorizes the new one, so a vault that
+        // only ever used setAgent keeps exactly one operator. Operators added
+        // explicitly via addOperator are untouched. No-op if unchanged.
+        address previous = agent;
+        if (previous != _agent) {
+            authorizedOperators[previous] = false;
+            authorizedOperators[_agent] = true;
+            emit OperatorRemoved(previous);
+            emit OperatorAdded(_agent);
+        }
         agent = _agent;
         emit AgentUpdated(_agent);
+    }
+
+    /// @notice Authorize an additional operator to call executeStrategy.
+    /// @dev    Owner-consented: this does NOT rely on an INFT holder
+    ///         self-authorizing. The operator must still hold an active
+    ///         AgentINFT authorized for this vault for execution to succeed —
+    ///         this only adds it to the owner-curated allow-list.
+    function addOperator(address operator) external onlyOwner {
+        if (operator == address(0)) revert ZeroAddress();
+        authorizedOperators[operator] = true;
+        emit OperatorAdded(operator);
+    }
+
+    /// @notice Revoke an operator's authorization to call executeStrategy.
+    /// @dev    Idempotent; removing a non-authorized address is a no-op that
+    ///         still emits, keeping an explicit on-chain audit trail.
+    function removeOperator(address operator) external onlyOwner {
+        authorizedOperators[operator] = false;
+        emit OperatorRemoved(operator);
     }
 
     // ── Views ────────────────────────────────────────────────────────────

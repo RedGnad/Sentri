@@ -58,16 +58,17 @@ const GALILEO_CONTRACTS = {
 } as const;
 
 const MAINNET_CONTRACTS = {
-  vaultFactory: "0x8e129b97df1b513099329aC50B4774f8BeE1d538",
+  // v3 standard stack — TreasuryVault impl with owner-authorized multi-operator.
+  vaultFactory: "0xa29E41e8f674825d2c3170B5b5F0D369D06c40c1",
   vaultFactoryV2: "0xd5660Ef30460baa74950774DA55b515bdce5259F",
-  vaultImplementation: "0xe8a843715c776A9d44943DF9CD246C6df1610437",
-  agentINFT: "0x822Ea3f104c5aeA1bb7E34474d641abcf3f87951",
-  swapRouter: "0xAdf55d5380f216F53f109B6B8341C9169BaeEBa4",
+  vaultImplementation: "0x33B5f7d997E426483D7f9A998efedda76540595C",
+  agentINFT: "0x3520e212B8A7920ac98291B9E6230916305A1a84",
+  swapRouter: "0xEe30ce3D1d2E9E4781e563393EEfcC5d0F26e4FB",
   swapPair: "0xa9e824Eddb9677fB2189AB9c439238A83695C091",
-  priceFeed: "0x1289638A90da7F24DB069168648819607A7377e6",
+  priceFeed: "0x14C7bb7b6edCB5c179ce79B3bfd3158Fd5e8AD6d",
   baseToken: "0x1f3AA82227281cA364bFb3d253B0f1af1Da6473E",
   riskToken: "0x1Cd0690fF9a693f5EF2dD976660a8dAFc81A109c",
-  demoVault: "0x79aBe91dE33c3D27812c4CDafd8b67A7efFcf710",
+  demoVault: "0x1fA2Cba800BeDA82C8DE13cC8a6552ed450982e9",
 } as const;
 
 const selectedContracts = NETWORK === "mainnet" ? MAINNET_CONTRACTS : GALILEO_CONTRACTS;
@@ -211,6 +212,9 @@ export const TREASURY_VAULT_ABI = [
   "function unpause() external",
   "function setPolicy(tuple(uint16 maxAllocationBps, uint16 maxDrawdownBps, uint16 rebalanceThresholdBps, uint16 maxSlippageBps, uint32 cooldownPeriod, uint32 maxPriceStaleness) _policy) external",
   "function setAgent(address _agent) external",
+  "function addOperator(address operator) external",
+  "function removeOperator(address operator) external",
+  "function authorizedOperators(address operator) external view returns (bool)",
   "function transferOwnership(address newOwner) external",
   "function acceptOwnership() external",
   "function vaultBalance() external view returns (uint256)",
