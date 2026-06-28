@@ -11,6 +11,7 @@ import {
   TRUSTLESS_VAULT,
   LEGACY_VAULT_FACTORY_ADDRESS,
   LEGACY_V2_VAULT_FACTORY_ADDRESS,
+  LEGACY_V2_STANDARD_VAULT_FACTORY_ADDRESS,
 } from "@/config/contracts";
 import { galileo } from "@/config/wagmi";
 import type { Policy, VaultTier } from "./use-vault";
@@ -108,6 +109,39 @@ const legacyV2FactoryContract = {
   abi: VAULT_FACTORY_V2_ABI,
   chainId: CHAIN_ID,
 } as const;
+
+// Previous v2 STANDARD factory (pre multi-operator). Same ABI/tier as the
+// active standard factory; its vaults now belong in the legacy section.
+const legacyV2StandardFactoryContract = {
+  address: LEGACY_V2_STANDARD_VAULT_FACTORY_ADDRESS as `0x${string}`,
+  abi: VAULT_FACTORY_ABI,
+  chainId: CHAIN_ID,
+} as const;
+
+export function useLegacyV2StandardVaults() {
+  const count = useReadContract({
+    ...legacyV2StandardFactoryContract,
+    functionName: "vaultsCount",
+    query: { refetchInterval: 60_000, retry: false },
+  });
+  const countNum = count.data ? Number(count.data as bigint) : 0;
+  const page = useReadContract({
+    ...legacyV2StandardFactoryContract,
+    functionName: "vaultsPage",
+    args: [0n, BigInt(countNum)],
+    query: { enabled: count.isSuccess && countNum > 0, refetchInterval: 60_000, retry: false },
+  });
+  return (page.data as readonly `0x${string}`[] | undefined) ?? [];
+}
+
+export function useLegacyV2StandardVaultsByOwner(account: `0x${string}` | undefined) {
+  return useReadContract({
+    ...legacyV2StandardFactoryContract,
+    functionName: "vaultsByOwner",
+    args: account ? [account] : undefined,
+    query: { enabled: !!account, refetchInterval: 60_000, retry: false },
+  });
+}
 
 export function useLegacyVaultsByOwner(account: `0x${string}` | undefined) {
   return useReadContract({

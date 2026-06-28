@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActiveVaultsPage, useLegacyVaults, useLegacyV2Vaults, useNonEmptyLegacyVaults } from "@/hooks/use-factory";
+import { useActiveVaultsPage, useLegacyVaults, useLegacyV2Vaults, useLegacyV2StandardVaults, useNonEmptyLegacyVaults } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function VaultsPage() {
   const { data: vaults, isLoading } = useActiveVaultsPage(0n);
   const legacyVaults = useLegacyVaults();
+  const legacyV2StandardVaults = useLegacyV2StandardVaults();
   const legacyV2Vaults = useLegacyV2Vaults();
-  const allLegacyRaw = [...legacyVaults.map(a => ({ address: a, tier: "standard" as const })), ...legacyV2Vaults.map(a => ({ address: a, tier: "v2" as const }))];
+  const allLegacyRaw = [
+    ...legacyVaults.map(a => ({ address: a, tier: "standard" as const })),
+    ...legacyV2StandardVaults.map(a => ({ address: a, tier: "standard" as const })),
+    ...legacyV2Vaults.map(a => ({ address: a, tier: "v2" as const })),
+  ];
   // Public directory hides drained legacy vaults; owners still see them in My Vaults.
   const allLegacy = useNonEmptyLegacyVaults(allLegacyRaw);
 
