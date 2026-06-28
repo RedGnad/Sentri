@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActiveAddress } from "@/hooks/use-active-account";
-import { useVaultsByOwner, useLegacyVaultsByOwner, useV2VaultsByOwner, useLegacyV2VaultsByOwner } from "@/hooks/use-factory";
+import { useVaultsByOwner, useLegacyVaultsByOwner, useV2VaultsByOwner, useLegacyV2VaultsByOwner, useLegacyV2StandardVaultsByOwner } from "@/hooks/use-factory";
 import { VaultCard } from "@/components/vault-card";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,17 @@ export default function MyVaultsPage() {
   const { data: legacyRaw } = useLegacyVaultsByOwner(address);
   const { data: v2Raw } = useV2VaultsByOwner(address);
   const { data: legacyV2Raw } = useLegacyV2VaultsByOwner(address);
+  const { data: legacyV2StdRaw } = useLegacyV2StandardVaultsByOwner(address);
   const vaults = (vaultsRaw as readonly `0x${string}`[] | undefined) ?? [];
   const legacyVaults = (legacyRaw as readonly `0x${string}`[] | undefined) ?? [];
   const v2Vaults = (v2Raw as readonly `0x${string}`[] | undefined) ?? [];
   const legacyV2Vaults = (legacyV2Raw as readonly `0x${string}`[] | undefined) ?? [];
-  const allLegacy = [...legacyVaults.map(a => ({ address: a, tier: "standard" as const })), ...legacyV2Vaults.map(a => ({ address: a, tier: "v2" as const }))];
+  const legacyV2StdVaults = (legacyV2StdRaw as readonly `0x${string}`[] | undefined) ?? [];
+  const allLegacy = [
+    ...legacyVaults.map(a => ({ address: a, tier: "standard" as const })),
+    ...legacyV2StdVaults.map(a => ({ address: a, tier: "standard" as const })),
+    ...legacyV2Vaults.map(a => ({ address: a, tier: "v2" as const })),
+  ];
   const total = vaults.length + v2Vaults.length + allLegacy.length;
 
   return (
